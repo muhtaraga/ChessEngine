@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "engine/move.hpp"
 #include "engine/types.hpp"
 
 namespace engine {
@@ -30,12 +31,29 @@ struct Board {
     // Belirtilen kareye taş yerleştirir (renk + tür bitboard'larını günceller).
     void put_piece(Color c, PieceType pt, Square sq);
 
+    // Belirtilen kareden taşı kaldırır (renk + tür bitboard'larından).
+    void remove_piece(Color c, PieceType pt, Square sq);
+
     // Her iki rengin toplam doluluğu.
     Bitboard occupancy() const { return colors[WHITE] | colors[BLACK]; }
+
+    // Bir karedeki taşın türü (kare dolu varsayılır; boşsa PIECE_TYPE_NB).
+    PieceType type_on(Square sq) const;
 
     // Bir karedeki taşın renk ve türünü sorgular.
     // Kare boşsa false döner; doluysa true döner ve out parametrelerini doldurur.
     bool piece_at(Square sq, Color& out_color, PieceType& out_type) const;
+
+    // Verilen rengin şahının bulunduğu kare.
+    Square king_square(Color c) const;
+
+    // Bir hamleyi tahtaya uygular (legal olduğu varsayılır). Durum bilgisini
+    // (rok hakları, en passant, sayaçlar, sıra) günceller. Perft copy-make
+    // yaklaşımıyla çalışır: geri alma yok, çağıran gerekirse kopya tutar.
+    void do_move(Move m);
+
+    // FEN dizesinden pozisyon kurar. Başarılıysa true.
+    bool set_fen(const std::string& fen);
 
     // Tahtayı UTF-8 satranç figürinleriyle çok satırlı bir string'e çevirir.
     std::string to_string() const;

@@ -2,7 +2,10 @@
 
 #include "engine/board.hpp"
 
+#include <array>
+#include <cctype>
 #include <iostream>
+#include <sstream>
 
 #include "engine/bitboard.hpp"
 
@@ -23,6 +26,22 @@ void Board::clear() {
 void Board::put_piece(Color c, PieceType pt, Square sq) {
     set_bit(pieces[pt], sq);
     set_bit(colors[c], sq);
+}
+
+void Board::remove_piece(Color c, PieceType pt, Square sq) {
+    clear_bit(pieces[pt], sq);
+    clear_bit(colors[c], sq);
+}
+
+PieceType Board::type_on(Square sq) const {
+    for (int pt = 0; pt < PIECE_TYPE_NB; ++pt)
+        if (test_bit(pieces[pt], sq))
+            return static_cast<PieceType>(pt);
+    return PIECE_TYPE_NB;  // boş kare (çağıran dolu varsayar)
+}
+
+Square Board::king_square(Color c) const {
+    return lsb(pieces[KING] & colors[c]);
 }
 
 void Board::set_startpos() {
@@ -106,6 +125,163 @@ std::string Board::to_string() const {
 
 void Board::print() const {
     std::cout << to_string();
+}
+
+namespace {
+
+// Bir kareye "dokunulduğunda" (o kareden çıkıldığında ya da o kareye
+// gelindiğinde) geçersiz kalan rok haklarını temizleyen maske. Şah veya kale
+// hamlesi ve kale yakalaması bu tek işlemle doğru güncellenir:
+//   castling_rights &= mask[from] & mask[to]
+constexpr std::array<std::uint8_t, SQUARE_NB> make_castle_mask() {
+    std::array<std::uint8_t, SQUARE_NB> m{};
+    for (auto& x : m) x = 0xF;
+    m[E1] &= ~(WHITE_OO | WHITE_OOO);
+    m[H1] &= ~WHITE_OO;
+    m[A1] &= ~WHITE_OOO;
+    m[E8] &= ~(BLACK_OO | BLACK_OOO);
+    m[H8] &= ~BLACK_OO;
+    m[A8] &= ~BLACK_OOO;
+    return m;
+}
+
+constexpr auto CastleMask = make_castle_mask();
+
+}  // namespace
+
+void Board::do_move(Move m) {
+    const Square   from = m.from();
+    const Square   to   = m.to();
+    const MoveType mt   = m.type();
+    const Color    us   = side_to_move;
+    const Color    them = ~us;
+    const PieceType pt  = type_on(from);
+
+    en_passant = SQ_NONE;   // her hamlede sıfırla; çift itme aşağıda yeniden ayarlar
+    ++halfmove_clock;
+
+    // --- Yakalama ---
+    if (mt == EN_PASSANT) {
+        // Yakalanan piyon, hedefin "arkasında" (kaynakla aynı sırada) durur.
+        Square cap_sq = make_square(file_of(to), rank_of(from));
+        remove_piece(them, PAWN, cap_sq);
+        halfmove_clock = 0;
+    } else if (test_bit(colors[them], to)) {
+        remove_piece(them, type_on(to), to);
+        halfmove_clock = 0;
+    }
+
+    // --- Taşı taşı ---
+    remove_piece(us, pt, from);
+    if (mt == PROMOTION)
+        put_piece(us, m.promotion_type(), to);
+    else
+        put_piece(us, pt, to);
+
+    if (pt == PAWN) {
+        halfmove_clock = 0;
+        // Çift ileri itme -> en passant hedef karesi (atlanan kare).
+        if (rank_of(to) - rank_of(from) == 2 || rank_of(to) - rank_of(from) == -2)
+            en_passant = make_square(file_of(from), (rank_of(from) + rank_of(to)) / 2);
+    }
+
+    // --- Rok: kaleyi de taşı ---
+    if (mt == CASTLING) {
+        int r = rank_of(to);
+        Square rook_from, rook_to;
+        if (file_of(to) == 6) {              // kısa rok (şah kanadı, g sütunu)
+            rook_from = make_square(7, r);
+            rook_to   = make_square(5, r);
+        } else {                             // uzun rok (vezir kanadı, c sütunu)
+            rook_from = make_square(0, r);
+            rook_to   = make_square(3, r);
+        }
+        remove_piece(us, ROOK, rook_from);
+        put_piece(us, ROOK, rook_to);
+    }
+
+    // --- Rok haklarını güncelle ---
+    castling_rights &= CastleMask[from] & CastleMask[to];
+
+    if (us == BLACK)
+        ++fullmove_number;
+    side_to_move = them;
+}
+
+namespace {
+
+// FEN harfini (renk, tür) ikilisine çevirir. Geçersizse false.
+bool char_to_piece(char c, Color& color, PieceType& type) {
+    color = std::isupper(static_cast<unsigned char>(c)) ? WHITE : BLACK;
+    switch (std::tolower(static_cast<unsigned char>(c))) {
+        case 'p': type = PAWN;   return true;
+        case 'n': type = KNIGHT; return true;
+        case 'b': type = BISHOP; return true;
+        case 'r': type = ROOK;   return true;
+        case 'q': type = QUEEN;  return true;
+        case 'k': type = KING;   return true;
+        default:  return false;
+    }
+}
+
+}  // namespace
+
+bool Board::set_fen(const std::string& fen) {
+    clear();
+
+    std::istringstream ss(fen);
+    std::string placement, side, castling, ep;
+    if (!(ss >> placement >> side >> castling >> ep))
+        return false;
+
+    // --- Taş dizilimi: 8. sıradan 1. sıraya, '/' ile ayrılır ---
+    int rank = 7, file = 0;
+    for (char c : placement) {
+        if (c == '/') {
+            --rank;
+            file = 0;
+        } else if (std::isdigit(static_cast<unsigned char>(c))) {
+            file += c - '0';
+        } else {
+            Color color;
+            PieceType type;
+            if (!char_to_piece(c, color, type) || file > 7 || rank < 0)
+                return false;
+            put_piece(color, type, make_square(file, rank));
+            ++file;
+        }
+    }
+
+    // --- Sıra ---
+    side_to_move = (side == "b") ? BLACK : WHITE;
+
+    // --- Rok hakları ---
+    castling_rights = 0;
+    for (char c : castling) {
+        switch (c) {
+            case 'K': castling_rights |= WHITE_OO;  break;
+            case 'Q': castling_rights |= WHITE_OOO; break;
+            case 'k': castling_rights |= BLACK_OO;  break;
+            case 'q': castling_rights |= BLACK_OOO; break;
+            case '-': break;
+            default:  break;
+        }
+    }
+
+    // --- En passant hedef karesi ---
+    if (ep != "-" && ep.size() >= 2) {
+        int f = ep[0] - 'a';
+        int r = ep[1] - '1';
+        if (f >= 0 && f < 8 && r >= 0 && r < 8)
+            en_passant = make_square(f, r);
+    }
+
+    // --- Sayaçlar (opsiyonel) ---
+    int hm = 0, fm = 1;
+    if (ss >> hm) halfmove_clock = static_cast<std::uint16_t>(hm);
+    if (ss >> fm) fullmove_number = static_cast<std::uint16_t>(fm);
+
+    return true;
 }
 
 }  // namespace engine

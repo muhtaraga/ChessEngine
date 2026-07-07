@@ -17,6 +17,7 @@ endif()
 add_library(engine STATIC
     src/board.cpp
     src/attacks.cpp
+    src/movegen.cpp
 )
 target_include_directories(engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

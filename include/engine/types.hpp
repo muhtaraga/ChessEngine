@@ -54,6 +54,9 @@ enum CastlingRight : std::uint8_t {
     BLACK_OOO = 8   // siyah uzun rok
 };
 
+// Karşı renk (WHITE <-> BLACK).
+constexpr Color operator~(Color c) { return static_cast<Color>(c ^ 1); }
+
 // Bir karenin sütununu (file, 0-7 => a-h) döndürür.
 constexpr int file_of(Square sq) { return static_cast<int>(sq) & 7; }
 

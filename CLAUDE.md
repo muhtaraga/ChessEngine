@@ -27,10 +27,10 @@ bu fazlara göre değerlendir.
 
 - [x] Board representation: bitboard tabanlı (0x88 veya array değil — ileride
       NNUE'ya geçerken bitboard altyapısı gerekecek, baştan doğru kur)
-- [ ] Move generation: piyon, at, fil, kale, vezir, şah + özel hamleler
+- [x] Move generation: piyon, at, fil, kale, vezir, şah + özel hamleler
       (rok, en passant, promotion)
-- [ ] Magic bitboards ile sliding piece (fil/kale/vezir) hareket üretimi
-- [ ] **Perft testleri**: standart perft pozisyonlarına (Kiwipete dahil) karşı
+- [x] Magic bitboards ile sliding piece (fil/kale/vezir) hareket üretimi
+- [x] **Perft testleri**: standart perft pozisyonlarına (Kiwipete dahil) karşı
       derinlik 5-6'ya kadar doğrula, sonuçları bilinen referans değerlerle karşılaştır
 - [ ] Basit minimax + alpha-beta pruning
 - [ ] Materyal + piece-square table tabanlı basit evaluation
@@ -67,15 +67,18 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-07):** Faz 1, Adım 1 TAMAM. CMake + C++20 iskeleti kuruldu;
-bitboard tabanlı `Board` representation (LERF kare eşlemesi, taşları türe + renge
-göre tutan çift temsil), UTF-8 figürinlerle tahta yazdırma ve GoogleTest smoke
-testleri (4/4 geçiyor) hazır. Derleme MSVC + Ninja ile uyarısız.
+**Güncel durum (2026-07-07):** Faz 1, Adım 1-2 TAMAM.
+- Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
+  tahta yazdırma.
+- Adım 2: Tam move generation. Non-sliding saldırılar constexpr tablolar;
+  sliding taşlar magic bitboard'larla (yavaş ray-tracing referansa karşı
+  doğrulandı). Move (16-bit), MoveList, do_move (copy-make), set_fen, legal
+  hamle üretimi (pseudo + şah-güvenliği filtresi). Perft: 6 standart pozisyon
+  (Kiwipete dahil) referans değerlerle geçiyor; startpos d6=119060324
+  (~68M nps, Release). Toplam 19 test.
 
-**Sıradaki:** Faz 1, Adım 2 — move generation (önce piyon/at/şah + rok/en passant/
-promotion, sonra magic bitboard'larla sliding taşlar), ardından perft testleri.
-Not: `lsb/msb/popcount` intrinsic sarmalayıcıları henüz eklenmedi, move
-generation'da eklenecek.
+**Sıradaki:** Faz 1'in kalan adımları — alpha-beta search, materyal + PST
+evaluation, UCI protokolü. Ardından Faz 2 (TT, move ordering, quiescence).
 
 ### İlk somut görev
 
