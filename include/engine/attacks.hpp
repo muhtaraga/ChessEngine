@@ -79,4 +79,26 @@ constexpr Bitboard knight_attacks(Square sq) { return KnightAttacks[sq]; }
 constexpr Bitboard king_attacks(Square sq)   { return KingAttacks[sq]; }
 constexpr Bitboard pawn_attacks(Color c, Square sq) { return PawnAttacks[c][sq]; }
 
+// --- Sliding taşlar (magic bitboards) ---
+//
+// Magic tablolar çalışma zamanında bir kez hesaplanır. init_sliding_attacks()
+// herhangi bir sliding erişiminden ÖNCE çağrılmalıdır (idempotent). attacks.cpp
+// içinde statik başlatma ile de otomatik çağrılır, ama main/testlerde açıkça
+// çağırmak güvenlidir.
+void init_sliding_attacks();
+
+// occ = tahtadaki tüm taşların doluluğu (blocker'lar). Dönen bitboard, ilk
+// blocker'ları (yenebilecek kareleri) içerir.
+Bitboard rook_attacks(Square sq, Bitboard occ);
+Bitboard bishop_attacks(Square sq, Bitboard occ);
+
+inline Bitboard queen_attacks(Square sq, Bitboard occ) {
+    return rook_attacks(sq, occ) | bishop_attacks(sq, occ);
+}
+
+// Yavaş referans üreteçleri (ray-tracing). Magic tablolarını doldurmak ve
+// testlerde doğrulama oracle'ı olarak kullanılır.
+Bitboard slow_rook_attacks(Square sq, Bitboard occ);
+Bitboard slow_bishop_attacks(Square sq, Bitboard occ);
+
 }  // namespace engine
