@@ -1,6 +1,7 @@
-// chess: debug demo ve perft çalıştırıcı.
-//   chess                     -> boş tahta + başlangıç pozisyonunu basar
+// chess: UCI motoru + yardımcı modlar.
+//   chess                     -> UCI komut döngüsü (GUI'ler için varsayılan)
 //   chess perft <depth> [fen] -> perft divide (kök hamle başına düğüm) + toplam
+//   chess demo                -> boş tahta + başlangıç pozisyonunu basar
 
 #include <chrono>
 #include <cstdint>
@@ -11,6 +12,7 @@
 #include "engine/board.hpp"
 #include "engine/movegen.hpp"
 #include "engine/perft.hpp"
+#include "engine/uci.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -77,20 +79,24 @@ int main(int argc, char** argv) {
 
     engine::init_sliding_attacks();
 
-    if (argc >= 3 && std::string(argv[1]) == "perft")
+    std::string mode = (argc >= 2) ? argv[1] : "";
+
+    if (mode == "perft" && argc >= 3)
         return run_perft(argc, argv);
 
-    engine::Board board;
+    if (mode == "demo") {
+        engine::Board board;
+        board.clear();
+        std::cout << "Bos tahta:\n";
+        board.print();
+        std::cout << '\n';
+        board.set_startpos();
+        std::cout << "Baslangic pozisyonu:\n";
+        board.print();
+        return 0;
+    }
 
-    board.clear();
-    std::cout << "Bos tahta:\n";
-    board.print();
-
-    std::cout << '\n';
-
-    board.set_startpos();
-    std::cout << "Baslangic pozisyonu:\n";
-    board.print();
-
+    // Varsayılan: UCI komut döngüsü.
+    engine::uci_loop(std::cin, std::cout);
     return 0;
 }

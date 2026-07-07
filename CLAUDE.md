@@ -32,9 +32,9 @@ bu fazlara göre değerlendir.
 - [x] Magic bitboards ile sliding piece (fil/kale/vezir) hareket üretimi
 - [x] **Perft testleri**: standart perft pozisyonlarına (Kiwipete dahil) karşı
       derinlik 5-6'ya kadar doğrula, sonuçları bilinen referans değerlerle karşılaştır
-- [ ] Basit minimax + alpha-beta pruning
-- [ ] Materyal + piece-square table tabanlı basit evaluation
-- [ ] UCI protokolü implementasyonu (Cutechess/Arena ile test edilebilir olsun)
+- [x] Basit minimax + alpha-beta pruning
+- [x] Materyal + piece-square table tabanlı basit evaluation
+- [x] UCI protokolü implementasyonu (Cutechess/Arena ile test edilebilir olsun)
 
 Faz 1'in bitiş kriteri: motor UCI üzerinden bir GUI'ye bağlanabiliyor, legal
 hamlelerle oynuyor, perft testleri geçiyor.
@@ -67,18 +67,24 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-07):** Faz 1, Adım 1-2 TAMAM.
+**Güncel durum (2026-07-07): FAZ 1 TAMAMLANDI.** Motor UCI üzerinden GUI'ye
+bağlanabiliyor, legal hamlelerle oynuyor, perft testleri geçiyor.
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
   tahta yazdırma.
-- Adım 2: Tam move generation. Non-sliding saldırılar constexpr tablolar;
-  sliding taşlar magic bitboard'larla (yavaş ray-tracing referansa karşı
-  doğrulandı). Move (16-bit), MoveList, do_move (copy-make), set_fen, legal
-  hamle üretimi (pseudo + şah-güvenliği filtresi). Perft: 6 standart pozisyon
-  (Kiwipete dahil) referans değerlerle geçiyor; startpos d6=119060324
-  (~68M nps, Release). Toplam 19 test.
+- Adım 2: Tam move generation. Non-sliding constexpr tablolar; sliding taşlar
+  magic bitboard'larla (ray-tracing referansa karşı doğrulandı). Move (16-bit),
+  do_move (copy-make), set_fen, legal üretim (pseudo + şah-güvenliği filtresi).
+  Perft 6 standart pozisyon geçiyor; startpos d6=119060324 (~68M nps).
+- Adım 3: Materyal + PST (Michniewski) evaluation.
+- Adım 4: negamax + alpha-beta; mat/pat, 50-hamle beraberliği.
+- Adım 5: UCI (uci/isready/ucinewgame/position/go/quit). `chess` varsayılan UCI,
+  `chess perft <d> [fen]`, `chess demo`.
+- Toplam 30 test geçiyor.
 
-**Sıradaki:** Faz 1'in kalan adımları — alpha-beta search, materyal + PST
-evaluation, UCI protokolü. Ardından Faz 2 (TT, move ordering, quiescence).
+**Sıradaki: Faz 2 — Klasik Güçlendirme.** İlk adım: Zobrist hashing +
+transposition table. Sonra move ordering (MVV-LVA, killer, history),
+quiescence search, iterative deepening + zaman yönetimi, gelişmiş evaluation,
+cutechess-cli ile otomatik maç/SPRT altyapısı.
 
 ### İlk somut görev
 
