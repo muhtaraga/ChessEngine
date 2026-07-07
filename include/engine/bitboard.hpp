@@ -1,9 +1,11 @@
 #pragma once
 
 // Bitboard yardımcıları: kare <-> bit dönüşümü ve temel bit işlemleri.
-// Bu adımda küçük tutuluyor. lsb/msb/popcount gibi MSVC intrinsic
-// sarmalayıcıları (_BitScanForward64, __popcnt64) move generation adımında
-// eklenecek — burada henüz gerekmiyor.
+// Sayma/tarama için C++20 <bit> kullanılıyor (std::popcount, std::countr_zero);
+// bunlar MSVC'de doğrudan donanım intrinsic'lerine (__popcnt64, tzcnt)
+// derlenir, ama taşınabilir ve daha temizdir.
+
+#include <bit>
 
 #include "engine/types.hpp"
 
@@ -27,6 +29,24 @@ constexpr void set_bit(Bitboard& bb, Square sq) {
 // Bir kareyi temizler (ilgili biti 0 yapar).
 constexpr void clear_bit(Bitboard& bb, Square sq) {
     bb &= ~square_bb(sq);
+}
+
+// Bitboard'daki set bit (dolu kare) sayısı.
+constexpr int popcount(Bitboard bb) {
+    return std::popcount(bb);
+}
+
+// En düşük anlamlı set bit'in karesi (LSB). bb sıfır OLMAMALI.
+constexpr Square lsb(Bitboard bb) {
+    return static_cast<Square>(std::countr_zero(bb));
+}
+
+// En düşük anlamlı set bit'i çıkarıp o kareyi döndürür (bitboard iterasyonu).
+// bb sıfır OLMAMALI.
+constexpr Square pop_lsb(Bitboard& bb) {
+    Square s = lsb(bb);
+    bb &= bb - 1;  // en düşük set bit'i temizler
+    return s;
 }
 
 }  // namespace engine
