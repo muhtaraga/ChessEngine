@@ -26,9 +26,13 @@ struct SearchResult {
     int               score = 0; // hamle sırası olan tarafın bakışıyla (santipiyon)
     std::uint64_t     nodes = 0; // ziyaret edilen düğüm sayısı
     std::vector<Move> pv;        // baş varyant (principal variation)
+    bool              aborted = false;  // süre dolduğu için yarıda kesildi mi
 };
 
-// Verilen derinlikte pozisyonu arar.
-SearchResult search(const Board& b, int depth);
+// Verilen derinlikte pozisyonu arar. max_time_ms >= 0 ise arama o süreden
+// sonra (yaklaşık, düğüm örneklemeli) kesilir ve aborted=true döner; bu durumda
+// sonuç eksiktir, çağıran önceki derinliği kullanmalıdır. max_time_ms < 0 =
+// zaman sınırı yok.
+SearchResult search(const Board& b, int depth, std::int64_t max_time_ms = -1);
 
 }  // namespace engine

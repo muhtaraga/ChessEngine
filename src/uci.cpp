@@ -17,10 +17,12 @@ namespace engine {
 
 namespace {
 
-// Derinlik/zaman verilmediğinde (çıplak "go" ya da "go infinite") analiz için
-// makul bir üst sınır. Iterative deepening bu derinliğe kadar akıtır.
-constexpr int kAnalysisDepth = 8;
-constexpr int kMaxDepth      = 63;
+// Iterative deepening derinlik tavanı.
+constexpr int kMaxDepth = 63;
+// Derinlik/zaman verilmediğinde (çıplak "go" ya da "go infinite") varsayılan
+// süre bütçesi (ms). Tek iş parçacığı olduğu için gerçek "infinite"/stop
+// desteklenmiyor; bunun yerine sınırlı süre aranıp bestmove verilir.
+constexpr std::int64_t kDefaultBudgetMs = 3000;
 
 // UCI hamle dizesini (ör. "e2e4", "e7e8q") mevcut pozisyondaki legal bir
 // hamleyle eşleştirir. Böylece rok/en passant/promosyon bayrakları doğru atanır.
@@ -96,10 +98,10 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
 
     // Derinlik ve zaman bütçesini belirle.
     int          max_depth = kMaxDepth;
-    std::int64_t budget_ms = -1;  // <0 -> zaman sınırı yok
+    std::int64_t budget_ms = -1;  // <0 -> zaman sınırı yok (yalnızca "go depth N")
 
     if (depth > 0) {
-        max_depth = (depth < kMaxDepth) ? depth : kMaxDepth;
+        max_depth = (depth < kMaxDepth) ? depth : kMaxDepth;  // sabit derinlik, süresiz
     } else if (movetime > 0) {
         budget_ms = movetime;
     } else if (wtime > 0 || btime > 0) {
@@ -110,22 +112,37 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
         budget_ms = t / 30 + inc / 2;
         if (budget_ms < 5) budget_ms = 5;
     } else {
-        // Çıplak "go" veya "go infinite": sınırlı derinlikte analiz.
-        max_depth = kAnalysisDepth;
+        // Çıplak "go" veya "go infinite": varsayılan süre bütçesi.
+        budget_ms = kDefaultBudgetMs;
         (void)infinite;
     }
 
     using clock = std::chrono::steady_clock;
     auto start = clock::now();
+    auto elapsed_ms = [&] {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   clock::now() - start).count();
+    };
 
     SearchResult best;
     for (int d = 1; d <= max_depth; ++d) {
-        SearchResult r = search(b, d);
+        // Bu derinlik için kalan süre. Derinlik 1 daima süresiz koşar ki en az
+        // bir legal hamle garanti olsun.
+        std::int64_t time_for_depth = -1;
+        if (budget_ms >= 0 && d > 1) {
+            std::int64_t remaining = budget_ms - elapsed_ms();
+            if (remaining <= 0)
+                break;  // yeni derinlik başlatacak süre yok
+            time_for_depth = remaining;
+        }
 
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           clock::now() - start).count();
+        SearchResult r = search(b, d, time_for_depth);
+        if (r.aborted)
+            break;  // süre doldu: yarım derinliği at, önceki 'best' kullanılır
+
         best = r;
 
+        auto elapsed = elapsed_ms();
         out << "info depth " << d
             << " score " << score_string(r.score)
             << " nodes " << r.nodes
@@ -141,9 +158,6 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
 
         if (is_mate_score(r.score))
             break;  // mat bulundu, daha derine gitme
-        // Bir sonraki derinliği tamamlayacak zaman yoksa dur (kaba EBF ~3 tahmini).
-        if (budget_ms >= 0 && elapsed * 3 >= budget_ms)
-            break;
     }
 
     if (best.best == Move())

@@ -51,6 +51,18 @@ TEST(Uci, FindsMateViaGo) {
     EXPECT_NE(out.find("score mate 1"), std::string::npos);
 }
 
+// Zaman sınırlı arama: makul sürede bir bestmove dönmeli (donmamalı).
+TEST(Uci, MovetimeReturnsBestmove) {
+    std::string out = run_uci(
+        "position startpos\n"
+        "go movetime 300\n"
+        "quit\n");
+    EXPECT_NE(out.find("bestmove "), std::string::npos);
+    EXPECT_EQ(out.find("bestmove 0000"), std::string::npos);
+    // En az derinlik 1 tamamlanmalı.
+    EXPECT_NE(out.find("info depth 1"), std::string::npos);
+}
+
 TEST(Uci, PromotionMoveParsed) {
     // Beyaz b7-b8 vezir promosyonu legal ve uygulanabilir olmalı.
     std::string out = run_uci(
