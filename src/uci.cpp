@@ -2,6 +2,8 @@
 
 #include "engine/uci.hpp"
 
+#include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -15,7 +17,10 @@ namespace engine {
 
 namespace {
 
-constexpr int kDefaultDepth = 6;
+// Derinlik/zaman verilmediğinde (çıplak "go" ya da "go infinite") analiz için
+// makul bir üst sınır. Iterative deepening bu derinliğe kadar akıtır.
+constexpr int kAnalysisDepth = 8;
+constexpr int kMaxDepth      = 63;
 
 // UCI hamle dizesini (ör. "e2e4", "e7e8q") mevcut pozisyondaki legal bir
 // hamleyle eşleştirir. Böylece rok/en passant/promosyon bayrakları doğru atanır.
@@ -70,27 +75,81 @@ std::string score_string(int score) {
     return os.str();
 }
 
-// "go" komutunu işler: derinliği belirle, ara, bestmove yaz.
+// "go" komutunu işler: limitleri belirle, iterative deepening ile ara,
+// her derinlikte info yaz, sonunda bestmove ver.
 void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
-    int depth = kDefaultDepth;
+    int          depth    = -1;
+    std::int64_t movetime = -1;
+    std::int64_t wtime = -1, btime = -1, winc = 0, binc = 0;
+    bool         infinite = false;
 
     std::string token;
     while (ss >> token) {
-        if (token == "depth")
-            ss >> depth;
-        // movetime/wtime/btime vb. zaman yönetimi Faz 2'de.
+        if      (token == "depth")    ss >> depth;
+        else if (token == "movetime") ss >> movetime;
+        else if (token == "wtime")    ss >> wtime;
+        else if (token == "btime")    ss >> btime;
+        else if (token == "winc")     ss >> winc;
+        else if (token == "binc")     ss >> binc;
+        else if (token == "infinite") infinite = true;
     }
 
-    SearchResult r = search(b, depth);
+    // Derinlik ve zaman bütçesini belirle.
+    int          max_depth = kMaxDepth;
+    std::int64_t budget_ms = -1;  // <0 -> zaman sınırı yok
 
-    out << "info depth " << depth
-        << " score " << score_string(r.score)
-        << " nodes " << r.nodes << '\n';
+    if (depth > 0) {
+        max_depth = (depth < kMaxDepth) ? depth : kMaxDepth;
+    } else if (movetime > 0) {
+        budget_ms = movetime;
+    } else if (wtime > 0 || btime > 0) {
+        std::int64_t t   = (b.side_to_move == WHITE) ? wtime : btime;
+        std::int64_t inc = (b.side_to_move == WHITE) ? winc : binc;
+        if (t < 0) t = 0;
+        // Basit bütçe: kalan sürenin ~1/30'u + artışın yarısı. (Faz 2'de gelişecek.)
+        budget_ms = t / 30 + inc / 2;
+        if (budget_ms < 5) budget_ms = 5;
+    } else {
+        // Çıplak "go" veya "go infinite": sınırlı derinlikte analiz.
+        max_depth = kAnalysisDepth;
+        (void)infinite;
+    }
 
-    if (r.best == Move())
+    using clock = std::chrono::steady_clock;
+    auto start = clock::now();
+
+    SearchResult best;
+    for (int d = 1; d <= max_depth; ++d) {
+        SearchResult r = search(b, d);
+
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           clock::now() - start).count();
+        best = r;
+
+        out << "info depth " << d
+            << " score " << score_string(r.score)
+            << " nodes " << r.nodes
+            << " time "  << elapsed
+            << " nps "   << (elapsed > 0 ? r.nodes * 1000 / elapsed : 0);
+        if (!r.pv.empty()) {
+            out << " pv";
+            for (Move m : r.pv)
+                out << ' ' << m.to_uci();
+        }
+        out << '\n';
+        out.flush();
+
+        if (is_mate_score(r.score))
+            break;  // mat bulundu, daha derine gitme
+        // Bir sonraki derinliği tamamlayacak zaman yoksa dur (kaba EBF ~3 tahmini).
+        if (budget_ms >= 0 && elapsed * 3 >= budget_ms)
+            break;
+    }
+
+    if (best.best == Move())
         out << "bestmove 0000\n";  // hamle yok (mat/pat)
     else
-        out << "bestmove " << r.best.to_uci() << '\n';
+        out << "bestmove " << best.best.to_uci() << '\n';
     out.flush();
 }
 

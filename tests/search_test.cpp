@@ -17,6 +17,8 @@ TEST(Search, MateInOne) {
     EXPECT_TRUE(is_mate_score(r.score));
     EXPECT_GT(r.score, 0);          // bizim lehimize mat
     EXPECT_EQ(r.score, MATE - 1);   // 1 ply'de mat
+    ASSERT_FALSE(r.pv.empty());     // PV mat hamlesiyle başlamalı
+    EXPECT_EQ(r.pv[0], Move::make(A1, A8));
 }
 
 // Pat: sıradaki tarafın legal hamlesi yok ve çekte değil -> puan 0.

@@ -36,6 +36,9 @@ TEST(Uci, PositionAndGoProducesBestmove) {
     // Legal bir hamle üretilmeli (0000 mat/pat değil).
     EXPECT_EQ(out.find("bestmove 0000"), std::string::npos);
     EXPECT_NE(out.find("info depth 3"), std::string::npos);
+    // Iterative deepening: ara derinlikler ve baş varyant yazılmalı.
+    EXPECT_NE(out.find("info depth 1"), std::string::npos);
+    EXPECT_NE(out.find(" pv "), std::string::npos);
 }
 
 TEST(Uci, FindsMateViaGo) {

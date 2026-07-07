@@ -4,6 +4,7 @@
 // ve puanını bulur. Iterative deepening ve zaman yönetimi Faz 2'de eklenecek.
 
 #include <cstdint>
+#include <vector>
 
 #include "engine/board.hpp"
 #include "engine/move.hpp"
@@ -21,9 +22,10 @@ inline bool is_mate_score(int score) {
 }
 
 struct SearchResult {
-    Move          best;         // bulunan en iyi hamle (terminalde geçersiz)
-    int           score = 0;    // hamle sırası olan tarafın bakışıyla (santipiyon)
-    std::uint64_t nodes = 0;    // ziyaret edilen düğüm sayısı
+    Move              best;      // bulunan en iyi hamle (terminalde geçersiz)
+    int               score = 0; // hamle sırası olan tarafın bakışıyla (santipiyon)
+    std::uint64_t     nodes = 0; // ziyaret edilen düğüm sayısı
+    std::vector<Move> pv;        // baş varyant (principal variation)
 };
 
 // Verilen derinlikte pozisyonu arar.
