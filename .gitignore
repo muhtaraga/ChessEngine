@@ -1,0 +1,23 @@
+# Build çıktıları
+build/
+out/
+cmake-build-*/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+_deps/
+
+# IDE / editör
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Derleyici çıktıları
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk
