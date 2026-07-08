@@ -37,15 +37,21 @@ Proje kökünden (PowerShell):
 ```powershell
 # 1) Karşılaştırılacak iki sürümü derle (etiketli Release binary'ler).
 #    Örn: tapered eval'in Elo katkısını ölç -> tapered commit'i vs bir önceki.
-pwsh tools\sprt\build-version.ps1 -Ref d7e6754 -Label base   # tapered'dan önce
-pwsh tools\sprt\build-version.ps1 -Ref HEAD    -Label new    # güncel
+powershell -File tools\sprt\build-version.ps1 -Ref d7e6754 -Label base   # tapered'dan önce
+powershell -File tools\sprt\build-version.ps1 -Ref HEAD    -Label new    # güncel
 
 # 2) Açılış kitabını üret (bir kez; book.epd zaten commit'li, gerekmiyorsa atla).
-pwsh tools\sprt\gen-book.ps1
+powershell -File tools\sprt\gen-book.ps1
 
 # 3) SPRT maçını başlat. Karara varınca (H0 ya da H1) otomatik durur.
-pwsh tools\sprt\sprt.ps1 -New new -Base base
+powershell -File tools\sprt\sprt.ps1 -New new -Base base
 ```
+
+> Bu makinede **Windows PowerShell 5.1** var (`powershell`), PowerShell 7 (`pwsh`)
+> kurulu değil — komutlarda `powershell` kullanın. Zaten bir PowerShell oturumundaysanız
+> betiği doğrudan `.\tools\sprt\build-version.ps1 ...` ile de çağırabilirsiniz.
+> "running scripts is disabled" hatası alırsanız bir kez:
+> `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`.
 
 ## SPRT parametreleri
 

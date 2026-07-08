@@ -10,13 +10,13 @@
 # On kosul:
 #   1) cutechess-cli kurulu (bkz. tools\sprt\README.md).
 #   2) Iki etiketli binary uretilmis:
-#        pwsh tools\sprt\build-version.ps1 -Ref HEAD~1 -Label base
-#        pwsh tools\sprt\build-version.ps1 -Ref HEAD   -Label new
+#        powershell -File tools\sprt\build-version.ps1 -Ref HEAD~1 -Label base
+#        powershell -File tools\sprt\build-version.ps1 -Ref HEAD   -Label new
 #   3) Acilis kitabi: tools\sprt\book.epd (gen-book.ps1 uretir).
 #
 # Kullanim (proje kokunden):
-#   pwsh tools\sprt\sprt.ps1 -New new -Base base
-#   pwsh tools\sprt\sprt.ps1 -New new -Base base -Tc "5+0.05" -Elo0 0 -Elo1 5
+#   powershell -File tools\sprt\sprt.ps1 -New new -Base base
+#   powershell -File tools\sprt\sprt.ps1 -New new -Base base -Tc "5+0.05" -Elo0 0 -Elo1 5
 
 param(
     [Parameter(Mandatory=$true)][string]$New,      # yeni surum etiketi

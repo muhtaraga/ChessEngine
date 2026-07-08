@@ -6,8 +6,8 @@
 # -> gtest indirmesi/derlemesi yok, hizli.
 #
 # Kullanim (proje kokunden):
-#   pwsh tools\sprt\build-version.ps1 -Ref HEAD~1 -Label base
-#   pwsh tools\sprt\build-version.ps1               # calisma agaci -> chess-working.exe
+#   powershell -File tools\sprt\build-version.ps1 -Ref HEAD~1 -Label base
+#   powershell -File tools\sprt\build-version.ps1               # calisma agaci -> chess-working.exe
 #
 # NOT: MSVC PATH'te olmadigindan VS DevShell yuklenir (bkz. -VsPath). Bu makineye
 # gore varsayilan ayarli; farkli kurulumda -VsPath verin.

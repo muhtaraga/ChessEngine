@@ -8,8 +8,8 @@
 # tarafca da (renkler ters) oynanir -> N hat = 2N farkli oyun cekirdegi.
 #
 # Kullanim (proje kokunden, motor derlenmis olmali):
-#   pwsh tools/sprt/gen-book.ps1                 # build-release\chess.exe kullanir
-#   pwsh tools/sprt/gen-book.ps1 -Engine path\chess.exe
+#   powershell -File tools/sprt/gen-book.ps1                 # build-release\chess.exe kullanir
+#   powershell -File tools/sprt/gen-book.ps1 -Engine path\chess.exe
 
 param(
     [string]$Engine = "build-release\chess.exe",
