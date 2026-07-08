@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "engine/attacks.hpp"
+#include "engine/tt.hpp"
 #include "engine/uci.hpp"
 
 using namespace engine;
@@ -73,6 +74,63 @@ TEST(Uci, InfiniteStopReturnsBestmove) {
         "quit\n");
     EXPECT_NE(out.find("bestmove "), std::string::npos);
     EXPECT_EQ(out.find("bestmove 0000"), std::string::npos);  // en az derinlik 1
+}
+
+// "uci" el sıkışmasında ayarlanabilir seçenekler ilan edilmeli (GUI görsün).
+TEST(Uci, AdvertisesOptions) {
+    std::string out = run_uci("uci\nquit\n");
+    EXPECT_NE(out.find("option name Hash type spin"), std::string::npos);
+    EXPECT_NE(out.find("option name Clear Hash type button"), std::string::npos);
+    // Seçenekler uciok'tan ÖNCE gelmeli (UCI grameri).
+    EXPECT_LT(out.find("option name Hash"), out.find("uciok"));
+}
+
+// "setoption name Hash value N" TT'yi yeniden boyutlandırmalı ve sonrasında
+// motor hâlâ düzgün çalışmalı (fonksiyonel regresyon yok).
+TEST(Uci, SetHashResizesTT) {
+    run_uci("setoption name Hash value 1\nquit\n");
+    std::size_t small = TT.size();
+    run_uci("setoption name Hash value 64\nquit\n");
+    std::size_t big = TT.size();
+    EXPECT_GT(big, small);  // 64 MB > 1 MB -> daha fazla giriş
+
+    // Resize sonrası arama hâlâ geçerli hamle üretiyor mu?
+    std::string out = run_uci(
+        "setoption name Hash value 32\n"
+        "position startpos\n"
+        "go depth 3\n"
+        "quit\n");
+    EXPECT_NE(out.find("bestmove "), std::string::npos);
+    EXPECT_EQ(out.find("bestmove 0000"), std::string::npos);
+
+    TT.resize(16);  // testler arası varsayılana geri dön
+}
+
+// "setoption name Clear Hash" (buton) çökmeden işlenmeli; motor oynamaya devam.
+TEST(Uci, ClearHashHandled) {
+    std::string out = run_uci(
+        "position startpos\n"
+        "go depth 3\n"
+        "setoption name Clear Hash\n"
+        "position startpos\n"
+        "go depth 3\n"
+        "quit\n");
+    EXPECT_NE(out.find("bestmove "), std::string::npos);
+    EXPECT_EQ(out.find("bestmove 0000"), std::string::npos);
+}
+
+// Bozuk/eksik değerler çökme olmadan sessizce yok sayılmalı.
+TEST(Uci, MalformedSetoptionIgnored) {
+    std::string out = run_uci(
+        "setoption name Hash value abc\n"
+        "setoption name Hash\n"
+        "setoption name Bilinmeyen value 5\n"
+        "setoption\n"
+        "position startpos\n"
+        "go depth 2\n"
+        "quit\n");
+    EXPECT_NE(out.find("bestmove "), std::string::npos);
+    EXPECT_EQ(out.find("bestmove 0000"), std::string::npos);
 }
 
 TEST(Uci, PromotionMoveParsed) {

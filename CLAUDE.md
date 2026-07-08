@@ -69,7 +69,7 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-08): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
 üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
-geçiyor. Toplam 51 test geçiyor.
+geçiyor. Toplam 59 test geçiyor.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -145,8 +145,20 @@ Faz 2 (devam ediyor):
     Derinlik 1 daima kesintisiz (deadline+stop devre dışı) -> en az bir hamle garanti.
     Test: InfiniteStopReturnsBestmove. Toplam 55 test.
 
+- UCI seçenekleri (TAMAM). `uci` el sıkışmasında `option name Hash type spin
+  default 16 min 1 max 1024` ve `option name Clear Hash type button` ilan edilir;
+  `uci.cpp`'ye `handle_setoption` eklendi. `setoption name Hash value N` -> önce
+  `stop_search()` sonra `TT.resize(clamp(N,1,1024))` (mevcut resize/clear altyapısı
+  kullanıldı, yeni depolama yok). `setoption name Clear Hash` -> `stop_search()` +
+  `TT.clear()`. Kanonik UCI isimleri (Arena/Cutechess Hash arayüzünü tanısın diye
+  "HashSize" değil "Hash"). Bozuk/eksik value sessizce yok sayılır. Test:
+  AdvertisesOptions, SetHashResizesTT, ClearHashHandled, MalformedSetoptionIgnored.
+  Toplam 59 test. Not: `Threads` (Lazy SMP) bilinçli ertelendi — gerçek güç
+  özelliği, kendi adımında SPRT ile yapılacak; çalışmayan option ilan edilmedi.
+
 **Sıradaki: Faz 2 Adım 5 — Gelişmiş evaluation** (pawn structure, king safety,
 piece mobility). Sonra cutechess-cli ile otomatik maç/SPRT regresyon altyapısı.
+`Threads`/Lazy SMP de bu SPRT altyapısıyla birlikte ele alınabilir.
 
 ### İlk somut görev
 

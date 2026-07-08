@@ -92,6 +92,51 @@ void handle_position(Board& b, std::istringstream& ss) {
     }
 }
 
+// "setoption" komutunu işler: "setoption name <id> [value <x>]".
+// <id> boşluk içerebildiği için ("Clear Hash") token'lar "value" görene kadar
+// toplanır (handle_position'daki FEN toplama deseninin aynısı).
+void handle_setoption(std::istringstream& ss) {
+    std::string token;
+    ss >> token;
+    if (token != "name")
+        return;  // gramer dışı: sessizce yok say
+
+    // Option adını "value" görene (ya da satır bitene) kadar topla.
+    std::string name;
+    while (ss >> token && token != "value") {
+        if (!name.empty()) name += ' ';
+        name += token;
+    }
+    // token == "value" ise geri kalanı değer olarak topla (boşluklu olabilir).
+    std::string value;
+    if (token == "value") {
+        while (ss >> token) {
+            if (!value.empty()) value += ' ';
+            value += token;
+        }
+    }
+
+    if (name == "Hash") {
+        // TT boyutu (MB). Geçersiz sayı -> yok say. [1, 1024] MB'ye clamp.
+        std::int64_t mb = 0;
+        try {
+            mb = std::stoll(value);
+        } catch (...) {
+            return;  // bozuk/eksik value: yok say
+        }
+        if (mb < 1)    mb = 1;
+        if (mb > 1024) mb = 1024;
+        // resize tabloyu yeniden ayırır; arama thread'i canlıyken koşmamalı.
+        stop_search();
+        TT.resize(static_cast<std::size_t>(mb));
+    } else if (name == "Clear Hash") {
+        // Buton: TT'yi elle temizle (analiz için kullanışlı).
+        stop_search();
+        TT.clear();
+    }
+    // Tanınmayan option: sessizce yok say (UCI önerisi).
+}
+
 // Puanı UCI formatında yazar: "cp X" veya "mate M".
 std::string score_string(int score) {
     std::ostringstream os;
@@ -239,6 +284,10 @@ void uci_loop(std::istream& in, std::ostream& out) {
             std::lock_guard<std::mutex> lk(g_io_mtx);
             out << "id name ChessEngine\n";
             out << "id author Muhtar Agcabay\n";
+            // GUI'den ayarlanabilir seçenekler (kanonik UCI isimleri; GUI'ler
+            // "Hash" ve "Clear Hash"i özel arayüzle tanır).
+            out << "option name Hash type spin default 16 min 1 max 1024\n";
+            out << "option name Clear Hash type button\n";
             out << "uciok\n";
             out.flush();
         } else if (cmd == "isready") {
@@ -252,6 +301,8 @@ void uci_loop(std::istream& in, std::ostream& out) {
             stop_search();  // TT'yi temizlemeden önce aramayı durdur (yarış önleme)
             board.set_startpos();
             TT.clear();  // yeni oyun: önceki oyunun girişlerini at
+        } else if (cmd == "setoption") {
+            handle_setoption(ss);  // Hash / Clear Hash (kendi içinde stop_search)
         } else if (cmd == "position") {
             stop_search();  // eski pozisyon için koşan aramayı bırak
             handle_position(board, ss);
