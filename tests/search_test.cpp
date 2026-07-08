@@ -50,3 +50,13 @@ TEST(Search, FindsMateScoreAtDepth) {
     EXPECT_TRUE(is_mate_score(r.score));
     EXPECT_GT(r.score, 0);
 }
+
+// Move ordering (MVV-LVA + killer + history) daha derin aramada da doğru
+// taktiği bulmalı; sıralama yalnızca hızı etkiler, sonucu değil.
+TEST(Search, MoveOrderingPreservesTacticAtDepth) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 5);       // depth 3 yerine 5: sıralama devrede
+    EXPECT_EQ(r.best, Move::make(E1, E5));  // yine bedava veziri al
+    EXPECT_GT(r.score, 500);
+}

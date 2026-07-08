@@ -5,6 +5,7 @@
 #include <chrono>
 #include <utility>
 
+#include "engine/bitboard.hpp"
 #include "engine/eval.hpp"
 #include "engine/movegen.hpp"
 #include "engine/tt.hpp"
@@ -40,7 +41,17 @@ int terminal_score(const Board& b, int ply) {
     return 0;                // pat
 }
 
-// Tek iş parçacıklı arama durumu. Triangular PV table + zaman kesmesi.
+// Move ordering skor bantları. Yüksek skor önce aranır. Bantlar çakışmayacak
+// şekilde ayrık: TT > promosyon/yakalama > killer > history(quiet).
+constexpr int kScoreTT       = 2'000'000;  // TT (hash) hamlesi
+constexpr int kScoreCapture  = 1'000'000;  // yakalama tabanı (+ MVV-LVA)
+constexpr int kScorePromo    =   900'000;  // promosyon ek primi (yakalamaya eklenir)
+constexpr int kScoreKiller1  =   800'000;  // 1. killer (bu ply'de kesme yapan quiet)
+constexpr int kScoreKiller2  =   790'000;  // 2. killer
+constexpr int kHistoryMax    =   700'000;  // history taban tavanı (killer'ın altında)
+
+// Tek iş parçacıklı arama durumu. Triangular PV table + zaman kesmesi +
+// move ordering durumu (killer moves, history heuristic).
 struct Searcher {
     std::uint64_t     nodes = 0;
     bool              aborted = false;
@@ -50,8 +61,65 @@ struct Searcher {
     Move pv_table[MAX_PLY][MAX_PLY];
     int  pv_len[MAX_PLY] = {};
 
-    int negamax(const Board& b, int depth, int alpha, int beta, int ply);
+    // Killer moves: her ply'de beta kesmesi yapan iki quiet hamle. Aynı derinlik
+    // seviyesindeki kardeş düğümlerde erken denenir.
+    Move killers[MAX_PLY][2] = {};
+
+    // History heuristic: [renk][from][to] için, geçmişte kesme yapan quiet
+    // hamlelerin biriken puanı. Quiet hamle sıralamasını yönlendirir.
+    int history[COLOR_NB][SQUARE_NB][SQUARE_NB] = {};
+
+    int  negamax(const Board& b, int depth, int alpha, int beta, int ply);
+    int  score_move(const Board& b, Move m, Move tt_move, int ply) const;
+    void update_quiet_stats(const Board& b, Move m, int ply, int depth);
 };
+
+// Bir hamlenin yakalama olup olmadığı (en passant dahil). Hedef karede karşı
+// renkten taş varsa ya da hamle en passant ise yakalamadır.
+bool is_capture(const Board& b, Move m) {
+    return m.type() == EN_PASSANT || test_bit(b.colors[~b.side_to_move], m.to());
+}
+
+// Move ordering skoru: yüksek = önce ara. TT hamlesi, MVV-LVA'lı yakalamalar,
+// promosyonlar, killer'lar ve history sırasıyla değerlendirilir.
+int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
+    if (m == tt_move)
+        return kScoreTT;
+
+    const MoveType mt  = m.type();
+    const bool     cap = is_capture(b, m);
+
+    if (cap || mt == PROMOTION) {
+        // MVV-LVA: değerli kurbanı ucuz saldıranla al (victim önce, aggressor ceza).
+        PieceType victim    = (mt == EN_PASSANT) ? PAWN
+                            : cap                ? b.type_on(m.to())
+                            :                      PAWN;  // düz promosyonda kurban yok
+        PieceType aggressor = b.type_on(m.from());
+        int s = kScoreCapture + static_cast<int>(victim) * 16 - static_cast<int>(aggressor);
+        if (mt == PROMOTION)
+            s += kScorePromo + static_cast<int>(m.promotion_type());  // vezir promosyonu en güçlü
+        return s;
+    }
+
+    // Quiet hamle: önce killer, sonra history.
+    if (m == killers[ply][0]) return kScoreKiller1;
+    if (m == killers[ply][1]) return kScoreKiller2;
+    return history[b.side_to_move][m.from()][m.to()];
+}
+
+// Beta kesmesi yapan bir quiet hamleyi killer ve history tablolarına işler.
+void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth) {
+    // Killer: yeni hamleyi öne al (zaten 1. killer değilse).
+    if (killers[ply][0] != m) {
+        killers[ply][1] = killers[ply][0];
+        killers[ply][0] = m;
+    }
+    // History: derinlik karesi kadar ödüllendir (derin kesmeler daha değerli).
+    int& h = history[b.side_to_move][m.from()][m.to()];
+    h += depth * depth;
+    if (h > kHistoryMax)
+        h = kHistoryMax;  // killer bandının altında kalsın
+}
 
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
     // Süre kontrolü (her ~4096 düğümde bir; saat çağrısı pahalı).
@@ -91,21 +159,29 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
         if (tte.bound == Bound::UPPER && s <= alpha)   return s;
     }
 
-    // TT hamlesini öne al: basit ama etkili move ordering. Kapsamlı sıralama
-    // (MVV-LVA, killer, history) bir sonraki Faz 2 adımında gelecek.
-    if (tt_move != Move()) {
-        for (int i = 0; i < ml.count; ++i)
-            if (ml.moves[i] == tt_move) {
-                std::swap(ml.moves[0], ml.moves[i]);
-                break;
-            }
-    }
+    // Tüm hamleleri skorla (TT hamlesi, MVV-LVA, killer, history). Her iterasyonda
+    // kalanların en yükseğini öne çekiyoruz (lazy selection sort): iyi sıralamada
+    // beta kesmesi çoğunlukla ilk birkaç hamlede olur, kalanı sıralamak boşa gider.
+    int scores[256];
+    for (int i = 0; i < ml.count; ++i)
+        scores[i] = score_move(b, ml.moves[i], tt_move, ply);
 
     const int alpha_orig = alpha;
     int  best      = -INF;
     Move best_move = Move();
 
-    for (Move m : ml) {
+    for (int i = 0; i < ml.count; ++i) {
+        // Selection sort adımı: [i..) arasında en yüksek skorlu hamleyi i'ye getir.
+        int best_j = i;
+        for (int j = i + 1; j < ml.count; ++j)
+            if (scores[j] > scores[best_j])
+                best_j = j;
+        if (best_j != i) {
+            std::swap(ml.moves[i], ml.moves[best_j]);
+            std::swap(scores[i],   scores[best_j]);
+        }
+
+        const Move m = ml.moves[i];
         Board next = b;
         next.do_move(m);
         int score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
@@ -124,8 +200,13 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
 
         if (best > alpha)
             alpha = best;
-        if (alpha >= beta)
+        if (alpha >= beta) {
+            // Beta kesmesi: kesmeyi yapan quiet hamleyi killer + history'ye işle
+            // (yakalamalar MVV-LVA ile sıralanır, history'yi kirletmezler).
+            if (!is_capture(b, m) && m.type() != PROMOTION)
+                update_quiet_stats(b, m, ply, depth);
             break;
+        }
     }
 
     // --- Sonucu TT'ye sakla ---
