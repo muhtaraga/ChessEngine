@@ -24,6 +24,9 @@ constexpr int kMaxDepth = 63;
 // süre bütçesi (ms). Tek iş parçacığı olduğu için gerçek "infinite"/stop
 // desteklenmiyor; bunun yerine sınırlı süre aranıp bestmove verilir.
 constexpr std::int64_t kDefaultBudgetMs = 3000;
+// Zaman yönetimi güvenlik payı (ms): GUI iletişimi/gecikmesi için ayrılan tampon,
+// hesaplanan bütçeden düşülür ki saat aşımı (time forfeit) olmasın.
+constexpr std::int64_t kOverheadMs = 30;
 
 // UCI hamle dizesini (ör. "e2e4", "e7e8q") mevcut pozisyondaki legal bir
 // hamleyle eşleştirir. Böylece rok/en passant/promosyon bayrakları doğru atanır.
@@ -81,10 +84,11 @@ std::string score_string(int score) {
 // "go" komutunu işler: limitleri belirle, iterative deepening ile ara,
 // her derinlikte info yaz, sonunda bestmove ver.
 void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
-    int          depth    = -1;
-    std::int64_t movetime = -1;
+    int          depth     = -1;
+    std::int64_t movetime  = -1;
     std::int64_t wtime = -1, btime = -1, winc = 0, binc = 0;
-    bool         infinite = false;
+    std::int64_t movestogo = 0;   // 0 -> bilinmiyor (sudden death / artışlı)
+    bool         infinite  = false;
 
     // Bu arama için TT nesli ilerlet: önceki hamlelerden kalan girişler
     // değiştirmede önceliğini yitirsin (yaşlandırma).
@@ -92,33 +96,56 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
 
     std::string token;
     while (ss >> token) {
-        if      (token == "depth")    ss >> depth;
-        else if (token == "movetime") ss >> movetime;
-        else if (token == "wtime")    ss >> wtime;
-        else if (token == "btime")    ss >> btime;
-        else if (token == "winc")     ss >> winc;
-        else if (token == "binc")     ss >> binc;
-        else if (token == "infinite") infinite = true;
+        if      (token == "depth")     ss >> depth;
+        else if (token == "movetime")  ss >> movetime;
+        else if (token == "wtime")     ss >> wtime;
+        else if (token == "btime")     ss >> btime;
+        else if (token == "winc")      ss >> winc;
+        else if (token == "binc")      ss >> binc;
+        else if (token == "movestogo") ss >> movestogo;
+        else if (token == "infinite")  infinite = true;
     }
 
-    // Derinlik ve zaman bütçesini belirle.
-    int          max_depth = kMaxDepth;
-    std::int64_t budget_ms = -1;  // <0 -> zaman sınırı yok (yalnızca "go depth N")
+    // Derinlik ve zaman sınırlarını belirle.
+    SearchLimits lim;
+    lim.max_depth = kMaxDepth;
 
     if (depth > 0) {
-        max_depth = (depth < kMaxDepth) ? depth : kMaxDepth;  // sabit derinlik, süresiz
+        // Sabit derinlik: zaman sınırı yok.
+        lim.max_depth = (depth < kMaxDepth) ? depth : kMaxDepth;
     } else if (movetime > 0) {
-        budget_ms = movetime;
+        // Bu hamleye tam olarak bu süre: overhead düşülüp hepsi kullanılır.
+        std::int64_t use = movetime - kOverheadMs;
+        if (use < 1) use = 1;
+        lim.soft_ms = use;
+        lim.hard_ms = use;
     } else if (wtime > 0 || btime > 0) {
         std::int64_t t   = (b.side_to_move == WHITE) ? wtime : btime;
         std::int64_t inc = (b.side_to_move == WHITE) ? winc : binc;
         if (t < 0) t = 0;
-        // Basit bütçe: kalan sürenin ~1/30'u + artışın yarısı. (Faz 2'de gelişecek.)
-        budget_ms = t / 30 + inc / 2;
-        if (budget_ms < 5) budget_ms = 5;
+
+        // Bu hamleye ayrılacak süreyi asla aşamayacağımız üst sınır.
+        std::int64_t max_use = t - kOverheadMs;
+        if (max_use < 1) max_use = 1;
+
+        // Hedef pay: movestogo biliniyorsa kalan süreyi hamlelere böl (+1 güvenlik
+        // payı), yoksa ~1/30. Artışın yarısını ekle.
+        std::int64_t alloc = (movestogo > 0)
+                                 ? t / (movestogo + 1) + inc / 2
+                                 : t / 30 + inc / 2;
+        if (alloc > max_use) alloc = max_use;
+        if (alloc < 1)       alloc = 1;
+
+        // soft: hedef (yeni derinliğe başlama eşiği). hard: gerekirse bu derinliği
+        // bitirmek için taşabileceğimiz mutlak tavan (payı 3× ama max_use'u aşmaz).
+        lim.soft_ms = alloc;
+        lim.hard_ms = std::min<std::int64_t>(alloc * 3, max_use);
+        if (lim.hard_ms < lim.soft_ms) lim.hard_ms = lim.soft_ms;
     } else {
-        // Çıplak "go" veya "go infinite": varsayılan süre bütçesi.
-        budget_ms = kDefaultBudgetMs;
+        // Çıplak "go" veya "go infinite": varsayılan süre bütçesi (gerçek infinite
+        // tek iş parçacığında desteklenmiyor).
+        lim.soft_ms = kDefaultBudgetMs;
+        lim.hard_ms = kDefaultBudgetMs;
         (void)infinite;
     }
 
@@ -129,24 +156,9 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
                    clock::now() - start).count();
     };
 
-    SearchResult best;
-    for (int d = 1; d <= max_depth; ++d) {
-        // Bu derinlik için kalan süre. Derinlik 1 daima süresiz koşar ki en az
-        // bir legal hamle garanti olsun.
-        std::int64_t time_for_depth = -1;
-        if (budget_ms >= 0 && d > 1) {
-            std::int64_t remaining = budget_ms - elapsed_ms();
-            if (remaining <= 0)
-                break;  // yeni derinlik başlatacak süre yok
-            time_for_depth = remaining;
-        }
-
-        SearchResult r = search(b, d, time_for_depth);
-        if (r.aborted)
-            break;  // süre doldu: yarım derinliği at, önceki 'best' kullanılır
-
-        best = r;
-
+    // Iterative deepening + aspiration + zaman yönetimi search modülünde; burada
+    // yalnızca her tamamlanan derinlikte "info" satırını yazıyoruz.
+    SearchResult best = search_iterative(b, lim, [&](const SearchResult& r, int d) {
         auto elapsed = elapsed_ms();
         out << "info depth " << d
             << " score " << score_string(r.score)
@@ -160,10 +172,7 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
         }
         out << '\n';
         out.flush();
-
-        if (is_mate_score(r.score))
-            break;  // mat bulundu, daha derine gitme
-    }
+    });
 
     if (best.best == Move())
         out << "bestmove 0000\n";  // hamle yok (mat/pat)

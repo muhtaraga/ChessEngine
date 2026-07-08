@@ -44,7 +44,7 @@ hamlelerle oynuyor, perft testleri geçiyor.
 - [x] Zobrist hashing + transposition table
 - [x] Move ordering: MVV-LVA, killer moves, history heuristic
 - [x] Quiescence search (horizon effect'i azaltmak için)
-- [ ] Iterative deepening + time management
+- [x] Iterative deepening + time management
 - [ ] Gelişmiş evaluation: pawn structure, king safety, piece mobility
 - [ ] Cutechess-cli ile otomatik maç serisi altyapısı kur, her değişikliği
       önceki versiyona karşı test et (SPRT mantığıyla — regresyon var mı yok mu)
@@ -112,13 +112,31 @@ Faz 2 (devam ediyor):
   piyon pozisyonunda motor artık Rxe5?? oynamıyor (bestmove e1d1, cp 305).
   Test: QuiescenceAvoidsLosingCapture. İleride: SEE ile kayıplı yakalama elemesi,
   delta pruning.
+- Adım 4: Iterative deepening + time management (TAMAM). ID döngüsü + aspiration
+  windows + zaman yönetimi UCI'den `search.cpp`'ye taşındı: yeni
+  `search_iterative(board, SearchLimits, InfoCallback)`. `search()` (sabit
+  derinlik) testler için aynen duruyor.
+  - Searcher artık derinlikler boyunca YAŞIYOR -> killer/history derinlikler arası
+    korunuyor (Adım 2'deki "her search() çağrısında sıfırlanıyor" sınırı çözüldü).
+  - Aspiration windows: derinlik >2'de önceki puanın etrafında ±25 cp dar pencere;
+    fail-low/high'da ilgili sınır genişletilerek yeniden aranır. Sonuç birebir
+    aynı (exact), yalnızca hız. Ölçüm: startpos d11 250.7M/150s -> 221.4M/120s
+    (−12% düğüm, −20% süre); Kiwipete d9 9.40M -> 9.18M. Derinlik arttıkça kazanç
+    büyüyor. Test: IterativeMatchesFixedDepth (sabit-derinlik ile aynı best/skor).
+  - Abort'ta best-move koruma: bir derinlik süre dolunca yarıda kesilirse, kökte
+    önceki derinliğe göre gerçek iyileşme bulunmuşsa o hamle korunur (aksi halde
+    önceki derinliğin hamlesi). Kök izleme negamax ply==0'da anlık kaydediliyor.
+    PV tek hamleye kısaltılır (yarım varyant güvenilmez). Derinlik 1 daima süresiz
+    koşar (bestmove 0000 regresyonuna karşı). Test: IterativeReturnsMoveUnderTightTime.
+  - Zaman yönetimi (uci.cpp handle_go): movestogo parse edilir, kOverheadMs=30 ms
+    güvenlik payı. soft_ms = hedef pay (movestogo>0 -> t/(movestogo+1)+inc/2, yoksa
+    t/30+inc/2), hard_ms = min(pay*3, t−overhead). soft: yeni derinliğe başlama
+    eşiği; hard: mevcut derinliği bitirmek için mutlak tavan (abort mid-node).
+    Doğrulama: Kiwipete movetime 2000'de d8'i 1069ms'de bitirip d9'u başlattı,
+    hard limitte kesip d8 hamlesini döndürdü (blunder yok).
 
-**Sıradaki: Faz 2 Adım 4 — Gelişmiş evaluation** (pawn structure, king safety,
+**Sıradaki: Faz 2 Adım 5 — Gelişmiş evaluation** (pawn structure, king safety,
 piece mobility). Sonra cutechess-cli ile otomatik maç/SPRT regresyon altyapısı.
-
-Not: "Iterative deepening + time management" Faz 2 listesinde ayrı madde ama
-UCI handle_go'da Faz 1'de erken yapıldı (info akışı + basit zaman bütçesi);
-ileride aspiration windows / daha iyi zaman yönetimiyle güçlendirilebilir.
 
 ### İlk somut görev
 

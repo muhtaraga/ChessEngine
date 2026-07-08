@@ -2,6 +2,7 @@
 
 #include "engine/search.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <utility>
 
@@ -69,10 +70,20 @@ struct Searcher {
     // hamlelerin biriken puanı. Quiet hamle sıralamasını yönlendirir.
     int history[COLOR_NB][SQUARE_NB][SQUARE_NB] = {};
 
+    // Kök (ply 0) izleme: bu derinlikte kökte bulunan en iyi hamle/puan. Süre
+    // dolup arama yarıda kesilse bile en son iyileşmeyi elde tutmak için (bkz.
+    // search_iterative abort dalı). Her derinlik başında sıfırlanır.
+    Move root_best_move  = Move();
+    int  root_best_score = -INF;
+
     int  negamax(const Board& b, int depth, int alpha, int beta, int ply);
     int  quiescence(const Board& b, int alpha, int beta, int ply);
     int  score_move(const Board& b, Move m, Move tt_move, int ply) const;
     void update_quiet_stats(const Board& b, Move m, int ply, int depth);
+
+    // Kökte aspiration window ile arar: bir önceki derinliğin puanı etrafında
+    // dar pencere dene, fail-low/high olursa genişleterek yeniden ara.
+    int  search_root(const Board& b, int depth, int prev_score);
 };
 
 // Bir hamlenin yakalama olup olmadığı (en passant dahil). Hedef karede karşı
@@ -201,6 +212,13 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
             for (int j = ply + 1; j < pv_len[ply + 1]; ++j)
                 pv_table[ply][j] = pv_table[ply + 1][j];
             pv_len[ply] = pv_len[ply + 1];
+
+            // Kök iyileşmesini anında kaydet: süre dolup arama kesilse bile
+            // (aşağıdaki abort dönüşü) bu hamle search_iterative'de kullanılabilir.
+            if (ply == 0) {
+                root_best_move  = m;
+                root_best_score = score;
+            }
         }
 
         if (best > alpha)
@@ -315,6 +333,40 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
     return best;
 }
 
+// Kökte aspiration window araması. Sığ derinlikte (veya önceki puan mat ise)
+// puan kararsız/uçlarda olduğundan tam pencere kullanılır. Aksi halde önceki
+// puanın etrafında dar pencere denenir; fail-low/high olursa ilgili sınır
+// genişletilerek yeniden aranır (böylece iyi sıralamada çoğu düğüm dar pencereyle,
+// yani daha çok budamayla aranır).
+int Searcher::search_root(const Board& b, int depth, int prev_score) {
+    if (depth <= 2 || is_mate_score(prev_score))
+        return negamax(b, depth, -INF, INF, 0);
+
+    int delta = 25;  // ~1/4 piyon başlangıç penceresi
+    int alpha = std::max(prev_score - delta, -INF);
+    int beta  = std::min(prev_score + delta,  INF);
+
+    while (true) {
+        int score = negamax(b, depth, alpha, beta, 0);
+        if (aborted)
+            return score;
+
+        if (score <= alpha) {
+            // Fail-low: gerçek değer alt sınırın altında. Beta'yı ortala (üst
+            // yarıyı at), alt sınırı genişlet ve yeniden ara.
+            beta  = (alpha + beta) / 2;
+            alpha = std::max(score - delta, -INF);
+            delta += delta / 2;
+        } else if (score >= beta) {
+            // Fail-high: gerçek değer üst sınırın üstünde. Üst sınırı genişlet.
+            beta = std::min(score + delta, INF);
+            delta += delta / 2;
+        } else {
+            return score;  // pencere içinde: gerçek (exact) değer
+        }
+    }
+}
+
 }  // namespace
 
 SearchResult search(const Board& b, int depth, std::int64_t max_time_ms) {
@@ -336,6 +388,79 @@ SearchResult search(const Board& b, int depth, std::int64_t max_time_ms) {
         res.best = res.pv.empty() ? Move() : res.pv[0];
     }
     return res;
+}
+
+SearchResult search_iterative(const Board& b, const SearchLimits& lim,
+                              const InfoCallback& info) {
+    Searcher s;
+    if (lim.hard_ms >= 0) {
+        s.use_deadline = true;
+        s.deadline = Clock::now() + std::chrono::milliseconds(lim.hard_ms);
+    }
+
+    const auto start = Clock::now();
+    auto elapsed_ms = [&] {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   Clock::now() - start).count();
+    };
+
+    SearchResult best;      // son TAMAMLANAN derinliğin sonucu
+    int          prev_score = 0;
+
+    for (int depth = 1; depth <= lim.max_depth; ++depth) {
+        s.root_best_move  = Move();
+        s.root_best_score = -INF;
+
+        // Derinlik 1 daima süresiz koşsun ki en az bir legal hamle garanti olsun
+        // (aksi halde çok kısa bütçede bestmove 0000 dönebilirdik).
+        const bool saved_deadline = s.use_deadline;
+        if (depth == 1)
+            s.use_deadline = false;
+
+        int score = s.search_root(b, depth, prev_score);
+
+        s.use_deadline = saved_deadline;
+
+        if (s.aborted) {
+            // Süre doldu: bu yarım derinliği normalde atarız (önceki 'best'
+            // oynanır). Ama kökte önceki derinliğe göre gerçek bir iyileşme
+            // bulunduysa onu korumak blunder'ı önler. PV'yi tek hamleye kısalt
+            // (kalan varyant yarım aramadan güvenilir değil).
+            if (depth > 1 && s.root_best_move != Move() &&
+                s.root_best_score > prev_score) {
+                best.best  = s.root_best_move;
+                best.score = s.root_best_score;
+                best.pv.assign(1, s.root_best_move);
+            }
+            best.nodes   = s.nodes;
+            best.aborted = true;
+            break;
+        }
+
+        // Derinlik tamamlandı: sonucu güncelle.
+        prev_score   = score;
+        best.score   = score;
+        best.nodes   = s.nodes;
+        best.aborted = false;
+        best.pv.clear();
+        for (int j = 0; j < s.pv_len[0]; ++j)
+            best.pv.push_back(s.pv_table[0][j]);
+        best.best = best.pv.empty() ? Move() : best.pv[0];
+
+        if (info)
+            info(best, depth);
+
+        if (is_mate_score(score))
+            break;  // mat bulundu: daha derine gitmenin anlamı yok
+
+        // Soft limit: hedef bütçeyi aştıysak bir sonraki (daha pahalı) derinliğe
+        // başlama; elimizdeki en iyi hamleyi oyna.
+        std::int64_t soft = (lim.soft_ms >= 0) ? lim.soft_ms : lim.hard_ms;
+        if (soft >= 0 && elapsed_ms() >= soft)
+            break;
+    }
+
+    return best;
 }
 
 }  // namespace engine

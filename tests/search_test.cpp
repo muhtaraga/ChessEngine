@@ -72,3 +72,43 @@ TEST(Search, QuiescenceAvoidsLosingCapture) {
     EXPECT_NE(r.best, Move::make(E1, E5));  // savunmalı piyonu almamalı
     EXPECT_GT(r.score, 0);                  // yine de materyal önde (kale vs 2 piyon)
 }
+
+// Iterative deepening + aspiration windows sonucu DEĞİŞTİRMEMELİ (yalnızca hızı
+// etkiler): aynı derinlikte sabit-derinlik tam-pencere aramasıyla birebir aynı
+// en iyi hamle ve puanı vermeli.
+TEST(Search, IterativeMatchesFixedDepth) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchLimits lim;
+    lim.max_depth = 6;  // süresiz (soft/hard = -1)
+    SearchResult it = search_iterative(b, lim);
+    SearchResult fx = search(b, 6);
+    EXPECT_EQ(it.best, fx.best);
+    EXPECT_EQ(it.score, fx.score);
+    EXPECT_EQ(it.best, Move::make(E1, E5));  // yine de bedava veziri al
+}
+
+// Iterative deepening mat pozisyonunu bulmalı ve mat puanında erken durmalı.
+TEST(Search, IterativeFindsMate) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchLimits lim;
+    lim.max_depth = 5;
+    SearchResult r = search_iterative(b, lim);
+    EXPECT_EQ(r.best, Move::make(A1, A8));
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
+// Çok kısa süre bütçesinde bile geçerli bir hamle dönmeli: derinlik 1 daima
+// süresiz koşar (abort'ta bestmove 0000 dönme regresyonuna karşı).
+TEST(Search, IterativeReturnsMoveUnderTightTime) {
+    Board b;
+    b.set_startpos();
+    SearchLimits lim;
+    lim.max_depth = 63;
+    lim.soft_ms   = 1;
+    lim.hard_ms   = 1;
+    SearchResult r = search_iterative(b, lim);
+    EXPECT_NE(r.best, Move());  // en az derinlik 1'in hamlesi elde olmalı
+}
