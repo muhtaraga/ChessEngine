@@ -51,6 +51,26 @@ inline constexpr int PhaseWeight[PIECE_TYPE_NB] = {
 // 4 kale*2 + 2 vezir*4 = 4 + 4 + 8 + 8 = 24.
 inline constexpr int MAX_PHASE = 24;
 
+// --- Pawn structure ağırlıkları (santipiyon, MG/EG ayrı; tapered) ---
+// Değerler standart/güvenli aralıkta; net Elo katkısı SPRT ile doğrulanır,
+// tek tek ince ayar sonraki iş. Cezalar negatif, bonuslar pozitif.
+
+// İzole piyon (komşu sütunlarda dost piyon yok) — piyon başına ceza.
+inline constexpr int IsolatedPenaltyMg = -12;
+inline constexpr int IsolatedPenaltyEg = -15;
+
+// Çift piyon (aynı sütunda birden fazla) — ilk piyondan fazlası başına ceza.
+// Oyun sonunda daha ağır (hareketsiz, geçemeyen piyon zayıflığı belirginleşir).
+inline constexpr int DoubledPenaltyMg = -10;
+inline constexpr int DoubledPenaltyEg = -20;
+
+// Geçer piyon bonusu, piyonun SIRASINA (rank index 0-7) göre; ilerledikçe artar.
+// Oyun sonunda belirgin daha büyük — tapered eval'in esas kazandığı yer.
+// İndeks: beyaz için rank_of(sq), siyah için 7 - rank_of(sq). Uçlar (0,7) piyon
+// için imkânsız, 0 bırakıldı.
+inline constexpr int PassedBonusMg[8] = {0, 5, 10, 15, 25, 40, 60, 0};
+inline constexpr int PassedBonusEg[8] = {0, 10, 20, 35, 60, 90, 120, 0};
+
 namespace detail {
 
 // Ham PST tabloları (orta oyun), görsel düzen: indeks 0 = a8, indeks 63 = h1.
@@ -150,15 +170,75 @@ constexpr std::array<std::array<int, SQUARE_NB>, PIECE_TYPE_NB> make_pst_eg() {
     return t;
 }
 
+// --- Pawn structure bitboard maskeleri (derleme zamanı) ---
+
+// Her sütunun (file 0-7) sekiz karesini içeren bitboard.
+constexpr std::array<Bitboard, 8> make_file_masks() {
+    std::array<Bitboard, 8> t{};
+    for (int f = 0; f < 8; ++f) {
+        Bitboard bb = 0;
+        for (int r = 0; r < 8; ++r)
+            bb |= Bitboard{1} << (r * 8 + f);
+        t[f] = bb;
+    }
+    return t;
+}
+
+// Bir sütunun komşu sütunları (f-1 ve f+1, tahta içinde). İzole tespiti için:
+// piyonun sütununun komşularında dost piyon yoksa piyon izoledir.
+constexpr std::array<Bitboard, 8> make_adjacent_file_masks() {
+    auto files = make_file_masks();
+    std::array<Bitboard, 8> t{};
+    for (int f = 0; f < 8; ++f) {
+        Bitboard bb = 0;
+        if (f > 0) bb |= files[f - 1];
+        if (f < 7) bb |= files[f + 1];
+        t[f] = bb;
+    }
+    return t;
+}
+
+// Geçer piyon "önündeki alan" maskesi: sq'nun sütunu + komşu sütunlar, yalnızca
+// ilerideki sıralar (beyaz için rank > rank_of(sq), siyah için rank <). Bu maske
+// altında RAKİP piyon yoksa piyon geçerdir (durduramaz/yakalayamazlar).
+constexpr std::array<std::array<Bitboard, SQUARE_NB>, COLOR_NB> make_passed_masks() {
+    std::array<std::array<Bitboard, SQUARE_NB>, COLOR_NB> t{};
+    for (int sq = 0; sq < SQUARE_NB; ++sq) {
+        int f = sq & 7, r = sq >> 3;
+        Bitboard w = 0, b = 0;
+        for (int nf = f - 1; nf <= f + 1; ++nf) {
+            if (nf < 0 || nf > 7) continue;
+            for (int nr = 0; nr < 8; ++nr) {
+                Bitboard bit = Bitboard{1} << (nr * 8 + nf);
+                if (nr > r) w |= bit;  // beyaz ilerisi (yukarı)
+                if (nr < r) b |= bit;  // siyah ilerisi (aşağı)
+            }
+        }
+        t[WHITE][sq] = w;
+        t[BLACK][sq] = b;
+    }
+    return t;
+}
+
 }  // namespace detail
 
 // Beyaz bakışıyla orta oyun / oyun sonu PST. Siyah için dikey ayna: [pt][sq ^ 56].
 inline constexpr auto PstMg = detail::make_pst_mg();
 inline constexpr auto PstEg = detail::make_pst_eg();
 
+// Pawn structure maskeleri (derleme zamanı, beyaz+siyah).
+inline constexpr auto FileMask         = detail::make_file_masks();
+inline constexpr auto AdjacentFileMask = detail::make_adjacent_file_masks();
+inline constexpr auto PassedMask       = detail::make_passed_masks();
+
 // Pozisyonun oyun fazı [0, MAX_PHASE]: MAX_PHASE = tam kadro (orta oyun ucu),
 // 0 = yalnız şah+piyon (oyun sonu ucu).
 int game_phase(const Board& b);
+
+// Pawn structure katkısı (izole + çift + geçer piyon), BEYAZ − SİYAH bakışıyla,
+// MG ve EG ayrı out-param olarak. evaluate() bunu akümülatörlerine ekler; ayrıca
+// terimleri PST gürültüsü olmadan izole test etmek için doğrudan çağrılabilir.
+void pawn_structure(const Board& b, int& mg, int& eg);
 
 // Hamle sırası olan tarafın bakışından statik değerlendirme (santipiyon).
 int evaluate(const Board& b);

@@ -75,3 +75,54 @@ TEST(Eval, KingCentralizedInEndgame) {
     ASSERT_EQ(game_phase(center), 0);
     EXPECT_GT(evaluate(center), evaluate(corner));
 }
+
+// --- Pawn structure testleri (pawn_structure yardımcısıyla, PST gürültüsü yok) ---
+
+// İzole piyon: beyazın a-piyonunun komşu (b) sütununda dost piyon yok -> izole;
+// siyahın a7/b7 piyonları bağlı. Beyaz yapısal olarak geride (mg < 0).
+TEST(Eval, PawnIsolatedPenalty) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/pp6/8/8/8/8/P7/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    pawn_structure(b, mg, eg);
+    // Yalnızca beyaz a-piyonu izole; başka terim yok -> tam ceza kadar.
+    EXPECT_EQ(mg, IsolatedPenaltyMg);
+    EXPECT_EQ(eg, IsolatedPenaltyEg);
+}
+
+// Çift piyon: beyazın a-sütununda iki piyonu (a2,a4), b2 komşusuyla izole değil;
+// siyahın çift/izolesi yok. Tam olarak bir çift-piyon cezası görülmeli.
+TEST(Eval, PawnDoubledPenalty) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/pp6/8/8/P7/8/PP6/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    pawn_structure(b, mg, eg);
+    EXPECT_EQ(mg, DoubledPenaltyMg);
+    EXPECT_EQ(eg, DoubledPenaltyEg);
+}
+
+// Geçer piyon: beyazın d5+e5 piyonları (birbirinin komşusu -> izole değil),
+// siyahta hiç piyon yok -> ikisi de geçer. Bonus pozitif ve oyun sonunda (EG)
+// orta oyundan (MG) belirgin büyük olmalı (tapered).
+TEST(Eval, PawnPassedBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/3PP3/8/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    pawn_structure(b, mg, eg);
+    // d5 ve e5 -> rank index 4 (5. sıra).
+    EXPECT_EQ(mg, 2 * PassedBonusMg[4]);
+    EXPECT_EQ(eg, 2 * PassedBonusEg[4]);
+    EXPECT_GT(eg, mg);  // geçer piyon oyun sonunda daha değerli
+}
+
+// Renk simetrisi: beyaz (a2,a4) ve siyah (a5,a7) aynı yapısal kusurları (çift +
+// izole) aynalı taşır -> beyaz−siyah katkı tam sıfır, ve evaluate() de 0.
+TEST(Eval, PawnStructureSymmetry) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/p7/8/p7/P7/8/P7/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    pawn_structure(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+}
