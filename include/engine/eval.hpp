@@ -71,6 +71,15 @@ inline constexpr int DoubledPenaltyEg = -20;
 inline constexpr int PassedBonusMg[8] = {0, 5, 10, 15, 25, 40, 60, 0};
 inline constexpr int PassedBonusEg[8] = {0, 10, 20, 35, 60, 90, 120, 0};
 
+// --- Mobility ağırlıkları (santipiyon, MG/EG ayrı; taş türü başına) ---
+// Taşın ulaşabildiği (dost taşla dolu OLMAYAN) kare sayısına doğrusal bonus.
+// Piyon ve şah hariç: piyon yapısı ayrı ele alınır, şah "mobilitesi" güvenlikle
+// ters düşer. Vezir ağırlığı düşük — erken vezir çıkışını ödüllendirmemek için.
+// Kale EG'de daha değerli (açık hatlar oyun sonunda kritik).
+// İndeks taş türüdür (PAWN..KING).
+inline constexpr int MobilityMg[PIECE_TYPE_NB] = {0, 4, 4, 2, 1, 0};
+inline constexpr int MobilityEg[PIECE_TYPE_NB] = {0, 4, 4, 4, 2, 0};
+
 namespace detail {
 
 // Ham PST tabloları (orta oyun), görsel düzen: indeks 0 = a8, indeks 63 = h1.
@@ -239,6 +248,10 @@ int game_phase(const Board& b);
 // MG ve EG ayrı out-param olarak. evaluate() bunu akümülatörlerine ekler; ayrıca
 // terimleri PST gürültüsü olmadan izole test etmek için doğrudan çağrılabilir.
 void pawn_structure(const Board& b, int& mg, int& eg);
+
+// Mobility katkısı (at/fil/kale/vezir ulaşılabilir kare sayısı), BEYAZ − SİYAH,
+// MG/EG ayrı out-param. evaluate() akümülatörlerine ekler; izole test edilebilir.
+void mobility(const Board& b, int& mg, int& eg);
 
 // Hamle sırası olan tarafın bakışından statik değerlendirme (santipiyon).
 int evaluate(const Board& b);

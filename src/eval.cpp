@@ -2,6 +2,7 @@
 
 #include "engine/eval.hpp"
 
+#include "engine/attacks.hpp"
 #include "engine/bitboard.hpp"
 #include "engine/board.hpp"
 
@@ -67,6 +68,38 @@ void pawn_structure(const Board& b, int& mg, int& eg) {
     }
 }
 
+void mobility(const Board& b, int& mg, int& eg) {
+    mg = 0;
+    eg = 0;
+    const Bitboard occ = b.occupancy();
+
+    // Her renk için at/fil/kale/vezir; ulaşılabilir (dost olmayan) kare sayısı ×
+    // tür ağırlığı. Beyaz +, siyah − (beyaz bakışı). Sliding taşlar magic
+    // tablolarla, at sabit tabloyla; hepsi statik olarak init edilmiş durumda.
+    for (Color c : {WHITE, BLACK}) {
+        const Bitboard own  = b.colors[c];
+        const int      sign = (c == WHITE) ? 1 : -1;
+
+        auto add = [&](PieceType pt, Bitboard attacks) {
+            int m = popcount(attacks & ~own);  // dost taşla dolu kareler hariç
+            mg += sign * m * MobilityMg[pt];
+            eg += sign * m * MobilityEg[pt];
+        };
+
+        Bitboard knights = b.pieces[KNIGHT] & own;
+        while (knights) { Square s = pop_lsb(knights); add(KNIGHT, knight_attacks(s)); }
+
+        Bitboard bishops = b.pieces[BISHOP] & own;
+        while (bishops) { Square s = pop_lsb(bishops); add(BISHOP, bishop_attacks(s, occ)); }
+
+        Bitboard rooks = b.pieces[ROOK] & own;
+        while (rooks) { Square s = pop_lsb(rooks); add(ROOK, rook_attacks(s, occ)); }
+
+        Bitboard queens = b.pieces[QUEEN] & own;
+        while (queens) { Square s = pop_lsb(queens); add(QUEEN, queen_attacks(s, occ)); }
+    }
+}
+
 int evaluate(const Board& b) {
     // Orta oyun ve oyun sonu puanları ayrı biriktirilir (beyaz bakışıyla).
     int mg = 0;
@@ -97,6 +130,12 @@ int evaluate(const Board& b) {
     pawn_structure(b, pmg, peg);
     mg += pmg;
     eg += peg;
+
+    // Mobility (at/fil/kale/vezir) katkısı beyaz − siyah olarak eklenir.
+    int mmg = 0, meg = 0;
+    mobility(b, mmg, meg);
+    mg += mmg;
+    eg += meg;
 
     // Faza göre interpolasyon: tam kadroda (phase=MAX) tamamen mg, oyun sonunda
     // (phase=0) tamamen eg. Materyal her iki uçta eşit olduğundan interpolasyondan

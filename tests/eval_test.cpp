@@ -126,3 +126,29 @@ TEST(Eval, PawnStructureSymmetry) {
     EXPECT_EQ(eg, 0);
     EXPECT_EQ(evaluate(b), 0);
 }
+
+// --- Mobility testleri ---
+
+// Aktif taş daha çok mobilite: beyaz atı merkezde (d4, 8 hamle), siyah atı köşede
+// (a8, 2 hamle). pawn_structure/PST gürültüsü olmadan mobility yardımcısıyla test.
+TEST(Eval, MobilityFavorsActivePieces) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("n3k3/8/8/8/3N4/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    mobility(b, mg, eg);
+    // Beyaz Nd4=8 hamle, siyah Na8=2 hamle -> fark 6 kare × at ağırlığı.
+    EXPECT_EQ(mg, 6 * MobilityMg[KNIGHT]);
+    EXPECT_EQ(eg, 6 * MobilityEg[KNIGHT]);
+    EXPECT_GT(mg, 0);
+}
+
+// Renk simetrisi: beyaz Rd1 + siyah Rd8 aynalı -> mobility katkısı 0, evaluate 0.
+TEST(Eval, MobilitySymmetry) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("3rk3/8/8/8/8/8/8/3RK3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    mobility(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+}
