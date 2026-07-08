@@ -70,6 +70,7 @@ struct Searcher {
     int history[COLOR_NB][SQUARE_NB][SQUARE_NB] = {};
 
     int  negamax(const Board& b, int depth, int alpha, int beta, int ply);
+    int  quiescence(const Board& b, int alpha, int beta, int ply);
     int  score_move(const Board& b, Move m, Move tt_move, int ply) const;
     void update_quiet_stats(const Board& b, Move m, int ply, int depth);
 };
@@ -142,8 +143,12 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
     if (b.halfmove_clock >= 100)
         return 0;
 
+    // Horizon: statik eval yerine sessiz-arama (quiescence) — yakalama zincirleri
+    // sessizleşene kadar aranır, böylece "yarım kalmış" taş alışverişleri doğru
+    // değerlendirilir (horizon effect azalır). Terminal/50-hamle yukarıda ele
+    // alındı; buraya yalnızca sessiz olmayabilecek gerçek yaprak düğümler gelir.
     if (depth == 0 || ply >= MAX_PLY - 1)
-        return evaluate(b);
+        return quiescence(b, alpha, beta, ply);
 
     // --- Transposition table sondası ---
     TTEntry tte;
@@ -217,6 +222,95 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
                 : (best >= beta)       ? Bound::LOWER
                 :                        Bound::EXACT;
     TT.store(b.key, depth, score_to_tt(best, ply), bound, best_move);
+
+    return best;
+}
+
+// Quiescence (sessiz-arama): negamax'ın yaprağında çağrılır. Yalnızca "gürültülü"
+// hamleleri (yakalamalar + promosyonlar) arar; pozisyon sessizleşince statik eval
+// döner. Böylece derinlik sınırının tam ortasındaki taş alışverişleri yanlış
+// değerlendirilmez. Çekteyken stand-pat yapılmaz ve tüm legal kaçışlar aranır
+// (mat/horizon doğruluğu). İyileştirmeler (SEE ile kayıplı yakalama elemesi,
+// delta pruning) sonraya bırakıldı.
+int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
+    if (use_deadline && (nodes & 4095) == 0 && Clock::now() >= deadline)
+        aborted = true;
+    if (aborted)
+        return 0;
+
+    ++nodes;
+
+    if (ply >= MAX_PLY - 1)
+        return evaluate(b);
+
+    const bool in_check =
+        is_square_attacked(b, b.king_square(b.side_to_move), ~b.side_to_move);
+
+    MoveList ml;
+    generate_legal(b, ml);
+
+    int best;
+    if (in_check) {
+        // Çekteyiz: stand-pat yasak, tüm kaçışları aramalıyız. Kaçış yoksa mat.
+        if (ml.size() == 0)
+            return -MATE + ply;
+        best = -INF;
+    } else {
+        // Stand-pat: sıradaki taraf hiçbir şey almadan mevcut skoru "cebe atabilir"
+        // (sessiz pozisyonda eval alt sınır kabul edilir). Beta'yı aşıyorsa kes.
+        int stand_pat = evaluate(b);
+        if (stand_pat >= beta)
+            return stand_pat;
+        if (stand_pat > alpha)
+            alpha = stand_pat;
+        best = stand_pat;
+    }
+
+    // Aranacak hamleler: çekteyken hepsi; değilse yalnızca yakalama + promosyon.
+    MoveList todo;
+    for (Move m : ml)
+        if (in_check || is_capture(b, m) || m.type() == PROMOTION)
+            todo.add(m);
+
+    // MVV-LVA (+ promosyon primi) ile skorla.
+    int scores[256];
+    for (int i = 0; i < todo.count; ++i) {
+        Move m = todo.moves[i];
+        PieceType victim    = (m.type() == EN_PASSANT) ? PAWN
+                            : is_capture(b, m)         ? b.type_on(m.to())
+                            :                            PAWN;
+        PieceType aggressor = b.type_on(m.from());
+        int s = static_cast<int>(victim) * 16 - static_cast<int>(aggressor);
+        if (m.type() == PROMOTION)
+            s += 1000 + static_cast<int>(m.promotion_type());
+        scores[i] = s;
+    }
+
+    for (int i = 0; i < todo.count; ++i) {
+        // Lazy selection sort: kalanların en yüksek skorlusunu öne getir.
+        int best_j = i;
+        for (int j = i + 1; j < todo.count; ++j)
+            if (scores[j] > scores[best_j])
+                best_j = j;
+        if (best_j != i) {
+            std::swap(todo.moves[i], todo.moves[best_j]);
+            std::swap(scores[i],     scores[best_j]);
+        }
+
+        Board next = b;
+        next.do_move(todo.moves[i]);
+        int score = -quiescence(next, -beta, -alpha, ply + 1);
+
+        if (aborted)
+            return best;
+
+        if (score > best)
+            best = score;
+        if (best > alpha)
+            alpha = best;
+        if (alpha >= beta)
+            break;  // fail-high
+    }
 
     return best;
 }

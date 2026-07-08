@@ -60,3 +60,15 @@ TEST(Search, MoveOrderingPreservesTacticAtDepth) {
     EXPECT_EQ(r.best, Move::make(E1, E5));  // yine bedava veziri al
     EXPECT_GT(r.score, 500);
 }
+
+// Quiescence: horizon effect testi. Beyaz Rxe5 ile piyon "kazanır" gibi görünür
+// ama e5 piyonu d6 piyonuyla savunulur -> ...dxe5 kaleyi kazanır. Quiescence
+// olmadan derinlik 1'de motor yatay çizginin ardındaki geri alışı göremez ve
+// Rxe5'i seçebilirdi; quiescence ile bunu görüp kaçınmalı.
+TEST(Search, QuiescenceAvoidsLosingCapture) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/3p4/4p3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 1);
+    EXPECT_NE(r.best, Move::make(E1, E5));  // savunmalı piyonu almamalı
+    EXPECT_GT(r.score, 0);                  // yine de materyal önde (kale vs 2 piyon)
+}
