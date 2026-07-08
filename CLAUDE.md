@@ -136,10 +136,12 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-08): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
 üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
-geçiyor. Toplam 70 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
+geçiyor. Toplam 72 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
 SPRT altyapısı (cutechess-cli KURULU + komutsuz web GUI) tamam. Tapered eval'in
 Elo katkısı SPRT ile doğrulandı (+42.8 ± 16.3, H1). İlk gelişmiş eval terimi
 **pawn structure (isole/çift/geçer piyon) da SPRT'den geçti (+45.4 ± 16.8, H1)**.
+Ayrıca **arama tekrar (repetition) tespiti eklendi ve SPRT'den geçti (+27.2 ±
+12.7, H1)** — motor artık kazandığı pozisyonda 3-hamle tekrarına düşmüyor.
 Sırada kalan gelişmiş evaluation: king safety, mobility, bishop pair,
 rook-on-open-file — her biri ayrı SPRT'den geçirilerek.
 
@@ -288,9 +290,23 @@ Faz 2B (devam ediyor):
   - Sıradaki 2B işleri: king safety, piece mobility, bishop pair, rook on
     open/semi-open file — her biri ayrı commit + ayrı SPRT'den geçirilerek
     (altyapı + GUI hazır).
+- Ek (arama doğruluk düzeltmesi): Tekrar (repetition) tespiti (TAMAM, commit
+  3d04898). Kullanıcı bildirimi: motor kazandığı pozisyonda bile 3-hamle
+  tekrarıyla berabere yapıyordu (arama yalnız mat/pat + 50-hamle görüyordu).
+  Çözüm: oyun pozisyon geçmişi (Zobrist anahtarları) UCI `handle_position`'da
+  toplanıp search'e `history` parametresiyle taşınıyor; negamax'ta ply>0'da TT
+  sondasından ÖNCE `is_repetition` (halfmove_clock sınırlı, aynı-sıra pariteli
+  step-2 tarama, ilk eşleşme = beraberlik 0); RAII `KeyGuard` ile her düğümün
+  anahtarı push/pop (abort dahil her yolda dengeli). Önde olan taraf tekrarı
+  reddeder, geride olan (perpetual) arar. Testler: ForcedRepetitionSavesLosingSide
+  (ayırt edici: geçmişle 0, geçmişsiz -900), WinningSideAvoidsRepetition (70->72).
+  E2e: KQvK sallanma geçmişiyle motor mate-in-7 buluyor. **SPRT: base 02c12f5 vs
+  new 3d04898, 1534 oyun, W-D-L 468-718-348, Elo +27.2 ± 12.7, LLR 2.97, H1 kabul.**
+  Bilinçli ertelenen: contempt (draw≠0), cuckoo-tablo hızlı tespiti.
 
-**Sıradaki: Faz 2B — gelişmiş evaluation (devam).** Tapered eval (+42.8) ve pawn
-structure (+45.4) SPRT'den geçti. Kalan gelişmiş evaluation adımları: king safety,
+**Sıradaki: Faz 2B — gelişmiş evaluation (devam).** Tapered eval (+42.8), pawn
+structure (+45.4) ve arama tekrar tespiti (+27.2) SPRT'den geçti. Kalan gelişmiş
+evaluation adımları: king safety,
 piece mobility, bishop pair, rook on open/semi-open file — her biri ayrı bir
 commit + ayrı bir SPRT koşusundan (GUI'den) geçirilerek. 2B bitince Faz 2C
 (selective search: PVS, null move, SEE, LMR, futility
