@@ -349,6 +349,23 @@ Faz 2B (devam ediyor):
   queen-presence gate, king_safety'yi mobility ile tek saldırı geçişinde
   birleştirme (hız), SafetyTable scaling ince ayarı.
 
+Faz 2C (selective search — devam ediyor):
+- Adım 1: PVS (Principal Variation Search) (TAMAM). negamax
+  hamle döngüsünde: ilk (en iyi sıralanan) hamle tam pencere; kalanlar null-window
+  scout [-alpha-1, -alpha]; scout alpha'yı geçip beta'nın altında kalırsa tam
+  pencereyle yeniden aranır. Selection sort zaten en iyi hamleyi i==0'a getirdiği
+  için ilk-hamle varsayımı sağlanıyor; abort hem scout hem re-search sonrası
+  yoklanıyor; fail-soft korunuyor. **PVS exact (davranış-koruyan) optimizasyon ->
+  SPRT YOK; kapı exactness** (kullanıcı kararı; SPRT LMR'ye saklandı). Doğrulama
+  (Debug, PVS öncesi 7eea85f vs sonrası): startpos d9 cp34 e2e4 birebir (nodes
+  10.46M->10.25M, −2%), Kiwipete d8 cp5 e2a6 birebir (13.08M->12.71M, −2.8%),
+  startpos d10 cp1 b1c3 (47.36M->44.04M, −7%). Score+bestmove üçünde birebir aynı;
+  d10'da PV 4. hamleden sonra ayrışıyor ama bu bug değil — PVS PV düğümlerini tam
+  pencereyle aradığından pv_table daha dolu doluyor (eski TT-kesmeli 6-hamle PV ->
+  10-hamle dolu PV), score+bestmove değişmiyor. Düğüm düşüşü derinlikle büyüyor
+  (tipik PVS). 81 test geçiyor (IterativeMatchesFixedDepth PVS iç tutarlılığını
+  yakalar). Not: PVS'in asıl değeri LMR/null-move'un oturacağı null-window çerçevesi.
+
 **FAZ 2B EVALUATION TAMAM. Sıradaki: Faz 2C — PVS (selective search'ün ilk
 adımı).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;

@@ -251,7 +251,22 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
         const Move m = ml.moves[i];
         Board next = b;
         next.do_move(m);
-        int score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
+
+        // PVS (Principal Variation Search): ilk (en iyi sıralanan) hamle tam
+        // pencereyle aranır ve PV adayı kabul edilir. Kalan hamleler önce
+        // null-window (scout) [-alpha-1, -alpha] ile aranır — bu yalnızca "bu
+        // hamle alpha'dan iyi mi?" sorusunu ucuza (daha çok budamayla) yanıtlar.
+        // Scout alpha'yı geçerse (ve beta'nın altındaysa) varsayım yanlıştı: gerçek
+        // değeri bulmak için tam pencereyle yeniden aranır. İyi move ordering'de
+        // re-search nadirdir, net kazanç düğüm sayısında. (LMR'nin oturacağı çerçeve.)
+        int score;
+        if (i == 0) {
+            score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
+        } else {
+            score = -negamax(next, depth - 1, -alpha - 1, -alpha, ply + 1);
+            if (!aborted && score > alpha && score < beta)
+                score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
+        }
 
         if (aborted)
             return best;  // süre doldu: yarım sonucu bırak (çağıran yok sayar)
