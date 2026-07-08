@@ -92,6 +92,45 @@ inline constexpr int RookOpenEg = 15;
 inline constexpr int RookSemiMg = 12;
 inline constexpr int RookSemiEg = 8;
 
+// --- King safety ağırlıkları (YALNIZ orta oyun; EG=0 -> taper ile solar) ---
+// Oyun sonunda şah merkeze/aktifliğe yönelir (KingCentralizedInEndgame), güvenlik
+// önemsizleşir; bu yüzden king_safety yalnız MG'ye katkı verir (eg her zaman 0).
+//
+// Piyon kalkanı: şahın önündeki (renk yönünde iki sıra) kf-1..kf+1 sütunlarında
+// dost piyon yoksa, o sütun için "danger" (tehlike, pozitif santipiyon) eklenir.
+inline constexpr int ShieldMissingPenalty = 15;  // eksik kalkan sütunu başına
+// Şah kenarda değilse (kf-1 veya kf+1 tahta içindeyse) her sütun sayılır; tahta
+// kenarındaki geçersiz sütun eksik sayılmaz (aşağıdaki döngü atlar).
+
+// Şah bölgesi (king ring) saldırıları -> "attack units". Rakip taş türü başına
+// ağırlık, o taşın şah halkasında vurduğu kare sayısıyla çarpılır (CPW "King
+// Safety" örneği). Küçük ağırlıklar kasıtlı: kare-sayısıyla çarpılıp toplanır.
+inline constexpr int KingAttackWeight[PIECE_TYPE_NB] = {
+    0,  // PAWN  (piyon baskısı ayrı ele alınmıyor)
+    2,  // KNIGHT
+    2,  // BISHOP
+    3,  // ROOK
+    5,  // QUEEN
+    0   // KING
+};
+
+// SafetyTable[units] -> orta oyun "danger" cezası (santipiyon), doğrusal değil:
+// düşük baskıda ~0 (normal pozisyonlar cezalanmaz), baskı arttıkça hızla büyür,
+// ~çeyrek vezir eşiğinde 500'de doygunlaşır. CPW "King Safety" standart tablosu.
+// İndeks 0..99 (units bu aralığa kırpılır).
+inline constexpr int SafetyTable[100] = {
+      0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
+     18,  22,  26,  30,  35,  39,  44,  50,  56,  62,
+     68,  75,  82,  85,  89,  97, 105, 113, 122, 131,
+    140, 150, 169, 180, 191, 202, 213, 225, 237, 248,
+    260, 272, 283, 295, 307, 319, 330, 342, 354, 366,
+    377, 389, 401, 412, 424, 436, 448, 459, 471, 483,
+    494, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+    500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+    500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+    500, 500, 500, 500, 500, 500, 500, 500, 500, 500
+};
+
 namespace detail {
 
 // Ham PST tabloları (orta oyun), görsel düzen: indeks 0 = a8, indeks 63 = h1.
@@ -270,6 +309,10 @@ void bishop_pair(const Board& b, int& mg, int& eg);
 
 // Kale açık/yarı-açık sütun katkısı, BEYAZ − SİYAH, MG/EG ayrı.
 void rook_on_file(const Board& b, int& mg, int& eg);
+
+// King safety katkısı (piyon kalkanı + şah bölgesi saldırıları), BEYAZ − SİYAH.
+// eg her zaman 0 (yalnız orta oyun terimi); mg negatif = beyaz şahı daha güvensiz.
+void king_safety(const Board& b, int& mg, int& eg);
 
 // Hamle sırası olan tarafın bakışından statik değerlendirme (santipiyon).
 int evaluate(const Board& b);

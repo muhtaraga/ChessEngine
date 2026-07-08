@@ -201,3 +201,43 @@ TEST(Eval, BishopRookSymmetry) {
     EXPECT_EQ(reg, 0);
     EXPECT_EQ(evaluate(b), 0);
 }
+
+// --- King safety testleri (king_safety yardımcısıyla, PST/materyal gürültüsü yok) ---
+
+// Piyon kalkanı: beyaz şah g1, kalkan f2+h2 var ama g-sütunu boş (1 eksik sütun);
+// siyah şah g8 tam kalkanlı (f7,g7,h7). Ortada saldıran taş yok -> yalnız beyazın
+// bir eksik kalkan sütunu cezalanır (mg = -ShieldMissingPenalty), eg = 0.
+TEST(Eval, KingSafetyPawnShield) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/5P1P/6K1 w - - 0 1"));
+    int mg = 0, eg = 0;
+    king_safety(b, mg, eg);
+    EXPECT_EQ(mg, -ShieldMissingPenalty);
+    EXPECT_EQ(eg, 0);
+}
+
+// Şah bölgesi saldırısı: beyaz şah g1 tam kalkanlı (f2,g2,h2), siyah vezir g4
+// g-sütunundan şah halkasındaki g2'yi vuruyor (units = vezir ağırlığı × 1 kare);
+// siyah şah b8 tam kalkanlı, saldırısız. mg = -SafetyTable[QueenWeight].
+TEST(Eval, KingSafetyZoneAttack) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("1k6/ppp5/8/8/6q1/8/5PPP/6K1 w - - 0 1"));
+    int mg = 0, eg = 0;
+    king_safety(b, mg, eg);
+    // Vezir g4, g2'yi (şah halkasında) vurur; başka bölge karesi yok.
+    EXPECT_EQ(mg, -SafetyTable[KingAttackWeight[QUEEN]]);
+    EXPECT_LT(mg, 0);
+    EXPECT_EQ(eg, 0);
+}
+
+// Renk simetrisi: her iki şah da aynı kalkan kusurunu (g-sütunu boş) aynalı taşır,
+// saldırı yok -> king_safety katkısı tam sıfır, evaluate() de 0.
+TEST(Eval, KingSafetySymmetry) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5p1p/8/8/8/8/5P1P/6K1 w - - 0 1"));
+    int mg = 0, eg = 0;
+    king_safety(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+}

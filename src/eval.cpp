@@ -136,6 +136,65 @@ void rook_on_file(const Board& b, int& mg, int& eg) {
     }
 }
 
+void king_safety(const Board& b, int& mg, int& eg) {
+    mg = 0;
+    eg = 0;  // king safety yalnız orta oyun terimi; taper ile EG'de solar.
+    const Bitboard occ = b.occupancy();
+
+    // Her rengin ŞAHI için tehlike (danger, pozitif santipiyon) hesaplanır; bu,
+    // o rengin puanını düşürür. Beyaz bakışı: beyaz şah tehlikesi mg'yi düşürür,
+    // siyah şah tehlikesi mg'yi yükseltir -> mg += -sign * danger.
+    for (Color c : {WHITE, BLACK}) {
+        const int      sign = (c == WHITE) ? 1 : -1;
+        const Square   ksq  = b.king_square(c);
+        const int      kf   = file_of(ksq);
+        const int      kr   = rank_of(ksq);
+
+        int danger = 0;
+
+        // --- Piyon kalkanı: şahın önündeki iki sıra, kf-1..kf+1 sütunları ---
+        const Bitboard own_pawns = b.pieces[PAWN] & b.colors[c];
+        for (int f = kf - 1; f <= kf + 1; ++f) {
+            if (f < 0 || f > 7) continue;  // tahta kenarı: geçersiz sütun sayılmaz
+            Bitboard front = 0;
+            for (int step = 1; step <= 2; ++step) {
+                int r = (c == WHITE) ? kr + step : kr - step;
+                if (r < 0 || r > 7) continue;
+                front |= Bitboard{1} << (r * 8 + f);
+            }
+            if ((own_pawns & front) == 0)  // bu sütunda kalkan piyonu yok
+                danger += ShieldMissingPenalty;
+        }
+
+        // --- Şah bölgesi (king ring) saldırıları: rakip taşların bölgede vurduğu
+        // kare sayısı × tür ağırlığı -> attack units -> SafetyTable. ---
+        const Bitboard zone      = king_attacks(ksq);  // şahı çevreleyen 8 kare
+        const Bitboard enemy     = b.colors[~c];
+        int            units     = 0;
+
+        auto accumulate = [&](PieceType pt, Bitboard attacks) {
+            units += KingAttackWeight[pt] * popcount(attacks & zone);
+        };
+
+        Bitboard knights = b.pieces[KNIGHT] & enemy;
+        while (knights) { Square s = pop_lsb(knights); accumulate(KNIGHT, knight_attacks(s)); }
+
+        Bitboard bishops = b.pieces[BISHOP] & enemy;
+        while (bishops) { Square s = pop_lsb(bishops); accumulate(BISHOP, bishop_attacks(s, occ)); }
+
+        Bitboard rooks = b.pieces[ROOK] & enemy;
+        while (rooks) { Square s = pop_lsb(rooks); accumulate(ROOK, rook_attacks(s, occ)); }
+
+        Bitboard queens = b.pieces[QUEEN] & enemy;
+        while (queens) { Square s = pop_lsb(queens); accumulate(QUEEN, queen_attacks(s, occ)); }
+
+        if (units > 99) units = 99;  // tablo indeksini kırp
+        danger += SafetyTable[units];
+
+        mg += -sign * danger;  // tehlike, o rengin skorunu düşürür
+    }
+}
+
 int evaluate(const Board& b) {
     // Orta oyun ve oyun sonu puanları ayrı biriktirilir (beyaz bakışıyla).
     int mg = 0;
@@ -184,6 +243,13 @@ int evaluate(const Board& b) {
     rook_on_file(b, rmg, reg);
     mg += rmg;
     eg += reg;
+
+    // King safety katkısı (piyon kalkanı + şah bölgesi saldırıları). Yalnız MG
+    // (keg her zaman 0); orta oyunda etkili, oyun sonunda taper ile solar.
+    int kmg = 0, keg = 0;
+    king_safety(b, kmg, keg);
+    mg += kmg;
+    eg += keg;
 
     // Faza göre interpolasyon: tam kadroda (phase=MAX) tamamen mg, oyun sonunda
     // (phase=0) tamamen eg. Materyal her iki uçta eşit olduğundan interpolasyondan

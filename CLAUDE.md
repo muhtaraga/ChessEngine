@@ -134,18 +134,20 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-08): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
+**Güncel durum (2026-07-09): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
 üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
-geçiyor. Toplam 72 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
+geçiyor. Toplam 81 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
 SPRT altyapısı (cutechess-cli KURULU + komutsuz web GUI) tamam. Tapered eval'in
 Elo katkısı SPRT ile doğrulandı (+42.8 ± 16.3, H1). İlk gelişmiş eval terimi
 **pawn structure (isole/çift/geçer piyon) da SPRT'den geçti (+45.4 ± 16.8, H1)**.
 Ayrıca **arama tekrar (repetition) tespiti eklendi ve SPRT'den geçti (+27.2 ±
 12.7, H1)** — motor artık kazandığı pozisyonda 3-hamle tekrarına düşmüyor. İkinci
 gelişmiş eval terimi **piece mobility de SPRT'den geçti (H1 kabul)**. Üçüncü yama
-**bishop pair + rook-on-open/semi-open-file de SPRT'den geçti (H1 kabul)**.
-Sırada kalan tek gelişmiş evaluation terimi: **king safety** — ayrı SPRT'den
-geçirilerek.
+**bishop pair + rook-on-open/semi-open-file de SPRT'den geçti (H1 kabul)**. Son
+gelişmiş evaluation terimi **king safety (piyon kalkanı + şah bölgesi saldırıları,
+attack-unit tablosu) implemente edildi + test edildi (81 test); SPRT KOŞUSU
+BEKLİYOR** (base 9abe61b vs king safety commit'i). SPRT H1 verirse Faz 2B'nin
+evaluation kısmı tamamlanmış olur.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -323,16 +325,33 @@ Faz 2B (devam ediyor):
   pozisyonda motor Rac1/Rhd1 (kaleyi açık sütuna). **SPRT: base 07060b1 vs new
   9abe61b, H1 kabul** — tutuldu. Bilinçli ertelenen: bishop pair zıt-kare
   kontrolü, 7. sıra / bağlı kale rafineleri.
+- Adım 9: King safety (İMPLEMENTE + TEST; SPRT BEKLİYOR). Faz 2B'nin son gelişmiş
+  eval terimi, diğerleriyle aynı desende (renk-simetrik, tapered, izole test
+  edilebilir yardımcı). **Yalnız orta oyun terimi (eg her zaman 0)** — oyun
+  sonunda şah aktifliği önemli, güvenlik taper ile solar (KingCentralizedInEndgame
+  korunur). `eval.hpp`: (a) piyon kalkanı — şahın önündeki iki sıra, kf-1..kf+1
+  sütunlarında dost piyon yoksa sütun başına ShieldMissingPenalty(15) "danger";
+  (b) şah bölgesi (king ring = king_attacks(ksq)) saldırıları — rakip taşların
+  halkada vurduğu kare sayısı × KingAttackWeight (at/fil 2, kale 3, vezir 5) =
+  attack units, doğrusal olmayan SafetyTable[units] (CPW "King Safety" standart
+  tablosu; düşük baskıda ~0 -> normal pozisyonlar cezalanmaz, gerçek saldırıda
+  hızla büyür, 500'de doygun). `eval.cpp`: `king_safety(b,mg,eg)` her renk için
+  danger toplar, `mg += -sign*danger` (tehlike o rengin skorunu düşürür), evaluate()
+  akümülatöre ekler. 3 test (78->81): KingSafetyPawnShield, KingSafetyZoneAttack,
+  KingSafetySymmetry. Startpos d10 nps ~1.32M (mobility sonrasıyla ~aynı, Debug).
+  Bilinçli ertelenen: queen-presence gate, king_safety'yi mobility ile tek saldırı
+  geçişinde birleştirme (hız), SafetyTable scaling ince ayarı.
 
-**Sıradaki: Faz 2B — king safety (son eval terimi).** Tapered eval (+42.8), pawn
-structure (+45.4), arama tekrar tespiti (+27.2), piece mobility (H1) ve bishop
-pair + rook-on-file (H1) SPRT'den geçti. Kalan tek gelişmiş evaluation terimi:
-king safety (şah bölgesi saldırıları + piyon kalkanı, attack-unit tablosu) —
-ayrı commit + ayrı SPRT'den. 2B bitince Faz 2C
-(selective search: PVS, null move, SEE, LMR, futility
-ailesi, LMP, razoring, extensions) sırayla, her biri ayrı SPRT'den geçirilerek
-eklenir. Faz 2D (Lazy SMP multi-threading) klasik fazın son adımı, NNUE'dan önce.
-Yol haritası detayı için "Faz 2 — Klasik Güçlendirme" bölümüne bak.
+**Sıradaki: king safety SPRT koşusu.** Tapered eval (+42.8), pawn structure
+(+45.4), arama tekrar tespiti (+27.2), piece mobility (H1) ve bishop pair +
+rook-on-file (H1) SPRT'den geçti. King safety (son eval terimi) implemente +
+test edildi; **GUI'den SPRT koşusu bekliyor (base 9abe61b vs king safety
+commit'i)**. H1 gelirse Faz 2B'nin evaluation kısmı biter; regresyonsa ağırlıklar
+ayarlanır ya da terim geri alınır. 2B bitince Faz 2C (selective search: PVS, null
+move, SEE, LMR, futility ailesi, LMP, razoring, extensions) sırayla, her biri
+ayrı SPRT'den geçirilerek eklenir. Faz 2D (Lazy SMP multi-threading) klasik fazın
+son adımı, NNUE'dan önce. Yol haritası detayı için "Faz 2 — Klasik Güçlendirme"
+bölümüne bak.
 
 ### İlk somut görev
 
