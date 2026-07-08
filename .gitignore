@@ -1,5 +1,6 @@
 # Build çıktıları
 build/
+build-release/
 out/
 cmake-build-*/
 
