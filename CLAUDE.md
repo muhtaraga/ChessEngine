@@ -141,8 +141,9 @@ SPRT altyapısı (cutechess-cli KURULU + komutsuz web GUI) tamam. Tapered eval'i
 Elo katkısı SPRT ile doğrulandı (+42.8 ± 16.3, H1). İlk gelişmiş eval terimi
 **pawn structure (isole/çift/geçer piyon) da SPRT'den geçti (+45.4 ± 16.8, H1)**.
 Ayrıca **arama tekrar (repetition) tespiti eklendi ve SPRT'den geçti (+27.2 ±
-12.7, H1)** — motor artık kazandığı pozisyonda 3-hamle tekrarına düşmüyor.
-Sırada kalan gelişmiş evaluation: king safety, mobility, bishop pair,
+12.7, H1)** — motor artık kazandığı pozisyonda 3-hamle tekrarına düşmüyor. İkinci
+gelişmiş eval terimi **piece mobility de SPRT'den geçti (H1 kabul)**.
+Sırada kalan gelişmiş evaluation: king safety, bishop pair,
 rook-on-open-file — her biri ayrı SPRT'den geçirilerek.
 
 Faz 1 (tamam):
@@ -303,11 +304,20 @@ Faz 2B (devam ediyor):
   E2e: KQvK sallanma geçmişiyle motor mate-in-7 buluyor. **SPRT: base 02c12f5 vs
   new 3d04898, 1534 oyun, W-D-L 468-718-348, Elo +27.2 ± 12.7, LLR 2.97, H1 kabul.**
   Bilinçli ertelenen: contempt (draw≠0), cuckoo-tablo hızlı tespiti.
+- Adım 7: Piece mobility (TAMAM, commit 07060b1). İkinci gelişmiş eval terimi:
+  at/fil/kale/vezir için ulaşılabilir (dost olmayan) kare sayısı × tür ağırlığı,
+  renk-simetrik, tapered. `eval.hpp`: MobilityMg/Eg[tür] (at/fil 4/4, kale 2/4
+  [EG'de açık hat], vezir 1/1 [erken çıkış cezası]) + `mobility(b,mg,eg)` ilanı.
+  `eval.cpp`: attacks.hpp include, mevcut knight/bishop/rook/queen_attacks
+  tablolarıyla, evaluate() akümülatöre ekliyor. 2 test (72->74). Elle: startpos
+  +11cp/e2e4, açıkta Bb5. Tam kadro nps ~1.84M->1.33M (~%28 maliyet). **SPRT:
+  base 3d04898 vs new 07060b1, H1 kabul** — terim tutuldu. Bilinçli ertelenen:
+  mobility area rafinesi (rakip piyon vuruşlarını çıkarma), mobility cache/hız.
 
 **Sıradaki: Faz 2B — gelişmiş evaluation (devam).** Tapered eval (+42.8), pawn
-structure (+45.4) ve arama tekrar tespiti (+27.2) SPRT'den geçti. Kalan gelişmiş
-evaluation adımları: king safety,
-piece mobility, bishop pair, rook on open/semi-open file — her biri ayrı bir
+structure (+45.4), arama tekrar tespiti (+27.2) ve piece mobility (H1) SPRT'den
+geçti. Kalan gelişmiş evaluation adımları: king safety, bishop pair, rook on
+open/semi-open file — her biri ayrı bir
 commit + ayrı bir SPRT koşusundan (GUI'den) geçirilerek. 2B bitince Faz 2C
 (selective search: PVS, null move, SEE, LMR, futility
 ailesi, LMP, razoring, extensions) sırayla, her biri ayrı SPRT'den geçirilerek
