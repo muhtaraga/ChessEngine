@@ -5,6 +5,7 @@
 //  - search_iterative() : iterative deepening + aspiration windows + zaman yönetimi
 //                         (soft/hard limit, abort'ta en iyi hamleyi koruma). UCI bunu kullanır.
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -49,6 +50,10 @@ struct SearchLimits {
     int          max_depth = 64;
     std::int64_t soft_ms   = -1;
     std::int64_t hard_ms   = -1;
+    // Dışarıdan asenkron durdurma bayrağı (UCI "stop"). nullptr değilse arama
+    // bu bayrağı düzenli yoklar; true olunca düğüm ortasında kesilir. "go infinite"
+    // için zaman sınırı olmadan yalnızca bu bayrakla durmayı sağlar.
+    const std::atomic<bool>* stop = nullptr;
 };
 
 // Her tamamlanan derinlikten sonra çağrılan bilgi geri-çağırması (UCI "info"

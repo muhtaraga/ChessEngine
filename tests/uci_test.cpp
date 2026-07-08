@@ -63,6 +63,18 @@ TEST(Uci, MovetimeReturnsBestmove) {
     EXPECT_NE(out.find("info depth 1"), std::string::npos);
 }
 
+// "go infinite" zaman sınırı olmadan arar; "stop" gelince durup bestmove verir
+// (analiz modu). Donmadan, geçerli bir hamleyle sonlanmalı.
+TEST(Uci, InfiniteStopReturnsBestmove) {
+    std::string out = run_uci(
+        "position startpos\n"
+        "go infinite\n"
+        "stop\n"
+        "quit\n");
+    EXPECT_NE(out.find("bestmove "), std::string::npos);
+    EXPECT_EQ(out.find("bestmove 0000"), std::string::npos);  // en az derinlik 1
+}
+
 TEST(Uci, PromotionMoveParsed) {
     // Beyaz b7-b8 vezir promosyonu legal ve uygulanabilir olmalı.
     std::string out = run_uci(

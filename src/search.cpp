@@ -58,6 +58,9 @@ struct Searcher {
     bool              aborted = false;
     bool              use_deadline = false;
     Clock::time_point deadline;
+    // Asenkron durdurma bayrağı (UCI "stop"). Deadline'dan bağımsız yoklanır ki
+    // "go infinite" (zaman sınırsız) aramaları da durdurulabilsin.
+    const std::atomic<bool>* stop = nullptr;
 
     Move pv_table[MAX_PLY][MAX_PLY];
     int  pv_len[MAX_PLY] = {};
@@ -134,9 +137,14 @@ void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth) {
 }
 
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
-    // Süre kontrolü (her ~4096 düğümde bir; saat çağrısı pahalı).
-    if (use_deadline && (nodes & 4095) == 0 && Clock::now() >= deadline)
-        aborted = true;
+    // Kesme kontrolü (her ~4096 düğümde bir; saat/atomik okuma nispeten pahalı).
+    // Önce dış "stop" bayrağı (zaman sınırından bağımsız), sonra deadline.
+    if ((nodes & 4095) == 0) {
+        if (stop && stop->load(std::memory_order_relaxed))
+            aborted = true;
+        else if (use_deadline && Clock::now() >= deadline)
+            aborted = true;
+    }
     if (aborted)
         return 0;
 
@@ -251,8 +259,12 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
 // (mat/horizon doğruluğu). İyileştirmeler (SEE ile kayıplı yakalama elemesi,
 // delta pruning) sonraya bırakıldı.
 int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
-    if (use_deadline && (nodes & 4095) == 0 && Clock::now() >= deadline)
-        aborted = true;
+    if ((nodes & 4095) == 0) {
+        if (stop && stop->load(std::memory_order_relaxed))
+            aborted = true;
+        else if (use_deadline && Clock::now() >= deadline)
+            aborted = true;
+    }
     if (aborted)
         return 0;
 
@@ -393,6 +405,7 @@ SearchResult search(const Board& b, int depth, std::int64_t max_time_ms) {
 SearchResult search_iterative(const Board& b, const SearchLimits& lim,
                               const InfoCallback& info) {
     Searcher s;
+    s.stop = lim.stop;
     if (lim.hard_ms >= 0) {
         s.use_deadline = true;
         s.deadline = Clock::now() + std::chrono::milliseconds(lim.hard_ms);
@@ -411,15 +424,20 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
         s.root_best_move  = Move();
         s.root_best_score = -INF;
 
-        // Derinlik 1 daima süresiz koşsun ki en az bir legal hamle garanti olsun
-        // (aksi halde çok kısa bütçede bestmove 0000 dönebilirdik).
-        const bool saved_deadline = s.use_deadline;
-        if (depth == 1)
+        // Derinlik 1 daima kesintisiz koşsun ki en az bir legal hamle garanti
+        // olsun (aksi halde çok kısa bütçede ya da hemen gelen "stop"ta bestmove
+        // 0000 dönebilirdik). Hem deadline hem stop bu derinlikte devre dışı.
+        const bool               saved_deadline = s.use_deadline;
+        const std::atomic<bool>* saved_stop     = s.stop;
+        if (depth == 1) {
             s.use_deadline = false;
+            s.stop         = nullptr;
+        }
 
         int score = s.search_root(b, depth, prev_score);
 
         s.use_deadline = saved_deadline;
+        s.stop         = saved_stop;
 
         if (s.aborted) {
             // Süre doldu: bu yarım derinliği normalde atarız (önceki 'best'

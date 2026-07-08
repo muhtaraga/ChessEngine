@@ -2,12 +2,15 @@
 
 #include "engine/uci.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 
 #include "engine/board.hpp"
 #include "engine/movegen.hpp"
@@ -17,6 +20,27 @@
 namespace engine {
 
 namespace {
+
+// --- Asenkron arama durumu ---
+// Arama ayrı bir thread'de koşar; ana döngü stdin okumaya devam eder ve "stop"/
+// "quit" gelince g_stop'u set eder. Böylece "go infinite" analizinde motor sen
+// durdurana kadar düşünür (tek düğüm bütçesiyle sınırlı kalmaz).
+std::atomic<bool> g_stop{false};
+std::thread       g_search_thread;
+// Koşan arama kendiliğinden biter mi? (depth/movetime/timed = evet; "go infinite"
+// = hayır). "quit" sınırlı aramayı doğal bitişine bırakır (pipe/batch kullanımında
+// tam çıktı), yalnızca sınırsız aramayı zorla durdurur.
+std::atomic<bool> g_search_bounded{false};
+// Çıktı akışı (out) iki thread'den yazılabildiği için (arama: info/bestmove;
+// ana döngü: readyok vб.) tüm yazımlar bu kilit altında yapılır.
+std::mutex        g_io_mtx;
+
+// Çalışan aramayı (varsa) durdurup thread'i bekler. Idempotent.
+void stop_search() {
+    g_stop.store(true, std::memory_order_relaxed);
+    if (g_search_thread.joinable())
+        g_search_thread.join();
+}
 
 // Iterative deepening derinlik tavanı.
 constexpr int kMaxDepth = 63;
@@ -109,10 +133,16 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
     // Derinlik ve zaman sınırlarını belirle.
     SearchLimits lim;
     lim.max_depth = kMaxDepth;
+    lim.stop      = &g_stop;  // "stop"/"quit" ile asenkron kesme
 
     if (depth > 0) {
         // Sabit derinlik: zaman sınırı yok.
         lim.max_depth = (depth < kMaxDepth) ? depth : kMaxDepth;
+    } else if (infinite) {
+        // "go infinite": zaman sınırı yok; yalnızca "stop" (veya derinlik tavanı)
+        // durdurur. Analiz için: sen durdurana kadar düşünmeye devam eder.
+        lim.soft_ms = -1;
+        lim.hard_ms = -1;
     } else if (movetime > 0) {
         // Bu hamleye tam olarak bu süre: overhead düşülüp hepsi kullanılır.
         std::int64_t use = movetime - kOverheadMs;
@@ -142,43 +172,55 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
         lim.hard_ms = std::min<std::int64_t>(alloc * 3, max_use);
         if (lim.hard_ms < lim.soft_ms) lim.hard_ms = lim.soft_ms;
     } else {
-        // Çıplak "go" veya "go infinite": varsayılan süre bütçesi (gerçek infinite
-        // tek iş parçacığında desteklenmiyor).
+        // Çıplak "go" (parametresiz): terminal kolaylığı için varsayılan bütçe.
         lim.soft_ms = kDefaultBudgetMs;
         lim.hard_ms = kDefaultBudgetMs;
-        (void)infinite;
     }
 
-    using clock = std::chrono::steady_clock;
-    auto start = clock::now();
-    auto elapsed_ms = [&] {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(
-                   clock::now() - start).count();
-    };
+    // Önceki arama hâlâ koşuyorsa (GUI normalde önce "stop" gönderir) durdur.
+    stop_search();
+    g_stop.store(false, std::memory_order_relaxed);
+    // Sınırlı mı? (zaman sınırı var veya derinlik tavanın altında). "quit"in
+    // davranışını belirler.
+    g_search_bounded.store(lim.hard_ms >= 0 || lim.max_depth < kMaxDepth,
+                           std::memory_order_relaxed);
 
-    // Iterative deepening + aspiration + zaman yönetimi search modülünde; burada
-    // yalnızca her tamamlanan derinlikte "info" satırını yazıyoruz.
-    SearchResult best = search_iterative(b, lim, [&](const SearchResult& r, int d) {
-        auto elapsed = elapsed_ms();
-        out << "info depth " << d
-            << " score " << score_string(r.score)
-            << " nodes " << r.nodes
-            << " time "  << elapsed
-            << " nps "   << (elapsed > 0 ? r.nodes * 1000 / elapsed : 0);
-        if (!r.pv.empty()) {
-            out << " pv";
-            for (Move m : r.pv)
-                out << ' ' << m.to_uci();
-        }
-        out << '\n';
+    // Aramayı ayrı thread'de başlat: ana döngü stdin okumaya devam etsin ki
+    // "stop" gelince kesebilelim. Pozisyonun bir KOPYASINI thread'e veriyoruz
+    // (ana döngüdeki board sonraki "position" ile değişebilir).
+    Board pos = b;
+    g_search_thread = std::thread([pos, lim, &out] {
+        using clock = std::chrono::steady_clock;
+        auto start = clock::now();
+        auto elapsed_ms = [&] {
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                       clock::now() - start).count();
+        };
+
+        SearchResult best = search_iterative(pos, lim, [&](const SearchResult& r, int d) {
+            std::lock_guard<std::mutex> lk(g_io_mtx);
+            auto el = elapsed_ms();
+            out << "info depth " << d
+                << " score " << score_string(r.score)
+                << " nodes " << r.nodes
+                << " time "  << el
+                << " nps "   << (el > 0 ? r.nodes * 1000 / el : 0);
+            if (!r.pv.empty()) {
+                out << " pv";
+                for (Move m : r.pv)
+                    out << ' ' << m.to_uci();
+            }
+            out << '\n';
+            out.flush();
+        });
+
+        std::lock_guard<std::mutex> lk(g_io_mtx);
+        if (best.best == Move())
+            out << "bestmove 0000\n";  // hamle yok (mat/pat)
+        else
+            out << "bestmove " << best.best.to_uci() << '\n';
         out.flush();
     });
-
-    if (best.best == Move())
-        out << "bestmove 0000\n";  // hamle yok (mat/pat)
-    else
-        out << "bestmove " << best.best.to_uci() << '\n';
-    out.flush();
 }
 
 }  // namespace
@@ -194,25 +236,40 @@ void uci_loop(std::istream& in, std::ostream& out) {
         ss >> cmd;
 
         if (cmd == "uci") {
+            std::lock_guard<std::mutex> lk(g_io_mtx);
             out << "id name ChessEngine\n";
             out << "id author Muhtar Agcabay\n";
             out << "uciok\n";
             out.flush();
         } else if (cmd == "isready") {
+            // Arama sürerken bile yanıtlanabilmeli (UCI eşzamanlılık kuralı).
+            std::lock_guard<std::mutex> lk(g_io_mtx);
             out << "readyok\n";
             out.flush();
+        } else if (cmd == "stop") {
+            stop_search();  // arama thread'i o ana kadarki en iyi hamleyi basar
         } else if (cmd == "ucinewgame") {
+            stop_search();  // TT'yi temizlemeden önce aramayı durdur (yarış önleme)
             board.set_startpos();
             TT.clear();  // yeni oyun: önceki oyunun girişlerini at
         } else if (cmd == "position") {
+            stop_search();  // eski pozisyon için koşan aramayı bırak
             handle_position(board, ss);
         } else if (cmd == "go") {
             handle_go(board, ss, out);
         } else if (cmd == "quit") {
+            // Sınırsız arama (go infinite) hariç, koşan aramayı doğal bitişine
+            // bırak (pipe/batch: tam çıktı). Sonra thread'i bekle ve çık.
+            if (!g_search_bounded.load(std::memory_order_relaxed))
+                g_stop.store(true, std::memory_order_relaxed);
+            if (g_search_thread.joinable())
+                g_search_thread.join();
             break;
         }
         // Bilinmeyen komutlar sessizce yok sayılır (UCI önerisi).
     }
+
+    stop_search();  // EOF/döngü sonu: kalan aramayı temizle
 }
 
 }  // namespace engine

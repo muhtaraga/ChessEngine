@@ -134,6 +134,16 @@ Faz 2 (devam ediyor):
     eşiği; hard: mevcut derinliği bitirmek için mutlak tavan (abort mid-node).
     Doğrulama: Kiwipete movetime 2000'de d8'i 1069ms'de bitirip d9'u başlattı,
     hard limitte kesip d8 hamlesini döndürdü (blunder yok).
+  - Asenkron "stop" + gerçek "go infinite": arama ayrı bir std::thread'de koşuyor,
+    ana döngü stdin okumaya devam ediyor. `SearchLimits.stop` (atomic<bool>*)
+    negamax/quiescence tarafından deadline'dan bağımsız yoklanıyor. "stop"/"position"/
+    "ucinewgame"/EOF aramayı keser; "go infinite" zaman sınırsız, yalnızca "stop"la
+    (ya da derinlik tavanıyla) durur -> GUI analizinde motor sen durdurana kadar
+    düşünür (eski ~3sn'de durma bug'ı çözüldü). Çıktı (info/bestmove/readyok) tek
+    g_io_mtx kilidiyle korunuyor. "quit" sınırlı aramayı (depth/movetime/timed)
+    doğal bitişine bırakır (pipe/batch tam çıktı), yalnızca sınırsızı zorla durdurur.
+    Derinlik 1 daima kesintisiz (deadline+stop devre dışı) -> en az bir hamle garanti.
+    Test: InfiniteStopReturnsBestmove. Toplam 55 test.
 
 **Sıradaki: Faz 2 Adım 5 — Gelişmiş evaluation** (pawn structure, king safety,
 piece mobility). Sonra cutechess-cli ile otomatik maç/SPRT regresyon altyapısı.
