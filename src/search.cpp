@@ -3,9 +3,11 @@
 #include "engine/search.hpp"
 
 #include <chrono>
+#include <utility>
 
 #include "engine/eval.hpp"
 #include "engine/movegen.hpp"
+#include "engine/tt.hpp"
 
 namespace engine {
 
@@ -15,6 +17,20 @@ constexpr int INF     = 32000;
 constexpr int MAX_PLY = 64;
 
 using Clock = std::chrono::steady_clock;
+
+// Mat skorları TT'de ply'den bağımsız saklanmalı: bir düğümde "N ply sonra mat"
+// olan skor, farklı derinlikteki bir düğümde yeniden kullanılabilsin diye
+// düğümün ply'sine göre normalize edilir. Saklarken ply ekle, okurken çıkar.
+int score_to_tt(int score, int ply) {
+    if (score >= MATE_IN_MAX)  return score + ply;
+    if (score <= -MATE_IN_MAX) return score - ply;
+    return score;
+}
+int score_from_tt(int score, int ply) {
+    if (score >= MATE_IN_MAX)  return score - ply;
+    if (score <= -MATE_IN_MAX) return score + ply;
+    return score;
+}
 
 // Bir düğümün terminal (mat/pat) skoru. Mat: sıradaki taraf çekte -> -MATE+ply.
 int terminal_score(const Board& b, int ply) {
@@ -53,13 +69,42 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
     if (ml.size() == 0)
         return terminal_score(b, ply);
 
+    // 50-hamle beraberliği: TT sondasından ÖNCE. halfmove_clock Zobrist
+    // anahtarına dahil değil; TT kesmesi bu beraberliği gözden kaçırabilirdi.
     if (b.halfmove_clock >= 100)
         return 0;
 
     if (depth == 0 || ply >= MAX_PLY - 1)
         return evaluate(b);
 
-    int best = -INF;
+    // --- Transposition table sondası ---
+    TTEntry tte;
+    const bool tt_hit  = TT.probe(b.key, tte);
+    const Move tt_move = tt_hit ? tte.move : Move();
+
+    // Kökte (ply == 0) kesme yapma: kök daima tam aranmalı ki bestmove ve PV
+    // güvenilir olsun. Yeterince derin bir girişte sınıra göre kes.
+    if (tt_hit && ply > 0 && tte.depth >= depth) {
+        int s = score_from_tt(tte.score, ply);
+        if (tte.bound == Bound::EXACT)                 return s;
+        if (tte.bound == Bound::LOWER && s >= beta)    return s;
+        if (tte.bound == Bound::UPPER && s <= alpha)   return s;
+    }
+
+    // TT hamlesini öne al: basit ama etkili move ordering. Kapsamlı sıralama
+    // (MVV-LVA, killer, history) bir sonraki Faz 2 adımında gelecek.
+    if (tt_move != Move()) {
+        for (int i = 0; i < ml.count; ++i)
+            if (ml.moves[i] == tt_move) {
+                std::swap(ml.moves[0], ml.moves[i]);
+                break;
+            }
+    }
+
+    const int alpha_orig = alpha;
+    int  best      = -INF;
+    Move best_move = Move();
+
     for (Move m : ml) {
         Board next = b;
         next.do_move(m);
@@ -69,7 +114,8 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
             return best;  // süre doldu: yarım sonucu bırak (çağıran yok sayar)
 
         if (score > best) {
-            best = score;
+            best      = score;
+            best_move = m;
             pv_table[ply][ply] = m;
             for (int j = ply + 1; j < pv_len[ply + 1]; ++j)
                 pv_table[ply][j] = pv_table[ply + 1][j];
@@ -81,6 +127,16 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
         if (alpha >= beta)
             break;
     }
+
+    // --- Sonucu TT'ye sakla ---
+    // best <= alpha_orig: hiçbir hamle alpha'yı geçmedi -> üst sınır (fail-low).
+    // best >= beta      : beta kesmesi -> alt sınır (fail-high).
+    // aksi              : gerçek değer (exact).
+    Bound bound = (best <= alpha_orig) ? Bound::UPPER
+                : (best >= beta)       ? Bound::LOWER
+                :                        Bound::EXACT;
+    TT.store(b.key, depth, score_to_tt(best, ply), bound, best_move);
+
     return best;
 }
 

@@ -12,6 +12,7 @@
 #include "engine/board.hpp"
 #include "engine/movegen.hpp"
 #include "engine/search.hpp"
+#include "engine/tt.hpp"
 
 namespace engine {
 
@@ -84,6 +85,10 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
     std::int64_t movetime = -1;
     std::int64_t wtime = -1, btime = -1, winc = 0, binc = 0;
     bool         infinite = false;
+
+    // Bu arama için TT nesli ilerlet: önceki hamlelerden kalan girişler
+    // değiştirmede önceliğini yitirsin (yaşlandırma).
+    TT.new_search();
 
     std::string token;
     while (ss >> token) {
@@ -189,6 +194,7 @@ void uci_loop(std::istream& in, std::ostream& out) {
             out.flush();
         } else if (cmd == "ucinewgame") {
             board.set_startpos();
+            TT.clear();  // yeni oyun: önceki oyunun girişlerini at
         } else if (cmd == "position") {
             handle_position(board, ss);
         } else if (cmd == "go") {

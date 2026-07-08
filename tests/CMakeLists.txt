@@ -13,7 +13,7 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(googletest)
 
-add_executable(board_tests board_test.cpp attacks_test.cpp sliding_test.cpp perft_test.cpp eval_test.cpp search_test.cpp uci_test.cpp zobrist_test.cpp)
+add_executable(board_tests board_test.cpp attacks_test.cpp sliding_test.cpp perft_test.cpp eval_test.cpp search_test.cpp uci_test.cpp zobrist_test.cpp tt_test.cpp)
 target_link_libraries(board_tests PRIVATE engine GTest::gtest_main)
 
 include(GoogleTest)
