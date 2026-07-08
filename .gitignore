@@ -10,6 +10,9 @@ CMakeFiles/
 CMakeUserPresets.json
 _deps/
 
+# SPRT GUI yerel ayarlari (cutechess yolu, son kullanilan degerler)
+tools/sprt/gui/config.json
+
 # IDE / editör
 .vs/
 .vscode/

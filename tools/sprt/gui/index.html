@@ -1,0 +1,400 @@
+<!-- SPRT Test Arayuzu — tek sayfa, harici bagimlilik yok (inline CSS/JS). -->
+<!-- serve.ps1 bu dosyayi "/" adresinde sunar. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPRT Test Arayüzü</title>
+<style>
+  :root {
+    --bg: #15171c; --panel: #1e2129; --panel2: #262a34; --line: #333846;
+    --fg: #e6e8ee; --muted: #9aa2b1; --accent: #6ea8fe; --accent2: #3d8bff;
+    --good: #4ec98a; --bad: #f16a6a; --warn: #e8b84b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    padding: 16px 22px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12.5px; }
+  .wrap { display: grid; grid-template-columns: 380px 1fr; gap: 18px; padding: 18px 22px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 0 0 12px; }
+  label.field { display: block; margin-bottom: 13px; }
+  label.field > span { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+  input, select {
+    width: 100%; padding: 8px 10px; background: var(--panel2); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 7px; font: inherit;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .presets { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+  .presets button {
+    background: var(--panel2); color: var(--muted); border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer;
+  }
+  .presets button:hover { color: var(--fg); border-color: var(--accent); }
+  .check { display: flex; align-items: center; gap: 8px; margin-bottom: 13px; }
+  .check input { width: auto; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 10px 16px; border-radius: 8px; border: none; font: inherit; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-primary { background: var(--accent2); color: #fff; width: 100%; }
+  .btn-primary:hover { background: #2f7bf0; }
+  .btn-primary:disabled { background: #3a4150; color: var(--muted); cursor: not-allowed; }
+  .btn-danger { background: #3a2226; color: var(--bad); border: 1px solid #5a2b30; }
+  .btn-danger:hover { background: #4a2a2f; }
+  .btn-ghost { background: var(--panel2); color: var(--fg); border: 1px solid var(--line); }
+  .btn-ghost:hover { border-color: var(--accent); }
+  .btnrow { display: flex; gap: 8px; margin-top: 6px; }
+  .warn-text { color: var(--warn); font-size: 12px; margin-top: 4px; display: none; }
+  .banner {
+    padding: 11px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 13px;
+    display: none;
+  }
+  .banner.err { background: #3a2226; border: 1px solid #5a2b30; color: #ffd7d7; display: block; }
+  .banner.ok  { background: #1c3327; border: 1px solid #2b5a3f; color: #cdeedd; display: block; }
+  .banner a { color: var(--accent); }
+  /* Ilerleme paneli */
+  .phase-badge {
+    display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12.5px;
+    font-weight: 600; background: var(--panel2); border: 1px solid var(--line);
+  }
+  .phase-badge.matching { border-color: var(--accent); color: var(--accent); }
+  .phase-badge.done { border-color: var(--good); color: var(--good); }
+  .phase-badge.error, .phase-badge.stopped { border-color: var(--bad); color: var(--bad); }
+  .phase-badge.building-base, .phase-badge.building-new, .phase-badge.starting { border-color: var(--warn); color: var(--warn); }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; }
+  .stat { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .stat .k { font-size: 11.5px; color: var(--muted); }
+  .stat .v { font-size: 19px; font-weight: 600; margin-top: 2px; }
+  .wdl { display: flex; gap: 4px; align-items: baseline; }
+  .wdl .w { color: var(--good); } .wdl .d { color: var(--muted); } .wdl .l { color: var(--bad); }
+  .llrbar { position: relative; height: 8px; background: var(--panel2); border-radius: 5px; margin: 8px 0 4px; border: 1px solid var(--line); }
+  .llrbar .fill { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: var(--accent); border-radius: 5px; }
+  .llrbar .mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--line); }
+  .llr-meta { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+  .decision { margin-top: 10px; font-size: 13.5px; font-weight: 600; }
+  .log {
+    margin-top: 14px; background: #101216; border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px; font: 12px/1.55 Consolas, "Cascadia Mono", monospace; color: #c8ccd6;
+    height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
+</style>
+
+<header>
+  <h1>♟ SPRT Test Arayüzü</h1>
+  <span class="sub">iki motor sürümünü cutechess-cli ile oynat, Elo farkını SPRT ile karara bağla</span>
+</header>
+
+<div class="wrap">
+  <!-- ============ SOL: AYARLAR ============ -->
+  <div class="card">
+    <h2>Test ayarları</h2>
+    <div id="ccBanner" class="banner"></div>
+
+    <label class="field">
+      <span>Base sürüm (karşılaştırma tabanı — commit)</span>
+      <select id="baseRef"></select>
+    </label>
+
+    <label class="field">
+      <span>New sürüm (test edilen)</span>
+      <select id="newRef"></select>
+    </label>
+
+    <label class="field">
+      <span>İzlek — paralel oynanan oyun sayısı (concurrency)</span>
+      <input type="number" id="concurrency" min="1" max="20" step="1">
+      <div class="warn-text" id="concWarn"></div>
+    </label>
+
+    <label class="field">
+      <span>Zaman kontrolü (saniye+increment)</span>
+      <input type="text" id="tc" value="10+0.1">
+      <div class="presets">
+        <button data-tc="5+0.05">5+0.05 hızlı</button>
+        <button data-tc="10+0.1">10+0.1 standart</button>
+        <button data-tc="60+0.6">60+0.6 uzun</button>
+      </div>
+    </label>
+
+    <div class="row">
+      <label class="field">
+        <span>Elo0 (H0 sınırı)</span>
+        <input type="number" id="elo0" value="0" step="0.5">
+      </label>
+      <label class="field">
+        <span>Elo1 (H1 sınırı)</span>
+        <input type="number" id="elo1" value="5" step="0.5">
+      </label>
+    </div>
+    <div class="presets" style="margin-top:-6px;margin-bottom:12px">
+      <button data-elo="0,5">[0, 5] küçük değişiklik</button>
+      <button data-elo="0,10">[0, 10] büyük kazanç</button>
+    </div>
+
+    <div class="row">
+      <label class="field">
+        <span>Alpha (tip-I)</span>
+        <input type="number" id="alpha" value="0.05" step="0.01">
+      </label>
+      <label class="field">
+        <span>Beta (tip-II)</span>
+        <input type="number" id="beta" value="0.05" step="0.01">
+      </label>
+    </div>
+
+    <div class="row">
+      <label class="field">
+        <span>Hash (MB, motor başına)</span>
+        <input type="number" id="hash" value="16" min="1" max="1024">
+      </label>
+      <label class="field">
+        <span>Rounds (üst sınır)</span>
+        <input type="number" id="rounds" value="5000" min="2">
+      </label>
+    </div>
+
+    <div class="check">
+      <input type="checkbox" id="forceRebuild">
+      <label for="forceRebuild">Var olan derlemeyi kullanma, yeniden derle</label>
+    </div>
+
+    <button class="btn btn-primary" id="startBtn">▶ Testi başlat</button>
+    <div class="hint">Çalışan ağaç seçilirse New her zaman yeniden derlenir (kaydedilmemiş değişiklikler için).</div>
+  </div>
+
+  <!-- ============ SAĞ: CANLI İLERLEME ============ -->
+  <div class="card">
+    <h2>Canlı ilerleme</h2>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span class="phase-badge" id="phaseBadge">Boşta</span>
+      <span id="matchLabel" class="hint"></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-danger" id="stopBtn" style="display:none">■ Durdur</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">Oyun</div><div class="v" id="sGames">–</div></div>
+      <div class="stat"><div class="k">W–D–L</div><div class="v wdl" id="sWdl">–</div></div>
+      <div class="stat"><div class="k">Elo ± hata</div><div class="v" id="sElo">–</div></div>
+      <div class="stat"><div class="k">LOS</div><div class="v" id="sLos">–</div></div>
+    </div>
+
+    <div>
+      <div class="llrbar"><div class="mid"></div><div class="fill" id="llrFill"></div></div>
+      <div class="llr-meta">
+        <span id="llrLower">–</span>
+        <span>LLR: <b id="llrVal">–</b></span>
+        <span id="llrUpper">–</span>
+      </div>
+      <div class="decision" id="decision"></div>
+    </div>
+
+    <div class="btnrow">
+      <button class="btn btn-ghost" id="openPgn">PGN'i aç</button>
+      <button class="btn btn-ghost" id="openFolder">Klasörü aç</button>
+    </div>
+
+    <div class="log" id="log">Henüz bir test başlatılmadı.</div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let physicalCores = 0;
+let pollTimer = null;
+
+async function jget(url) { const r = await fetch(url); return r.json(); }
+async function jpost(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}) });
+  return { status: r.status, data: await r.json() };
+}
+function asArray(x) { return Array.isArray(x) ? x : (x ? [x] : []); }
+
+const PHASE_TR = {
+  idle: 'Boşta', starting: 'Başlıyor', 'building-base': 'Base derleniyor',
+  'building-new': 'New derleniyor', matching: 'Maç oynanıyor', done: 'Tamamlandı',
+  error: 'Hata', stopped: 'Durduruldu'
+};
+
+async function init() {
+  const st = await jget('/api/status');
+  physicalCores = st.physicalCores || st.logicalCores || 4;
+
+  // cutechess banner
+  const b = $('ccBanner');
+  if (!st.cutechess.found) {
+    b.className = 'banner err';
+    b.innerHTML = 'cutechess-cli bulunamadı. Kurulum: ' +
+      '<a href="https://github.com/cutechess/cutechess/releases" target="_blank">Cute Chess sürümleri</a>. ' +
+      'Kurduktan sonra yol otomatik bulunur; değilse aşağıya elle girin:<br>' +
+      '<div class="row" style="margin-top:8px"><input type="text" id="ccPath" placeholder="C:\\Program Files\\Cute Chess\\cutechess-cli.exe">' +
+      '<button class="btn btn-ghost" id="ccSave" style="flex:0 0 auto">Kaydet</button></div>';
+    setTimeout(() => {
+      const sv = $('ccSave');
+      if (sv) sv.onclick = async () => {
+        await jpost('/api/saveconfig', { cutechess: $('ccPath').value.trim() });
+        init();
+      };
+      if (st.lastConfig && st.lastConfig.cutechess && $('ccPath')) $('ccPath').value = st.lastConfig.cutechess;
+    }, 0);
+  } else {
+    b.className = 'banner ok';
+    b.textContent = 'cutechess-cli hazır: ' + st.cutechess.path;
+  }
+
+  // concurrency varsayilan = fiziksel cekirdek
+  const cfg = st.lastConfig || {};
+  $('concurrency').value = cfg.concurrency || physicalCores;
+  $('concurrency').max = Math.max(20, st.logicalCores || 20);
+  checkConc();
+
+  // kayitli ayarlari geri yukle
+  if (cfg.tc) $('tc').value = cfg.tc;
+  if (cfg.elo0 != null) $('elo0').value = cfg.elo0;
+  if (cfg.elo1 != null) $('elo1').value = cfg.elo1;
+  if (cfg.alpha != null) $('alpha').value = cfg.alpha;
+  if (cfg.beta != null) $('beta').value = cfg.beta;
+  if (cfg.hash != null) $('hash').value = cfg.hash;
+  if (cfg.rounds != null) $('rounds').value = cfg.rounds;
+
+  await loadCommits(cfg);
+
+  if (st.running) startPolling();
+}
+
+async function loadCommits(cfg) {
+  const data = await jget('/api/commits');
+  const commits = asArray(data.commits);
+  const baseSel = $('baseRef');
+  const newSel = $('newRef');
+  baseSel.innerHTML = '';
+  newSel.innerHTML =
+    '<option value="">Çalışan ağaç (working tree) — kaydedilmemiş dahil</option>' +
+    '<option value="HEAD">HEAD (son commit)</option>';
+  commits.forEach(c => {
+    const text = `${c.hash} — ${c.subject}` + (c.date ? `  (${c.date})` : '');
+    baseSel.add(new Option(text, c.hash));
+    newSel.add(new Option(text, c.hash));
+  });
+  // makul varsayilanlar: base = ikinci commit (HEAD~1), new = calisan agac
+  if (cfg && cfg.baseRef) baseSel.value = cfg.baseRef;
+  else if (commits.length > 1) baseSel.value = commits[1].hash;
+  if (cfg && cfg.newRef) newSel.value = cfg.newRef;
+}
+
+function checkConc() {
+  const v = parseInt($('concurrency').value || '0', 10);
+  const w = $('concWarn');
+  if (v > physicalCores) {
+    w.style.display = 'block';
+    w.textContent = `Uyarı: ${physicalCores} fiziksel çekirdeğin üstünde. ` +
+      `SPRT zamanlama gürültüsü artabilir (motorlar zaman kaybedebilir). Öneri: ≤ ${physicalCores}.`;
+  } else { w.style.display = 'none'; }
+}
+
+// preset butonlari
+document.querySelectorAll('.presets button[data-tc]').forEach(btn =>
+  btn.onclick = () => { $('tc').value = btn.dataset.tc; });
+document.querySelectorAll('.presets button[data-elo]').forEach(btn =>
+  btn.onclick = () => { const [a, b] = btn.dataset.elo.split(','); $('elo0').value = a; $('elo1').value = b; });
+$('concurrency').oninput = checkConc;
+
+$('startBtn').onclick = async () => {
+  const cfg = {
+    baseRef: $('baseRef').value,
+    newRef: $('newRef').value,
+    concurrency: parseInt($('concurrency').value, 10),
+    tc: $('tc').value.trim(),
+    elo0: parseFloat($('elo0').value), elo1: parseFloat($('elo1').value),
+    alpha: parseFloat($('alpha').value), beta: parseFloat($('beta').value),
+    rounds: parseInt($('rounds').value, 10),
+    hash: parseInt($('hash').value, 10),
+    forceRebuild: $('forceRebuild').checked
+  };
+  $('startBtn').disabled = true;
+  const res = await jpost('/api/run', cfg);
+  $('startBtn').disabled = false;
+  if (res.status !== 200 || !res.data.ok) {
+    alert('Başlatılamadı: ' + (res.data.error || res.status));
+    return;
+  }
+  $('log').textContent = 'Test başlatıldı...';
+  startPolling();
+};
+
+$('stopBtn').onclick = async () => {
+  $('stopBtn').disabled = true;
+  await jpost('/api/stop', {});
+  $('stopBtn').disabled = false;
+};
+$('openPgn').onclick = () => jpost('/api/open', { what: 'pgn' });
+$('openFolder').onclick = () => jpost('/api/open', { what: 'folder' });
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  poll();
+  pollTimer = setInterval(poll, 1500);
+}
+
+async function poll() {
+  let p;
+  try { p = await jget('/api/progress'); } catch { return; }
+  renderProgress(p);
+  if (!p.running && p.phase !== 'starting' && p.phase !== 'building-base' &&
+      p.phase !== 'building-new' && p.phase !== 'matching') {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+}
+
+function renderProgress(p) {
+  const badge = $('phaseBadge');
+  badge.className = 'phase-badge ' + (p.phase || 'idle');
+  badge.textContent = PHASE_TR[p.phase] || p.phase || 'Boşta';
+
+  $('stopBtn').style.display = p.running ? 'inline-flex' : 'none';
+  $('startBtn').disabled = !!p.running;
+
+  $('sGames').textContent = p.games != null ? p.games : '–';
+  if (p.wins != null) {
+    $('sWdl').innerHTML = `<span class="w">${p.wins}</span>–<span class="d">${p.draws}</span>–<span class="l">${p.losses}</span>`;
+  } else { $('sWdl').textContent = '–'; }
+  $('sElo').textContent = p.elo != null ? (p.elo + (p.eloErr != null ? ' ± ' + p.eloErr : '')) : '–';
+  $('sLos').textContent = p.los != null ? p.los + ' %' : '–';
+
+  // LLR bar
+  const lo = p.llrLower, hi = p.llrUpper, v = p.llr;
+  $('llrLower').textContent = lo != null ? lo : '–';
+  $('llrUpper').textContent = hi != null ? hi : '–';
+  $('llrVal').textContent = v != null ? v : '–';
+  if (v != null && lo != null && hi != null && hi > lo) {
+    let frac = (v - lo) / (hi - lo);
+    frac = Math.max(0, Math.min(1, frac));
+    const fill = $('llrFill');
+    fill.style.left = (frac * 100) + '%';
+    fill.style.background = v >= hi ? 'var(--good)' : (v <= lo ? 'var(--bad)' : 'var(--accent)');
+  }
+  const dec = $('decision');
+  dec.textContent = p.decision || '';
+  dec.style.color = /H1/.test(p.decision) ? 'var(--good)' : (/H0/.test(p.decision) ? 'var(--bad)' : 'var(--muted)');
+
+  // log
+  const log = $('log');
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+  log.textContent = p.tail || '';
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+init();
+</script>

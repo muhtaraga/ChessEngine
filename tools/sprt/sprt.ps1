@@ -28,6 +28,7 @@ param(
     [double]$Elo1        = 5,                        # H1: yeni surum >= baz + Elo1
     [double]$Alpha       = 0.05,                     # tip-I hata
     [double]$Beta        = 0.05,                     # tip-II hata
+    [int]   $Hash        = 0,                         # motor basina TT (MB); 0 = ayarlama
     [string]$Cutechess   = "",                       # cutechess-cli yolu (bos = ara)
     [string]$Book        = ""                        # acilis kitabi (bos = varsayilan)
 )
@@ -63,16 +64,21 @@ foreach ($p in @($newExe, $baseExe, $Book)) {
 
 $pgnOut = Join-Path $repo "build-release\sprt-$New-vs-$Base.pgn"
 
-Write-Output "SPRT: '$New' vs '$Base'  tc=$Tc  H0(<=+$Elo0) H1(>=+$Elo1) alpha=$Alpha beta=$Beta"
+$hashInfo = if ($Hash -gt 0) { " hash=${Hash}MB" } else { "" }
+Write-Output "SPRT: '$New' vs '$Base'  tc=$Tc$hashInfo  H0(<=+$Elo0) H1(>=+$Elo1) alpha=$Alpha beta=$Beta"
 Write-Output "cutechess: $Cutechess"
 Write-Output ""
 
 # cutechess-cli argumanlari. -repeat + -games 2: her acilis iki tarafca oynanir
 # (renk yanliligi elenir). -sprt: karara varinca otomatik durur.
+# -each altina konan ayarlar iki motora da esit uygulanir; Hash>0 ise ayni TT boyutu.
+$eachArgs = @("tc=$Tc", "timemargin=200")
+if ($Hash -gt 0) { $eachArgs += "option.Hash=$Hash" }
 $ccArgs = @(
     "-engine", "name=$New",  "cmd=$newExe",  "proto=uci",
     "-engine", "name=$Base", "cmd=$baseExe", "proto=uci",
-    "-each", "tc=$Tc", "timemargin=200",
+    "-each"
+) + $eachArgs + @(
     "-openings", "file=$Book", "format=epd", "order=random",
     "-repeat", "-games", "2", "-rounds", "$Rounds",
     "-sprt", "elo0=$Elo0", "elo1=$Elo1", "alpha=$Alpha", "beta=$Beta",

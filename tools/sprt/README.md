@@ -14,16 +14,34 @@ etmesi) iyileşme sayılır.
 | `gen-book.ps1` | Açılış kitabını (`book.epd`) motorun `chess fen` moduyla **doğru** üretir (elle FEN yazma hatası yok). |
 | `book.epd` | 22 dengeli açılış pozisyonu (üretilmiş; commit'li). |
 | `sprt.ps1` | İki etiketli binary'yi cutechess-cli ile oynatıp SPRT kararı raporlar. |
+| `gui/` | **Komutsuz web arayüzü** — tarayıcıdan sürüm seç, izlek/zaman ayarla, başlat/durdur, canlı izle. |
+
+## Hızlı yol: GUI (komut yazmadan)
+
+Komut ezberlemek istemiyorsanız yerel web arayüzünü kullanın:
+
+1. `tools\sprt\gui\start-gui.cmd`'ye **çift tıklayın**.
+2. Tarayıcı otomatik açılır (`http://127.0.0.1:5000`). Base commit'i seçin, izlek
+   sayısını (paralel oyun) ve zaman kontrolünü ayarlayın, **Testi başlat**'a basın.
+3. Aşağıdaki panelde W–D–L, Elo ± hata, LOS ve SPRT LLR canlı akar; **Durdur** ile
+   kesebilir, **PGN'i aç** ile oyunları görebilirsiniz.
+
+Ek kurulum gerekmez (Windows PowerShell 5.1'in gömülü .NET'iyle çalışır). Derleme +
+maç zincirini (`build-version.ps1` → `sprt.ps1`) arka planda sizin yerinize çağırır;
+cutechess-cli yine de kurulu olmalıdır (aşağıya bakın — arayüz kurulu değilse uyarır
+ve yolu elle girmenize izin verir). Elle script akışı aşağıda referans olarak durur.
 
 ## Ön koşul: cutechess-cli kurulumu
 
-cutechess-cli bu makinede **kurulu değil**. Cute Chess GUI paketi cutechess-cli.exe'yi
-de içerir:
+cutechess-cli bu makinede **kurulu** (`C:\Program Files (x86)\Cute Chess\cutechess-cli.exe`);
+hem `sprt.ps1` hem GUI onu otomatik bulur. Yeni bir makinede kurmak gerekirse (Cute
+Chess GUI paketi cutechess-cli.exe'yi de içerir):
 
 1. https://github.com/cutechess/cutechess/releases adresinden Windows installer'ını
    indir (ör. `cutechess-1.3.1-win64.msi`) ve kur.
-2. Kurulum sonrası `cutechess-cli.exe` genelde `C:\Program Files\Cute Chess\` altında
-   olur; `sprt.ps1` bu konumu otomatik arar. Farklıysa `-Cutechess <yol>` ver.
+2. Kurulum sonrası `cutechess-cli.exe` genelde `C:\Program Files\Cute Chess\` ya da
+   `C:\Program Files (x86)\Cute Chess\` altında olur; `sprt.ps1` bu konumları otomatik
+   arar. Farklıysa `-Cutechess <yol>` ver (GUI'de de elle yol girilebilir).
 
 > **Alternatif (daha hafif):** [fastchess](https://github.com/Disservin/fastchess)
 > tek taşınabilir exe'dir, SPRT'yi destekler ve modern motor geliştirmede yaygındır.
