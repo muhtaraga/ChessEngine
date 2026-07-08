@@ -18,6 +18,7 @@ add_library(engine STATIC
     src/board.cpp
     src/attacks.cpp
     src/movegen.cpp
+    src/zobrist.cpp
     src/eval.cpp
     src/search.cpp
     src/uci.cpp

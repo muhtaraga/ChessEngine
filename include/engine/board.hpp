@@ -22,6 +22,10 @@ struct Board {
     std::uint16_t halfmove_clock  = 0;      // 50-hamle kuralı sayacı (yarım hamle)
     std::uint16_t fullmove_number = 1;      // tam hamle sayısı (1'den başlar)
 
+    // Pozisyonun Zobrist anahtarı. set_startpos/set_fen tam hesaplar, do_move
+    // artımlı günceller. Her zaman compute_key() ile tutarlı olmalıdır.
+    std::uint64_t key = 0;
+
     // Tahtayı tamamen boşaltır (tüm bitboard'lar 0, varsayılan durum bilgisi).
     void clear();
 
@@ -51,6 +55,11 @@ struct Board {
     // (rok hakları, en passant, sayaçlar, sıra) günceller. Perft copy-make
     // yaklaşımıyla çalışır: geri alma yok, çağıran gerekirse kopya tutar.
     void do_move(Move m);
+
+    // Pozisyonun Zobrist anahtarını taş dizilimi + durum bilgisinden sıfırdan
+    // hesaplar. do_move'un artımlı güncellemesini doğrulamak için de kullanılır
+    // (invariant: key == compute_key()).
+    std::uint64_t compute_key() const;
 
     // FEN dizesinden pozisyon kurar. Başarılıysa true.
     bool set_fen(const std::string& fen);

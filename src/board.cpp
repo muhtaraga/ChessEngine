@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "engine/bitboard.hpp"
+#include "engine/zobrist.hpp"
 
 namespace engine {
 
@@ -21,16 +22,38 @@ void Board::clear() {
     castling_rights = 0;
     halfmove_clock  = 0;
     fullmove_number = 1;
+    key             = 0;
+}
+
+std::uint64_t Board::compute_key() const {
+    std::uint64_t k = 0;
+    for (int c = 0; c < COLOR_NB; ++c) {
+        for (int pt = 0; pt < PIECE_TYPE_NB; ++pt) {
+            Bitboard bb = pieces[pt] & colors[c];
+            while (bb) {
+                Square sq = pop_lsb(bb);
+                k ^= ZOBRIST.psq[c][pt][sq];
+            }
+        }
+    }
+    k ^= ZOBRIST.castling[castling_rights];
+    if (en_passant != SQ_NONE)
+        k ^= ZOBRIST.en_passant[file_of(en_passant)];
+    if (side_to_move == BLACK)
+        k ^= ZOBRIST.side;
+    return k;
 }
 
 void Board::put_piece(Color c, PieceType pt, Square sq) {
     set_bit(pieces[pt], sq);
     set_bit(colors[c], sq);
+    key ^= ZOBRIST.psq[c][pt][sq];  // Zobrist anahtarının taş-kare kısmını bakımla
 }
 
 void Board::remove_piece(Color c, PieceType pt, Square sq) {
     clear_bit(pieces[pt], sq);
     clear_bit(colors[c], sq);
+    key ^= ZOBRIST.psq[c][pt][sq];  // XOR tersine çevrilebilir: kaldırma da toggle
 }
 
 PieceType Board::type_on(Square sq) const {
@@ -67,6 +90,7 @@ void Board::set_startpos() {
     castling_rights = WHITE_OO | WHITE_OOO | BLACK_OO | BLACK_OOO;
     halfmove_clock  = 0;
     fullmove_number = 1;
+    key             = compute_key();
 }
 
 bool Board::piece_at(Square sq, Color& out_color, PieceType& out_type) const {
@@ -157,6 +181,13 @@ void Board::do_move(Move m) {
     const Color    them = ~us;
     const PieceType pt  = type_on(from);
 
+    // Zobrist: eski en passant sütun anahtarını kaldır (yeni ep aşağıda eklenir),
+    // eski rok haklarını sonda karşılaştırmak için sakla. Taş-kare anahtarları
+    // put_piece/remove_piece içinde otomatik bakımlıdır.
+    const std::uint8_t old_castling = castling_rights;
+    if (en_passant != SQ_NONE)
+        key ^= ZOBRIST.en_passant[file_of(en_passant)];
+
     en_passant = SQ_NONE;   // her hamlede sıfırla; çift itme aşağıda yeniden ayarlar
     ++halfmove_clock;
 
@@ -181,8 +212,10 @@ void Board::do_move(Move m) {
     if (pt == PAWN) {
         halfmove_clock = 0;
         // Çift ileri itme -> en passant hedef karesi (atlanan kare).
-        if (rank_of(to) - rank_of(from) == 2 || rank_of(to) - rank_of(from) == -2)
+        if (rank_of(to) - rank_of(from) == 2 || rank_of(to) - rank_of(from) == -2) {
             en_passant = make_square(file_of(from), (rank_of(from) + rank_of(to)) / 2);
+            key ^= ZOBRIST.en_passant[file_of(en_passant)];  // yeni ep sütununu ekle
+        }
     }
 
     // --- Rok: kaleyi de taşı ---
@@ -202,10 +235,15 @@ void Board::do_move(Move m) {
 
     // --- Rok haklarını güncelle ---
     castling_rights &= CastleMask[from] & CastleMask[to];
+    if (castling_rights != old_castling) {
+        key ^= ZOBRIST.castling[old_castling];      // eski hak kombinasyonunu çıkar
+        key ^= ZOBRIST.castling[castling_rights];   // yeni kombinasyonu ekle
+    }
 
     if (us == BLACK)
         ++fullmove_number;
     side_to_move = them;
+    key ^= ZOBRIST.side;  // sıra değişti: side anahtarını toggle et
 }
 
 namespace {
@@ -280,6 +318,9 @@ bool Board::set_fen(const std::string& fen) {
     int hm = 0, fm = 1;
     if (ss >> hm) halfmove_clock = static_cast<std::uint16_t>(hm);
     if (ss >> fm) fullmove_number = static_cast<std::uint16_t>(fm);
+
+    // Tüm taş dizilimi ve durum bilgisi kurulduktan sonra anahtarı hesapla.
+    key = compute_key();
 
     return true;
 }
