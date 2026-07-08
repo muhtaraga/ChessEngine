@@ -43,7 +43,7 @@ hamlelerle oynuyor, perft testleri geçiyor.
 
 - [x] Zobrist hashing + transposition table
 - [x] Move ordering: MVV-LVA, killer moves, history heuristic
-- [ ] Quiescence search (horizon effect'i azaltmak için)
+- [x] Quiescence search (horizon effect'i azaltmak için)
 - [ ] Iterative deepening + time management
 - [ ] Gelişmiş evaluation: pawn structure, king safety, piece mobility
 - [ ] Cutechess-cli ile otomatik maç serisi altyapısı kur, her değişikliği
@@ -69,7 +69,7 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-08): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
 üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
-geçiyor. Toplam 50 test geçiyor.
+geçiyor. Toplam 51 test geçiyor.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -104,10 +104,21 @@ Faz 2 (devam ediyor):
   aynı; d8 artık ~1s. Not: killer/history her search() çağrısında (yani her
   derinlikte) sıfırlanıyor — cross-depth kalıcılık ileride search() API'si
   yeniden düzenlenince gelebilir (TT hamlesi zaten derinlikler arası taşınıyor).
+- Adım 3: Quiescence search (TAMAM). negamax yaprağı `quiescence()` çağırıyor:
+  yalnızca yakalama+promosyon MVV-LVA ile aranır, sessizleşince eval döner.
+  Stand-pat (sessizde eval alt sınır, beta kesmesi). Çekteyken stand-pat yok,
+  tüm kaçışlar aranır (mat/horizon doğruluğu), kaçış yoksa -MATE+ply. ply tavanı
+  ile sonlanır. Etki: startpos d8 gürültülü cp -60 -> temiz cp 0; savunmalı
+  piyon pozisyonunda motor artık Rxe5?? oynamıyor (bestmove e1d1, cp 305).
+  Test: QuiescenceAvoidsLosingCapture. İleride: SEE ile kayıplı yakalama elemesi,
+  delta pruning.
 
-**Sıradaki: Faz 2 Adım 3 — Quiescence search** (horizon effect'i azaltmak için:
-leaf'te dolu pozisyonda yakalamaları/checks'i arayan sessiz-arama). Sonra
-gelişmiş evaluation, cutechess-cli maç/SPRT altyapısı.
+**Sıradaki: Faz 2 Adım 4 — Gelişmiş evaluation** (pawn structure, king safety,
+piece mobility). Sonra cutechess-cli ile otomatik maç/SPRT regresyon altyapısı.
+
+Not: "Iterative deepening + time management" Faz 2 listesinde ayrı madde ama
+UCI handle_go'da Faz 1'de erken yapıldı (info akışı + basit zaman bütçesi);
+ileride aspiration windows / daha iyi zaman yönetimiyle güçlendirilebilir.
 
 ### İlk somut görev
 
