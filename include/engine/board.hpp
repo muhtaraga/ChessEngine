@@ -64,6 +64,11 @@ struct Board {
     // FEN dizesinden pozisyon kurar. Başarılıysa true.
     bool set_fen(const std::string& fen);
 
+    // Pozisyonu FEN dizesine çevirir (set_fen'in tersi). Round-trip garantisi:
+    // set_fen(to_fen()) aynı pozisyonu üretmeli. Açılış kitabı üretimi ve
+    // ileride NNUE self-play veri toplama için de kullanılır.
+    std::string to_fen() const;
+
     // Tahtayı UTF-8 satranç figürinleriyle çok satırlı bir string'e çevirir.
     std::string to_string() const;
 

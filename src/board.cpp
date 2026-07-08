@@ -262,7 +262,62 @@ bool char_to_piece(char c, Color& color, PieceType& type) {
     }
 }
 
+// Taş türü + renk -> FEN harfi (beyaz büyük, siyah küçük).
+char piece_to_char(Color c, PieceType pt) {
+    const char letters[PIECE_TYPE_NB] = {'p', 'n', 'b', 'r', 'q', 'k'};
+    char ch = letters[pt];
+    return (c == WHITE) ? static_cast<char>(std::toupper(static_cast<unsigned char>(ch))) : ch;
+}
+
 }  // namespace
+
+std::string Board::to_fen() const {
+    std::string out;
+
+    // --- Taş dizilimi: 8. sıradan 1. sıraya, '/' ile ayrılır ---
+    for (int rank = 7; rank >= 0; --rank) {
+        int empty = 0;  // ardışık boş kare sayacı
+        for (int file = 0; file < 8; ++file) {
+            Square sq = make_square(file, rank);
+            Color c;
+            PieceType pt;
+            if (piece_at(sq, c, pt)) {
+                if (empty) { out += std::to_string(empty); empty = 0; }
+                out += piece_to_char(c, pt);
+            } else {
+                ++empty;
+            }
+        }
+        if (empty) out += std::to_string(empty);
+        if (rank > 0) out += '/';
+    }
+
+    // --- Sıra ---
+    out += (side_to_move == WHITE) ? " w " : " b ";
+
+    // --- Rok hakları (KQkq sırası; hiçbiri yoksa '-') ---
+    std::string cr;
+    if (castling_rights & WHITE_OO)  cr += 'K';
+    if (castling_rights & WHITE_OOO) cr += 'Q';
+    if (castling_rights & BLACK_OO)  cr += 'k';
+    if (castling_rights & BLACK_OOO) cr += 'q';
+    out += cr.empty() ? "-" : cr;
+
+    // --- En passant hedef karesi ---
+    out += ' ';
+    if (en_passant == SQ_NONE) {
+        out += '-';
+    } else {
+        out += static_cast<char>('a' + file_of(en_passant));
+        out += static_cast<char>('1' + rank_of(en_passant));
+    }
+
+    // --- Sayaçlar ---
+    out += ' ' + std::to_string(halfmove_clock);
+    out += ' ' + std::to_string(fullmove_number);
+
+    return out;
+}
 
 bool Board::set_fen(const std::string& fen) {
     clear();

@@ -69,6 +69,33 @@ int run_perft(int argc, char** argv) {
     return 0;
 }
 
+// chess fen [uci-moves...] -> başlangıç pozisyonundan verilen UCI hamlelerini
+// oynar ve sonuç FEN'ini basar. Açılış kitabı (SPRT altyapısı) üretimi için:
+// hamle dizilerini legal olarak oynayıp doğru FEN (en passant/rok/sayaç dahil)
+// üretir; elle FEN yazmanın hata riskini ortadan kaldırır.
+int run_fen(int argc, char** argv) {
+    using namespace engine;
+    Board b;
+    b.set_startpos();
+
+    for (int i = 2; i < argc; ++i) {
+        std::string uci = argv[i];
+        MoveList list;
+        generate_legal(b, list);
+        Move found;
+        for (Move m : list)
+            if (m.to_uci() == uci) { found = m; break; }
+        if (found == Move()) {
+            std::cerr << "Gecersiz/illegal hamle: " << uci << '\n';
+            return 1;
+        }
+        b.do_move(found);
+    }
+
+    std::cout << b.to_fen() << '\n';
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -83,6 +110,9 @@ int main(int argc, char** argv) {
 
     if (mode == "perft" && argc >= 3)
         return run_perft(argc, argv);
+
+    if (mode == "fen")
+        return run_fen(argc, argv);
 
     if (mode == "demo") {
         engine::Board board;

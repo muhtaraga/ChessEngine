@@ -84,3 +84,41 @@ TEST(BoardStartpos, KeySquares) {
     // e4 başlangıçta boş.
     EXPECT_FALSE(b.piece_at(E4, c, pt));
 }
+
+// to_fen: başlangıç pozisyonu standart FEN'i vermeli.
+TEST(BoardFen, StartposString) {
+    Board b;
+    b.set_startpos();
+    EXPECT_EQ(b.to_fen(),
+              "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+}
+
+// Round-trip: set_fen -> to_fen çeşitli pozisyonlarda birebir aynı dizeyi vermeli
+// (en passant, kısmi rok hakları, sayaçlar dahil).
+TEST(BoardFen, RoundTrip) {
+    const char* fens[] = {
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        // 1.e4 sonrası: en passant hedefi e3, siyah sırada.
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        // Kiwipete: karmaşık rok/taş dizilimi.
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        // Kısmi rok hakları + oyun sonu sayaçları.
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 5 39",
+        // Yalnız beyaz kanat rok hakkı.
+        "r3k2r/8/8/8/8/8/8/R3K2R w Kq - 3 12",
+    };
+    for (const char* f : fens) {
+        Board b;
+        ASSERT_TRUE(b.set_fen(f)) << f;
+        EXPECT_EQ(b.to_fen(), f) << "round-trip bozuldu: " << f;
+    }
+}
+
+// do_move sonrası en passant karesi FEN'de doğru üretilmeli (çift piyon itişi).
+TEST(BoardFen, EnPassantAfterDoublePush) {
+    Board b;
+    b.set_startpos();
+    b.do_move(Move::make(E2, E4));  // çift itiş -> ep hedefi e3
+    EXPECT_EQ(b.to_fen(),
+              "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+}
