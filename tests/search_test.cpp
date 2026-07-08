@@ -37,7 +37,9 @@ TEST(Search, WinsHangingQueen) {
     ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
     SearchResult r = search(b, 3);
     EXPECT_EQ(r.best, Move::make(E1, E5));
-    EXPECT_GT(r.score, 500);  // yaklaşık bir vezir öndeyiz
+    // Rxe5 sonrası tam bir kale öndeyiz (~500). Tapered eval'de oyun sonunda
+    // aktif siyah şah küçük bir aktiflik payı aldığından eşik 400'e çekildi.
+    EXPECT_GT(r.score, 400);
 }
 
 // Mat-in-2: beyaz 3 ply içinde mat etmeli (puan MATE'e yakın pozitif).
@@ -58,7 +60,7 @@ TEST(Search, MoveOrderingPreservesTacticAtDepth) {
     ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
     SearchResult r = search(b, 5);       // depth 3 yerine 5: sıralama devrede
     EXPECT_EQ(r.best, Move::make(E1, E5));  // yine bedava veziri al
-    EXPECT_GT(r.score, 500);
+    EXPECT_GT(r.score, 400);  // tam bir kale önde (tapered eval eşiği, bkz. WinsHangingQueen)
 }
 
 // Quiescence: horizon effect testi. Beyaz Rxe5 ile piyon "kazanır" gibi görünür

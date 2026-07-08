@@ -223,6 +223,23 @@ Faz 2 (devam ediyor):
   Toplam 59 test. Not: `Threads` (Lazy SMP) bilinçli ertelendi — gerçek güç
   özelliği, kendi adımında SPRT ile yapılacak; çalışmayan option ilan edilmedi.
 
+Faz 2B (devam ediyor):
+- Adım 1: Tapered eval altyapısı (TAMAM). `eval.hpp`/`eval.cpp` orta oyun (MG) /
+  oyun sonu (EG) çift-tablo + oyun fazına göre interpolasyona geçirildi.
+  - `PhaseWeight` (N=1,B=1,R=2,Q=4; piyon/şah=0), `MAX_PHASE=24` (tam kadro).
+    `game_phase(b)` = kalan taşların ağırlık toplamı, tavanla sınırlı.
+  - `PstMg`/`PstEg`: EG tablosu şu an yalnızca ŞAH'ta farklı (orta oyun rok
+    bölgesi güvenli, oyun sonu merkez aktif — Michniewski EG şah tablosu); diğer
+    taşlar ve materyal her iki fazda eşit. `to_lerf()` ham görsel tabloyu LERF'e
+    çevirir. `evaluate()` mg/eg ayrı biriktirir: score=(mg*phase+eg*(24-phase))/24.
+  - Testler: PhaseFullBoardIsMax(=24), PhaseBareKingsIsZero(=0),
+    PhaseDropsWhenQueensLeave, KingCentralizedInEndgame (faz 0'da merkez şah >
+    köşe şah). WinsHangingQueen/MoveOrderingPreservesTacticAtDepth eşiği >500 ->
+    >400 (Rxe5 hâlâ doğru; K+R vs K oyun sonunda aktif siyah şah EG payı skoru
+    479'a çekiyor — doğru davranış). Toplam 63 test.
+  - Sıradaki 2B işleri: pawn structure (isole/çift/geçer), king safety, piece
+    mobility, bishop pair, rook on open/semi-open file; sonra cutechess-cli + SPRT.
+
 **Sıradaki: Faz 2B** — önce gelişmiş evaluation (pawn structure, king safety,
 piece mobility, tapered eval), ardından cutechess-cli + SPRT maç altyapısı. SPRT
 altyapısı bir kez oturunca Faz 2C (selective search: PVS, null move, SEE, LMR,
