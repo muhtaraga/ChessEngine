@@ -41,13 +41,80 @@ hamlelerle oynuyor, perft testleri geçiyor.
 
 ### Faz 2 — Klasik Güçlendirme
 
+Klasik motoru NNUE'ya geçmeden önce olabildiğince güçlendiriyoruz. Faz 2, dört
+bölüme ayrılıyor. **Sıralama kritik:** 2B'deki SPRT/maç altyapısı, 2C ve 2D'deki
+her şeyin ön koşulu — çünkü selective search ve multi-threading kazançları
+düğüm sayısıyla değil, ancak eski versiyona karşı maç sonucuyla (Elo) doğrulanır.
+
+**Faz 2A — Temel altyapı (TAMAM)**
+
 - [x] Zobrist hashing + transposition table
 - [x] Move ordering: MVV-LVA, killer moves, history heuristic
 - [x] Quiescence search (horizon effect'i azaltmak için)
-- [x] Iterative deepening + time management
-- [ ] Gelişmiş evaluation: pawn structure, king safety, piece mobility
-- [ ] Cutechess-cli ile otomatik maç serisi altyapısı kur, her değişikliği
-      önceki versiyona karşı test et (SPRT mantığıyla — regresyon var mı yok mu)
+- [x] Iterative deepening + aspiration windows + time management
+- [x] Asenkron stop / go infinite + UCI seçenekleri (Hash, Clear Hash)
+
+**Faz 2B — Değerlendirme + test altyapısı (sıradaki, ön koşul)**
+
+- [ ] Gelişmiş evaluation: pawn structure (isole/çift/geçer piyon), king safety
+      (şah bölgesi saldırıları, piyon kalkanı), piece mobility, bishop pair,
+      rook on open/semi-open file. Tapered eval (middlegame/endgame interpolasyon).
+- [ ] **cutechess-cli ile otomatik maç + SPRT regresyon altyapısı.** Bir betik:
+      iki versiyonu (yeni vs. baz) N oyun, sabit zaman kontrolünde oynatır, Elo
+      farkı + hata payı + LOS/SPRT kararı (H0 reddedildi mi?) raporlar. Açılış
+      kitabı (varyasyon için), tekrar/aynılık kontrolü. **Bundan sonraki her
+      arama değişikliği bu kapıdan geçecek** — düğüm sayısı düşmesi "iyileşme"
+      sayılmaz, sadece Elo sayılır.
+- [ ] (kozmetik) `seldepth` raporlama: quiescence + extension'larla ulaşılan en
+      derin ply'ı takip edip `info depth x seldepth y` bas (Stockfish gibi).
+
+**Faz 2C — Selective search (her adım tek başına, SPRT ile doğrulanır)**
+
+Her madde ayrı bir commit + ayrı bir SPRT koşusu. Kazanç göstermeyen ya da
+regresyon veren teknik geri alınır. Sıralama, altyapı bağımlılığına göre:
+
+- [ ] **PVS (Principal Variation Search)**: ilk hamle tam pencereyle, kalanlar
+      null-window [α, α+1] ile aranır; α'yı geçen olursa tam pencereyle yeniden
+      aranır. LMR'nin oturduğu çerçeve — önce bu gelmeli.
+- [ ] **Null move pruning**: rakibe bedava hamle ver, azaltılmış derinlikte
+      (R≈2-3) beta etrafında ara; sonuç ≥ beta ise dalı buda. **Dikkat:** çekteyken,
+      çok sığ derinlikte ve zugzwang riskinde (yalnız şah+piyon kalınca) uygulanmaz;
+      yüksek derinlikte verification search ile zugzwang blunder'ı önlenir.
+- [ ] **SEE (Static Exchange Evaluation)** + quiescence temizliği: bir karedeki
+      taş alışverişinin materyal sonucunu hesapla. Kullanımı: (a) qsearch'te kayıplı
+      yakalamaları ele, (b) delta pruning (Adım 3 notundaki ertelenen işler), (c)
+      ileride LMR/futility kararlarında "taktik olarak kazançlı hamleyi budama".
+- [ ] **LMR (Late Move Reductions)**: move ordering'de geç gelen, quiet, çek
+      olmayan hamleleri azaltılmış derinlikte ara (derinlik+sıraya bağlı log tablo);
+      α'yı geçerse tam derinlikte yeniden ara. **Tek başına en büyük Elo kazancı**
+      ve nominal derinliği en çok şişiren teknik (Stockfish'in bizden hızlı
+      derinleşmesinin ana sebebi).
+- [ ] **Futility + reverse futility (static null move)**: yaprağa yakın, static
+      eval ± margin ile umutsuz quiet hamleleri/dalları ele.
+- [ ] **Late move pruning (move-count)**: sığ derinlikte, belli sayıdan sonraki
+      quiet hamleleri hiç arama.
+- [ ] **Razoring**: sığ derinlikte eval çok geriyse doğrudan qsearch'e düş, o da
+      α'nın altındaysa buda.
+- [ ] **Check extension** (çek veren/çekteki hatları uzat). İleride opsiyonel:
+      **singular extension** (bir hamle diğerlerinden belirgin iyiyse uzat) — ileri
+      seviye, en sona.
+
+**Faz 2D — Multi-threading (Lazy SMP)**
+
+Modern motorların standart, en sade etkili paralel yaklaşımı: N thread aynı kök
+pozisyonu, paylaşılan tek bir TT üzerinden arar; TT ve küçük sıralama farklarıyla
+doğal olarak ıraksarlar, ana thread raporlar. Gereksinimler:
+
+- [ ] **Thread-safe TT**: ya lockless XOR-key hilesi (bozuk okumayı yakalar) ya da
+      per-entry atomik. Yarış koşullarına dayanıklı yapı.
+- [ ] **Thread pool + per-thread Searcher durumu** (killer/history/stack/node
+      sayacı thread'e özel; TT paylaşılır).
+- [ ] **`Threads` UCI option** (spin, min 1, max donanım). Şu an bilinçli ertelenmiş
+      durumda — burada hayata geçer.
+- [ ] **Determinizm kaybı** kabul edilir: çok-thread arama tekrarlanabilir değildir,
+      bu yüzden düğüm sayısı iddiası olan testler tek-thread koşar.
+- [ ] **SPRT ile ölçekleme doğrulama**: 1→2→4→8 thread gerçekten Elo veriyor mu?
+      (nps ölçeklemesi ≠ Elo ölçeklemesi; ölçülür, varsayılmaz.)
 
 ### Faz 3 — NNUE'ya Geçiş
 
@@ -156,9 +223,12 @@ Faz 2 (devam ediyor):
   Toplam 59 test. Not: `Threads` (Lazy SMP) bilinçli ertelendi — gerçek güç
   özelliği, kendi adımında SPRT ile yapılacak; çalışmayan option ilan edilmedi.
 
-**Sıradaki: Faz 2 Adım 5 — Gelişmiş evaluation** (pawn structure, king safety,
-piece mobility). Sonra cutechess-cli ile otomatik maç/SPRT regresyon altyapısı.
-`Threads`/Lazy SMP de bu SPRT altyapısıyla birlikte ele alınabilir.
+**Sıradaki: Faz 2B** — önce gelişmiş evaluation (pawn structure, king safety,
+piece mobility, tapered eval), ardından cutechess-cli + SPRT maç altyapısı. SPRT
+altyapısı bir kez oturunca Faz 2C (selective search: PVS, null move, SEE, LMR,
+futility ailesi, LMP, razoring, extensions) sırayla, her biri ayrı SPRT'den
+geçirilerek eklenir. Faz 2D (Lazy SMP multi-threading) klasik fazın son adımı,
+NNUE'dan önce. Yol haritası detayı için "Faz 2 — Klasik Güçlendirme" bölümüne bak.
 
 ### İlk somut görev
 
