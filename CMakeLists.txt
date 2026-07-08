@@ -30,6 +30,10 @@ target_include_directories(engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_executable(chess src/main.cpp)
 target_link_libraries(chess PRIVATE engine)
 
-# Testler.
-enable_testing()
-add_subdirectory(tests)
+# Testler. SPRT için sürüm derlemesinde kapatılabilir (BUILD_TESTS=OFF) -> gtest
+# FetchContent indirmesi ve test derlemesi atlanır, release binary hızlı çıkar.
+option(BUILD_TESTS "GoogleTest tabanlı birim testlerini derle" ON)
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
