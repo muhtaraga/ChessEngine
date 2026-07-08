@@ -41,7 +41,7 @@ hamlelerle oynuyor, perft testleri geçiyor.
 
 ### Faz 2 — Klasik Güçlendirme
 
-- [ ] Zobrist hashing + transposition table
+- [x] Zobrist hashing + transposition table
 - [ ] Move ordering: MVV-LVA, killer moves, history heuristic
 - [ ] Quiescence search (horizon effect'i azaltmak için)
 - [ ] Iterative deepening + time management
@@ -67,8 +67,11 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-07): FAZ 1 TAMAMLANDI.** Motor UCI üzerinden GUI'ye
-bağlanabiliyor, legal hamlelerle oynuyor, perft testleri geçiyor.
+**Güncel durum (2026-07-08): FAZ 1 TAMAMLANDI, FAZ 2 başladı.** Motor UCI
+üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
+geçiyor. Toplam 49 test geçiyor.
+
+Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
   tahta yazdırma.
 - Adım 2: Tam move generation. Non-sliding constexpr tablolar; sliding taşlar
@@ -79,12 +82,23 @@ bağlanabiliyor, legal hamlelerle oynuyor, perft testleri geçiyor.
 - Adım 4: negamax + alpha-beta; mat/pat, 50-hamle beraberliği.
 - Adım 5: UCI (uci/isready/ucinewgame/position/go/quit). `chess` varsayılan UCI,
   `chess perft <d> [fen]`, `chess demo`.
-- Toplam 30 test geçiyor.
 
-**Sıradaki: Faz 2 — Klasik Güçlendirme.** İlk adım: Zobrist hashing +
-transposition table. Sonra move ordering (MVV-LVA, killer, history),
-quiescence search, iterative deepening + zaman yönetimi, gelişmiş evaluation,
-cutechess-cli ile otomatik maç/SPRT altyapısı.
+Faz 2 (devam ediyor):
+- Adım 1: Zobrist hashing + transposition table (TAMAM).
+  - `zobrist.hpp/cpp`: sabit tohumlu splitmix64 anahtar tabloları (psq/castling/
+    ep/side). `Board.key` + `compute_key()`. put_piece/remove_piece taş-kare
+    anahtarını, do_move durum deltalarını (rok/ep/sıra) artımlı günceller.
+    İnvaryant testi: her do_move sonrası key == compute_key() (perft yürüyüşü).
+  - `tt.hpp/cpp`: `TranspositionTable` (16 MB, 2'nin kuvveti, mask index,
+    depth-preferred + yaş değiştirme, EXACT/LOWER/UPPER). search TT sonda+kesme
+    (kökte kesme yok), TT hamlesi ile move ordering, sonucu saklar. Mat skoru
+    ply-normalize. 50-hamle TT'den önce. Ölçüm: startpos d6 soğuk 1.409.591
+    düğüm -> sıcak TT 15.483. Bilinen sınır: halfmove_clock anahtarda yok
+    (küçük TT hatası, kabul); TT kesmesi PV'yi kısaltabiliyor (kozmetik).
+
+**Sıradaki: Faz 2 Adım 2 — Move ordering (MVV-LVA, killer moves, history
+heuristic).** (TT hamlesi zaten öne alınıyor; onun üstüne inşa edilecek.)
+Sonra quiescence search, gelişmiş evaluation, cutechess-cli maç/SPRT altyapısı.
 
 ### İlk somut görev
 
