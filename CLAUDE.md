@@ -237,8 +237,24 @@ Faz 2B (devam ediyor):
     köşe şah). WinsHangingQueen/MoveOrderingPreservesTacticAtDepth eşiği >500 ->
     >400 (Rxe5 hâlâ doğru; K+R vs K oyun sonunda aktif siyah şah EG payı skoru
     479'a çekiyor — doğru davranış). Toplam 63 test.
+- Adım 2: `Board::to_fen()` + `chess fen [uci-moves...]` modu (TAMAM). set_fen'in
+  tersi; round-trip garantili (en passant/rok/sayaç doğru serileştirilir). "chess
+  fen" başlangıçtan hamleleri legal oynayıp FEN basar — açılış kitabını elle FEN
+  yazmadan üretmek için (Faz 3 self-play pipeline'ı da kullanacak). Testler:
+  StartposString, RoundTrip (Kiwipete/ep/kısmi rok), EnPassantAfterDoublePush.
+- Adım 3: SPRT maç/regresyon altyapısı (TAMAM, cutechess-cli kurulumu bekliyor).
+  `tools/sprt/`: build-version.ps1 (git ref -> /O2 Release chess-<label>.exe,
+  worktree izole, build dizini gitignore'lu build-release altında), gen-book.ps1
+  + book.epd (22 dengeli açılış, motorun `chess fen`'iyle doğru üretildi),
+  sprt.ps1 (cutechess-cli sarmalayıcı: -repeat çift renk, -sprt otomatik durma,
+  elo0/elo1/alpha/beta parametrik), README.md (kurulum + iş akışı + karar yorumu).
+  CMakeLists `BUILD_TESTS` opsiyonu (OFF -> gtest indirmesi atlanır, sürüm hızlı).
+  **cutechess-cli bu makinede kurulu DEĞİL** — kullanıcı README'deki adımlarla
+  kuracak; kurulunca ilk SPRT koşusu tapered eval'in (bbbe48b vs d7e6754) Elo
+  katkısını ölçecek. Toplam 66 test.
   - Sıradaki 2B işleri: pawn structure (isole/çift/geçer), king safety, piece
-    mobility, bishop pair, rook on open/semi-open file; sonra cutechess-cli + SPRT.
+    mobility, bishop pair, rook on open/semi-open file — her biri ayrı SPRT'den
+    geçirilerek (artık altyapı hazır).
 
 **Sıradaki: Faz 2B** — önce gelişmiş evaluation (pawn structure, king safety,
 piece mobility, tapered eval), ardından cutechess-cli + SPRT maç altyapısı. SPRT
