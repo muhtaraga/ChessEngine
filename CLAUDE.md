@@ -136,10 +136,12 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-08): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
 üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
-geçiyor. Toplam 66 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
-SPRT altyapısı (cutechess-cli KURULU + komutsuz web GUI) tamam — sırada gelişmiş
-evaluation (pawn structure, king safety, mobility, bishop pair, rook-on-open-file),
-her biri ayrı SPRT'den geçirilerek.
+geçiyor. Toplam 70 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
+SPRT altyapısı (cutechess-cli KURULU + komutsuz web GUI) tamam. Tapered eval'in
+Elo katkısı SPRT ile doğrulandı (+42.8 ± 16.3, H1). İlk gelişmiş eval terimi
+**pawn structure (isole/çift/geçer piyon) da SPRT'den geçti (+45.4 ± 16.8, H1)**.
+Sırada kalan gelişmiş evaluation: king safety, mobility, bishop pair,
+rook-on-open-file — her biri ayrı SPRT'den geçirilerek.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -268,16 +270,30 @@ Faz 2B (devam ediyor):
   base derle -> new derle (çalışan ağaç daima yeniden) -> sprt.ps1, alt-process
   stdout'unu satır satır log'a akıtır (saatlerce süren maçta canlı akış).
   Uçtan uca test edildi. Donanım notu: CPU 14 fiziksel / 20 mantıksal çekirdek.
-  - Sıradaki 2B işleri: pawn structure (isole/çift/geçer), king safety, piece
-    mobility, bishop pair, rook on open/semi-open file — her biri ayrı SPRT'den
-    geçirilerek (altyapı + GUI hazır).
+- Adım 5: Tapered eval SPRT baseline (TAMAM). Metodoloji borcu kapatıldı:
+  d7e6754 (tapered öncesi) vs bbbe48b (tapered), GUI'den. 709 oyun, W-D-L
+  189-418-102, **Elo +42.8 ± 16.3, LLR 2.97, H1 kabul** — tapered eval'in Elo
+  katkısı kanıtlandı.
+- Adım 6: Pawn structure (TAMAM, commit 067f822). evaluate()'e ilk gelişmiş eval
+  terimi: izole + çift + geçer piyon, renk-simetrik, tapered (MG/EG ayrı, tek
+  taper sonda). `eval.hpp`: file/adjacent/passed constexpr maskeleri (detail,
+  `to_lerf` deseni) + ağırlıklar (izole -12/-15, çift -10/-20 [EG'de ağır],
+  geçer piyon sıra-bağlı bonus tablosu [EG belirgin büyük]) + `pawn_structure(b,
+  mg,eg)` (beyaz−siyah, PST gürültüsü olmadan izole test edilebilir). `eval.cpp`:
+  çift = sütun başına (çift-sayım yok), izole+geçer = piyon başına. 4 yeni test
+  (66 -> 70). Elle kontrol: geçer-piyon pozisyonunda +235cp, motor piyonu şahıyla
+  eskort ediyor. **SPRT: base 26c833d vs new 067f822, 785 oyun, W-D-L 239-409-137,
+  Elo +45.4 ± 16.8, LLR 2.97, H1 kabul** — terim kanıtlandı, tutuldu. Bilinçli
+  ertelenen: pawn hash table (hız), ince ağırlık tuning'i.
+  - Sıradaki 2B işleri: king safety, piece mobility, bishop pair, rook on
+    open/semi-open file — her biri ayrı commit + ayrı SPRT'den geçirilerek
+    (altyapı + GUI hazır).
 
-**Sıradaki: Faz 2B — gelişmiş evaluation.** Test altyapısı (SPRT + cutechess +
-web GUI) artık tamamen hazır. Sırada gelişmiş evaluation adımları var: pawn
-structure (isole/çift/geçer piyon), king safety, piece mobility, bishop pair,
-rook on open/semi-open file — her biri ayrı bir commit + ayrı bir SPRT koşusundan
-(GUI'den) geçirilerek. İlk fırsatta tapered eval'in kendi Elo katkısı da SPRT ile
-ölçülmeli. 2B bitince Faz 2C (selective search: PVS, null move, SEE, LMR, futility
+**Sıradaki: Faz 2B — gelişmiş evaluation (devam).** Tapered eval (+42.8) ve pawn
+structure (+45.4) SPRT'den geçti. Kalan gelişmiş evaluation adımları: king safety,
+piece mobility, bishop pair, rook on open/semi-open file — her biri ayrı bir
+commit + ayrı bir SPRT koşusundan (GUI'den) geçirilerek. 2B bitince Faz 2C
+(selective search: PVS, null move, SEE, LMR, futility
 ailesi, LMP, razoring, extensions) sırayla, her biri ayrı SPRT'den geçirilerek
 eklenir. Faz 2D (Lazy SMP multi-threading) klasik fazın son adımı, NNUE'dan önce.
 Yol haritası detayı için "Faz 2 — Klasik Güçlendirme" bölümüne bak.
