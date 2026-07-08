@@ -142,9 +142,10 @@ Elo katkısı SPRT ile doğrulandı (+42.8 ± 16.3, H1). İlk gelişmiş eval te
 **pawn structure (isole/çift/geçer piyon) da SPRT'den geçti (+45.4 ± 16.8, H1)**.
 Ayrıca **arama tekrar (repetition) tespiti eklendi ve SPRT'den geçti (+27.2 ±
 12.7, H1)** — motor artık kazandığı pozisyonda 3-hamle tekrarına düşmüyor. İkinci
-gelişmiş eval terimi **piece mobility de SPRT'den geçti (H1 kabul)**.
-Sırada kalan gelişmiş evaluation: king safety, bishop pair,
-rook-on-open-file — her biri ayrı SPRT'den geçirilerek.
+gelişmiş eval terimi **piece mobility de SPRT'den geçti (H1 kabul)**. Üçüncü yama
+**bishop pair + rook-on-open/semi-open-file de SPRT'den geçti (H1 kabul)**.
+Sırada kalan tek gelişmiş evaluation terimi: **king safety** — ayrı SPRT'den
+geçirilerek.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -313,12 +314,21 @@ Faz 2B (devam ediyor):
   +11cp/e2e4, açıkta Bb5. Tam kadro nps ~1.84M->1.33M (~%28 maliyet). **SPRT:
   base 3d04898 vs new 07060b1, H1 kabul** — terim tutuldu. Bilinçli ertelenen:
   mobility area rafinesi (rakip piyon vuruşlarını çıkarma), mobility cache/hız.
+- Adım 8: Bishop pair + rook on open/semi-open file (TAMAM, commit 9abe61b). İki
+  klasik pozisyonel terim tek yamada, renk-simetrik, tapered. `eval.hpp`:
+  BishopPairMg/Eg (30/45), RookOpenMg/Eg (25/15), RookSemiMg/Eg (12/8) +
+  `bishop_pair` / `rook_on_file` ilanları. `eval.cpp`: bishop_pair (>=2 fil ->
+  bonus), rook_on_file (mevcut FileMask; dost piyon yok + rakip piyon yok ->
+  açık, yalnız rakip -> yarı-açık). 4 test (74->78). Elle: açık c/d sütunlu
+  pozisyonda motor Rac1/Rhd1 (kaleyi açık sütuna). **SPRT: base 07060b1 vs new
+  9abe61b, H1 kabul** — tutuldu. Bilinçli ertelenen: bishop pair zıt-kare
+  kontrolü, 7. sıra / bağlı kale rafineleri.
 
-**Sıradaki: Faz 2B — gelişmiş evaluation (devam).** Tapered eval (+42.8), pawn
-structure (+45.4), arama tekrar tespiti (+27.2) ve piece mobility (H1) SPRT'den
-geçti. Kalan gelişmiş evaluation adımları: king safety, bishop pair, rook on
-open/semi-open file — her biri ayrı bir
-commit + ayrı bir SPRT koşusundan (GUI'den) geçirilerek. 2B bitince Faz 2C
+**Sıradaki: Faz 2B — king safety (son eval terimi).** Tapered eval (+42.8), pawn
+structure (+45.4), arama tekrar tespiti (+27.2), piece mobility (H1) ve bishop
+pair + rook-on-file (H1) SPRT'den geçti. Kalan tek gelişmiş evaluation terimi:
+king safety (şah bölgesi saldırıları + piyon kalkanı, attack-unit tablosu) —
+ayrı commit + ayrı SPRT'den. 2B bitince Faz 2C
 (selective search: PVS, null move, SEE, LMR, futility
 ailesi, LMP, razoring, extensions) sırayla, her biri ayrı SPRT'den geçirilerek
 eklenir. Faz 2D (Lazy SMP multi-threading) klasik fazın son adımı, NNUE'dan önce.
