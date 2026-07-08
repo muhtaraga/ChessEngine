@@ -145,9 +145,10 @@ Ayrıca **arama tekrar (repetition) tespiti eklendi ve SPRT'den geçti (+27.2 ±
 gelişmiş eval terimi **piece mobility de SPRT'den geçti (H1 kabul)**. Üçüncü yama
 **bishop pair + rook-on-open/semi-open-file de SPRT'den geçti (H1 kabul)**. Son
 gelişmiş evaluation terimi **king safety (piyon kalkanı + şah bölgesi saldırıları,
-attack-unit tablosu) implemente edildi + test edildi (81 test); SPRT KOŞUSU
-BEKLİYOR** (base 9abe61b vs king safety commit'i). SPRT H1 verirse Faz 2B'nin
-evaluation kısmı tamamlanmış olur.
+attack-unit tablosu) da eklendi ve KABUL EDİLDİ** (base 9abe61b vs 7eea85f). Not:
+bu terim tam SPRT sınırına (LLR ±2.94) ulaşmadan, 1000 oyunda kullanıcı kararıyla
+erken kabul edildi — kanıt güçlü pozitifti: **Elo +28.6 ± 18.6, LOS %99.9, LLR
+1.46, W-D-L 411-260-329**. Böylece Faz 2B'nin gelişmiş evaluation kısmı tamamlandı.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -325,7 +326,7 @@ Faz 2B (devam ediyor):
   pozisyonda motor Rac1/Rhd1 (kaleyi açık sütuna). **SPRT: base 07060b1 vs new
   9abe61b, H1 kabul** — tutuldu. Bilinçli ertelenen: bishop pair zıt-kare
   kontrolü, 7. sıra / bağlı kale rafineleri.
-- Adım 9: King safety (İMPLEMENTE + TEST; SPRT BEKLİYOR). Faz 2B'nin son gelişmiş
+- Adım 9: King safety (TAMAM, ERKEN KABUL — commit 7eea85f). Faz 2B'nin son gelişmiş
   eval terimi, diğerleriyle aynı desende (renk-simetrik, tapered, izole test
   edilebilir yardımcı). **Yalnız orta oyun terimi (eg her zaman 0)** — oyun
   sonunda şah aktifliği önemli, güvenlik taper ile solar (KingCentralizedInEndgame
@@ -339,17 +340,25 @@ Faz 2B (devam ediyor):
   danger toplar, `mg += -sign*danger` (tehlike o rengin skorunu düşürür), evaluate()
   akümülatöre ekler. 3 test (78->81): KingSafetyPawnShield, KingSafetyZoneAttack,
   KingSafetySymmetry. Startpos d10 nps ~1.32M (mobility sonrasıyla ~aynı, Debug).
-  Bilinçli ertelenen: queen-presence gate, king_safety'yi mobility ile tek saldırı
-  geçişinde birleştirme (hız), SafetyTable scaling ince ayarı.
+  **SPRT: base 9abe61b vs new 7eea85f — tam sınıra ulaşmadan 1000 oyunda KULLANICI
+  KARARIYLA ERKEN KABUL** (zamandan kazanmak için). Kanıt güçlü pozitifti: Elo
+  +28.6 ± 18.6, LOS %99.9, LLR 1.46 (üst sınır 2.94'ün ~yarısı, yükseliyordu),
+  W-D-L 411-260-329. NOT: diğer beş eval terimi tam LLR ≥ 2.94 ile kabul edildi;
+  bu terim metodolojik olarak onlardan farklı (erken durdurma) — istatistiksel
+  kesinlik değil, güçlü eğilim + kullanıcı kararı. Bilinçli ertelenen:
+  queen-presence gate, king_safety'yi mobility ile tek saldırı geçişinde
+  birleştirme (hız), SafetyTable scaling ince ayarı.
 
-**Sıradaki: king safety SPRT koşusu.** Tapered eval (+42.8), pawn structure
-(+45.4), arama tekrar tespiti (+27.2), piece mobility (H1) ve bishop pair +
-rook-on-file (H1) SPRT'den geçti. King safety (son eval terimi) implemente +
-test edildi; **GUI'den SPRT koşusu bekliyor (base 9abe61b vs king safety
-commit'i)**. H1 gelirse Faz 2B'nin evaluation kısmı biter; regresyonsa ağırlıklar
-ayarlanır ya da terim geri alınır. 2B bitince Faz 2C (selective search: PVS, null
-move, SEE, LMR, futility ailesi, LMP, razoring, extensions) sırayla, her biri
-ayrı SPRT'den geçirilerek eklenir. Faz 2D (Lazy SMP multi-threading) klasik fazın
+**FAZ 2B EVALUATION TAMAM. Sıradaki: Faz 2C — PVS (selective search'ün ilk
+adımı).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
+(+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
+king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
+gelişmiş evaluation kısmı bitti. Faz 2C sırası: **PVS** (LMR'nin çerçevesi, önce
+bu) -> null move -> SEE -> LMR (en büyük Elo) -> futility ailesi -> LMP -> razoring
+-> extensions. Her biri ayrı commit. NOT: PVS davranışı koruyan (exact) bir
+optimizasyon olduğundan **SPRT KOŞULMAYACAK — kapı exactness ispatı** (sabit
+derinlikte best move + score PVS öncesiyle birebir aynı + düğüm düşüşü); SPRT
+LMR'ye saklandı (kullanıcı kararı). Faz 2D (Lazy SMP multi-threading) klasik fazın
 son adımı, NNUE'dan önce. Yol haritası detayı için "Faz 2 — Klasik Güçlendirme"
 bölümüne bak.
 
