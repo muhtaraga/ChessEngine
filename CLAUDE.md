@@ -136,7 +136,10 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-08): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
 üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
-geçiyor. Toplam 59 test geçiyor.
+geçiyor. Toplam 66 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
+SPRT altyapısı (cutechess-cli KURULU + komutsuz web GUI) tamam — sırada gelişmiş
+evaluation (pawn structure, king safety, mobility, bishop pair, rook-on-open-file),
+her biri ayrı SPRT'den geçirilerek.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -242,26 +245,42 @@ Faz 2B (devam ediyor):
   fen" başlangıçtan hamleleri legal oynayıp FEN basar — açılış kitabını elle FEN
   yazmadan üretmek için (Faz 3 self-play pipeline'ı da kullanacak). Testler:
   StartposString, RoundTrip (Kiwipete/ep/kısmi rok), EnPassantAfterDoublePush.
-- Adım 3: SPRT maç/regresyon altyapısı (TAMAM, cutechess-cli kurulumu bekliyor).
+- Adım 3: SPRT maç/regresyon altyapısı (TAMAM, cutechess-cli KURULU).
   `tools/sprt/`: build-version.ps1 (git ref -> /O2 Release chess-<label>.exe,
   worktree izole, build dizini gitignore'lu build-release altında), gen-book.ps1
   + book.epd (22 dengeli açılış, motorun `chess fen`'iyle doğru üretildi),
   sprt.ps1 (cutechess-cli sarmalayıcı: -repeat çift renk, -sprt otomatik durma,
-  elo0/elo1/alpha/beta parametrik), README.md (kurulum + iş akışı + karar yorumu).
-  CMakeLists `BUILD_TESTS` opsiyonu (OFF -> gtest indirmesi atlanır, sürüm hızlı).
-  **cutechess-cli bu makinede kurulu DEĞİL** — kullanıcı README'deki adımlarla
-  kuracak; kurulunca ilk SPRT koşusu tapered eval'in (bbbe48b vs d7e6754) Elo
-  katkısını ölçecek. Toplam 66 test.
+  elo0/elo1/alpha/beta parametrik + opsiyonel -Hash), README.md (kurulum + iş
+  akışı + karar yorumu). CMakeLists `BUILD_TESTS` opsiyonu (OFF -> gtest
+  indirmesi atlanır, sürüm hızlı). **cutechess-cli artık bu makinede KURULU**
+  (`C:\Program Files (x86)\Cute Chess\cutechess-cli.exe`; sprt.ps1 ve GUI
+  otomatik buluyor). İlk planlı koşu: tapered eval'in (bbbe48b vs d7e6754) Elo
+  katkısı. Toplam 66 test.
+- Adım 4: SPRT komutsuz web arayüzü (TAMAM). `tools/sprt/gui/`: üç scripti
+  (build-version + gen-book + sprt) elle sırayla çağırmak yerine tarayıcıdan
+  yönetmek için yerel web UI. `start-gui.cmd`'ye çift tıkla -> `serve.ps1`
+  (PowerShell 5.1 gömülü .NET TcpListener HTTP sunucu, ek kurulum/admin yok;
+  API: /api/status,commits,run,progress,stop,open,saveconfig) + tarayıcı otomatik
+  açılır. `index.html` tek sayfa (inline CSS/JS): Base/New commit seçimi, izlek
+  (concurrency; varsayılan fiziksel çekirdek, üstünde uyarı), Tc+preset,
+  Elo0/Elo1+preset, alpha/beta, Hash, rounds, force-rebuild. Canlı panel:
+  W-D-L, Elo±hata, LOS, SPRT LLR + karar, Durdur, PGN aç. `run-pipeline.ps1`
+  base derle -> new derle (çalışan ağaç daima yeniden) -> sprt.ps1, alt-process
+  stdout'unu satır satır log'a akıtır (saatlerce süren maçta canlı akış).
+  Uçtan uca test edildi. Donanım notu: CPU 14 fiziksel / 20 mantıksal çekirdek.
   - Sıradaki 2B işleri: pawn structure (isole/çift/geçer), king safety, piece
     mobility, bishop pair, rook on open/semi-open file — her biri ayrı SPRT'den
-    geçirilerek (artık altyapı hazır).
+    geçirilerek (altyapı + GUI hazır).
 
-**Sıradaki: Faz 2B** — önce gelişmiş evaluation (pawn structure, king safety,
-piece mobility, tapered eval), ardından cutechess-cli + SPRT maç altyapısı. SPRT
-altyapısı bir kez oturunca Faz 2C (selective search: PVS, null move, SEE, LMR,
-futility ailesi, LMP, razoring, extensions) sırayla, her biri ayrı SPRT'den
-geçirilerek eklenir. Faz 2D (Lazy SMP multi-threading) klasik fazın son adımı,
-NNUE'dan önce. Yol haritası detayı için "Faz 2 — Klasik Güçlendirme" bölümüne bak.
+**Sıradaki: Faz 2B — gelişmiş evaluation.** Test altyapısı (SPRT + cutechess +
+web GUI) artık tamamen hazır. Sırada gelişmiş evaluation adımları var: pawn
+structure (isole/çift/geçer piyon), king safety, piece mobility, bishop pair,
+rook on open/semi-open file — her biri ayrı bir commit + ayrı bir SPRT koşusundan
+(GUI'den) geçirilerek. İlk fırsatta tapered eval'in kendi Elo katkısı da SPRT ile
+ölçülmeli. 2B bitince Faz 2C (selective search: PVS, null move, SEE, LMR, futility
+ailesi, LMP, razoring, extensions) sırayla, her biri ayrı SPRT'den geçirilerek
+eklenir. Faz 2D (Lazy SMP multi-threading) klasik fazın son adımı, NNUE'dan önce.
+Yol haritası detayı için "Faz 2 — Klasik Güçlendirme" bölümüne bak.
 
 ### İlk somut görev
 
