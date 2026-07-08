@@ -80,6 +80,18 @@ inline constexpr int PassedBonusEg[8] = {0, 10, 20, 35, 60, 90, 120, 0};
 inline constexpr int MobilityMg[PIECE_TYPE_NB] = {0, 4, 4, 2, 1, 0};
 inline constexpr int MobilityEg[PIECE_TYPE_NB] = {0, 4, 4, 4, 2, 0};
 
+// --- Bishop pair + rook on open/semi-open file ağırlıkları (MG/EG ayrı) ---
+// Bishop pair: iki (veya daha fazla) fili olan tarafa bonus; açık oyun sonunda
+// (uzun diyagonaller) biraz daha değerli.
+inline constexpr int BishopPairMg = 30;
+inline constexpr int BishopPairEg = 45;
+// Kale açık sütunda (o sütunda hiç piyon yok) / yarı-açık sütunda (yalnız rakip
+// piyon var). Açık sütun orta oyunda saldırı için daha değerli.
+inline constexpr int RookOpenMg = 25;
+inline constexpr int RookOpenEg = 15;
+inline constexpr int RookSemiMg = 12;
+inline constexpr int RookSemiEg = 8;
+
 namespace detail {
 
 // Ham PST tabloları (orta oyun), görsel düzen: indeks 0 = a8, indeks 63 = h1.
@@ -252,6 +264,12 @@ void pawn_structure(const Board& b, int& mg, int& eg);
 // Mobility katkısı (at/fil/kale/vezir ulaşılabilir kare sayısı), BEYAZ − SİYAH,
 // MG/EG ayrı out-param. evaluate() akümülatörlerine ekler; izole test edilebilir.
 void mobility(const Board& b, int& mg, int& eg);
+
+// Bishop pair katkısı (iki fili olan tarafa bonus), BEYAZ − SİYAH, MG/EG ayrı.
+void bishop_pair(const Board& b, int& mg, int& eg);
+
+// Kale açık/yarı-açık sütun katkısı, BEYAZ − SİYAH, MG/EG ayrı.
+void rook_on_file(const Board& b, int& mg, int& eg);
 
 // Hamle sırası olan tarafın bakışından statik değerlendirme (santipiyon).
 int evaluate(const Board& b);

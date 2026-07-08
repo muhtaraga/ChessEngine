@@ -152,3 +152,52 @@ TEST(Eval, MobilitySymmetry) {
     EXPECT_EQ(eg, 0);
     EXPECT_EQ(evaluate(b), 0);
 }
+
+// --- Bishop pair + rook on open/semi-open file testleri ---
+
+// Fil çifti: beyaz iki fil (c1,f1), siyah tek fil (c8) -> beyaz lehine tam bonus.
+TEST(Eval, BishopPairBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("2b1k3/8/8/8/8/8/8/2B1KB2 w - - 0 1"));
+    int mg = 0, eg = 0;
+    bishop_pair(b, mg, eg);
+    EXPECT_EQ(mg, BishopPairMg);
+    EXPECT_EQ(eg, BishopPairEg);
+}
+
+// Açık sütun: beyaz Rd1 (d-sütununda piyon yok), siyah Ra8 (a7 dost piyonuyla
+// kapalı) -> yalnız beyaz açık-sütun bonusu.
+TEST(Eval, RookOpenFileBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("r3k3/p7/8/8/8/8/8/3RK3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    rook_on_file(b, mg, eg);
+    EXPECT_EQ(mg, RookOpenMg);
+    EXPECT_EQ(eg, RookOpenEg);
+}
+
+// Yarı-açık sütun: beyaz Rd1, d-sütununda yalnız rakip piyon (d7), dost piyon yok.
+TEST(Eval, RookSemiOpenFileBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/3p4/8/8/8/8/8/3RK3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    rook_on_file(b, mg, eg);
+    EXPECT_EQ(mg, RookSemiMg);
+    EXPECT_EQ(eg, RookSemiEg);
+}
+
+// Renk simetrisi: aynalı fil-çifti + açık-sütun kalesi -> iki yardımcı da 0,
+// evaluate() de 0.
+TEST(Eval, BishopRookSymmetry) {
+    Board b;
+    // Beyaz Bc1,Bf1,Rd1 ; siyah Bc8,Bf8,Rd8 (dikey ayna). Tüm sütunlar piyonsuz.
+    ASSERT_TRUE(b.set_fen("2brkb2/8/8/8/8/8/8/2BRKB2 w - - 0 1"));
+    int bmg = 0, beg = 0, rmg = 0, reg = 0;
+    bishop_pair(b, bmg, beg);
+    rook_on_file(b, rmg, reg);
+    EXPECT_EQ(bmg, 0);
+    EXPECT_EQ(beg, 0);
+    EXPECT_EQ(rmg, 0);
+    EXPECT_EQ(reg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+}

@@ -100,6 +100,42 @@ void mobility(const Board& b, int& mg, int& eg) {
     }
 }
 
+void bishop_pair(const Board& b, int& mg, int& eg) {
+    mg = 0;
+    eg = 0;
+    // İki (veya daha fazla) fili olan tarafa bonus. Basit ≥2 sayımı standart;
+    // zıt-kare kontrolü (nadir aynı-renk çift promosyon) bilinçli ertelendi.
+    if (popcount(b.pieces[BISHOP] & b.colors[WHITE]) >= 2) { mg += BishopPairMg; eg += BishopPairEg; }
+    if (popcount(b.pieces[BISHOP] & b.colors[BLACK]) >= 2) { mg -= BishopPairMg; eg -= BishopPairEg; }
+}
+
+void rook_on_file(const Board& b, int& mg, int& eg) {
+    mg = 0;
+    eg = 0;
+    const Bitboard pawns = b.pieces[PAWN];
+
+    for (Color c : {WHITE, BLACK}) {
+        const int      sign       = (c == WHITE) ? 1 : -1;
+        const Bitboard own_pawns  = pawns & b.colors[c];
+        const Bitboard enemy_pawns = pawns & b.colors[~c];
+
+        Bitboard rooks = b.pieces[ROOK] & b.colors[c];
+        while (rooks) {
+            Square   s = pop_lsb(rooks);
+            Bitboard f = FileMask[file_of(s)];
+            if ((own_pawns & f) == 0) {  // dost piyon yok
+                if ((enemy_pawns & f) == 0) {  // hiç piyon yok -> açık sütun
+                    mg += sign * RookOpenMg;
+                    eg += sign * RookOpenEg;
+                } else {  // yalnız rakip piyon -> yarı-açık sütun
+                    mg += sign * RookSemiMg;
+                    eg += sign * RookSemiEg;
+                }
+            }
+        }
+    }
+}
+
 int evaluate(const Board& b) {
     // Orta oyun ve oyun sonu puanları ayrı biriktirilir (beyaz bakışıyla).
     int mg = 0;
@@ -136,6 +172,18 @@ int evaluate(const Board& b) {
     mobility(b, mmg, meg);
     mg += mmg;
     eg += meg;
+
+    // Bishop pair katkısı.
+    int bmg = 0, beg = 0;
+    bishop_pair(b, bmg, beg);
+    mg += bmg;
+    eg += beg;
+
+    // Kale açık/yarı-açık sütun katkısı.
+    int rmg = 0, reg = 0;
+    rook_on_file(b, rmg, reg);
+    mg += rmg;
+    eg += reg;
 
     // Faza göre interpolasyon: tam kadroda (phase=MAX) tamamen mg, oyun sonunda
     // (phase=0) tamamen eg. Materyal her iki uçta eşit olduğundan interpolasyondan
