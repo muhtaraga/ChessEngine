@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "engine/board.hpp"
 #include "engine/movegen.hpp"
@@ -65,9 +66,14 @@ Move parse_move(const Board& b, const std::string& token) {
 }
 
 // "position" komutunu işler: startpos ya da fen, ardından opsiyonel moves.
-void handle_position(Board& b, std::istringstream& ss) {
+// history: tekrar (repetition) tespiti için kökten ÖNCEKİ pozisyonların Zobrist
+// anahtarlarıyla doldurulur (her do_move'dan önce terk edilen pozisyonun key'i;
+// kök = son board dahil edilmez, search onu kendi ekler).
+void handle_position(Board& b, std::vector<std::uint64_t>& history,
+                     std::istringstream& ss) {
     std::string token;
     ss >> token;
+    history.clear();
 
     if (token == "startpos") {
         b.set_startpos();
@@ -87,6 +93,7 @@ void handle_position(Board& b, std::istringstream& ss) {
             Move m = parse_move(b, mv);
             if (m == Move())  // geçersiz hamle -> dur
                 break;
+            history.push_back(b.key);  // kökten önceki pozisyonun anahtarı
             b.do_move(m);
         }
     }
@@ -151,8 +158,10 @@ std::string score_string(int score) {
 }
 
 // "go" komutunu işler: limitleri belirle, iterative deepening ile ara,
-// her derinlikte info yaz, sonunda bestmove ver.
-void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
+// her derinlikte info yaz, sonunda bestmove ver. history tekrar tespiti için
+// search'e (kopyalanarak) verilir.
+void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
+               std::istringstream& ss, std::ostream& out) {
     int          depth     = -1;
     std::int64_t movetime  = -1;
     std::int64_t wtime = -1, btime = -1, winc = 0, binc = 0;
@@ -234,7 +243,8 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
     // "stop" gelince kesebilelim. Pozisyonun bir KOPYASINI thread'e veriyoruz
     // (ana döngüdeki board sonraki "position" ile değişebilir).
     Board pos = b;
-    g_search_thread = std::thread([pos, lim, &out] {
+    auto hist = history;  // thread'e taşınacak kopya (ana geçmiş değişebilir)
+    g_search_thread = std::thread([pos, lim, hist, &out] {
         using clock = std::chrono::steady_clock;
         auto start = clock::now();
         auto elapsed_ms = [&] {
@@ -257,7 +267,7 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
             }
             out << '\n';
             out.flush();
-        });
+        }, hist);
 
         std::lock_guard<std::mutex> lk(g_io_mtx);
         if (best.best == Move())
@@ -273,6 +283,9 @@ void handle_go(const Board& b, std::istringstream& ss, std::ostream& out) {
 void uci_loop(std::istream& in, std::ostream& out) {
     Board board;
     board.set_startpos();
+    // Oyun pozisyon geçmişi (Zobrist anahtarları): tekrar tespiti için her
+    // "position" komutunda yeniden kurulur, "go"da search'e verilir.
+    std::vector<std::uint64_t> history;
 
     std::string line;
     while (std::getline(in, line)) {
@@ -300,14 +313,15 @@ void uci_loop(std::istream& in, std::ostream& out) {
         } else if (cmd == "ucinewgame") {
             stop_search();  // TT'yi temizlemeden önce aramayı durdur (yarış önleme)
             board.set_startpos();
+            history.clear();  // yeni oyun: pozisyon geçmişini sıfırla
             TT.clear();  // yeni oyun: önceki oyunun girişlerini at
         } else if (cmd == "setoption") {
             handle_setoption(ss);  // Hash / Clear Hash (kendi içinde stop_search)
         } else if (cmd == "position") {
             stop_search();  // eski pozisyon için koşan aramayı bırak
-            handle_position(board, ss);
+            handle_position(board, history, ss);
         } else if (cmd == "go") {
-            handle_go(board, ss, out);
+            handle_go(board, history, ss, out);
         } else if (cmd == "quit") {
             // Sınırsız arama (go infinite) hariç, koşan aramayı doğal bitişine
             // bırak (pipe/batch: tam çıktı). Sonra thread'i bekle ve çık.

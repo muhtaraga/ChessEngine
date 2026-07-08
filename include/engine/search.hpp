@@ -37,7 +37,11 @@ struct SearchResult {
 // sonra (yaklaşık, düğüm örneklemeli) kesilir ve aborted=true döner; bu durumda
 // sonuç eksiktir, çağıran önceki derinliği kullanmalıdır. max_time_ms < 0 =
 // zaman sınırı yok.
-SearchResult search(const Board& b, int depth, std::int64_t max_time_ms = -1);
+// history: kökten ÖNCEKİ pozisyonların Zobrist anahtarları (oyun başından köke
+// dek, kök hariç). Tekrar (repetition) beraberliği tespiti için kullanılır; boş
+// verilirse yalnızca arama ağacı içi tekrarlar görülür (mevcut testler için yeterli).
+SearchResult search(const Board& b, int depth, std::int64_t max_time_ms = -1,
+                    const std::vector<std::uint64_t>& history = {});
 
 // Iterative deepening için zaman/derinlik sınırları.
 //  - hard_ms: mutlak kesme (deadline). Bu süreye ulaşınca arama düğüm ortasında
@@ -65,6 +69,7 @@ using InfoCallback = std::function<void(const SearchResult& result, int depth)>;
 // derinlikte kökte gerçek bir iyileşme bulunduysa onu korur (abort'ta blunder
 // önleme). info verilirse her tamamlanan derinlikte çağrılır.
 SearchResult search_iterative(const Board& b, const SearchLimits& lim,
-                              const InfoCallback& info = {});
+                              const InfoCallback& info = {},
+                              const std::vector<std::uint64_t>& history = {});
 
 }  // namespace engine

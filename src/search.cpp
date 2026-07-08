@@ -79,6 +79,24 @@ struct Searcher {
     Move root_best_move  = Move();
     int  root_best_score = -INF;
 
+    // Pozisyon geçmişi (Zobrist anahtarları): tekrar (repetition) tespiti için.
+    // Arama başında oyun geçmişiyle (kök hariç atalar) tohumlanır; negamax her
+    // düğümde kendi anahtarını push/pop eder. is_repetition ataları tarar.
+    std::vector<std::uint64_t> keys;
+
+    // Güncel düğümün (b) daha önce oynanıp oynanmadığı: keys içinde (yalnız
+    // atalar; b henüz push edilmemiş) aynı-sıra pariteli (step 2) geriye,
+    // halfmove_clock ile sınırlı bir tarama. İlk eşleşme -> beraberlik.
+    bool is_repetition(const Board& b) const {
+        int n     = static_cast<int>(keys.size());
+        int limit = std::min<int>(b.halfmove_clock, n);
+        // En kısa tekrar döngüsü 4 ply; aynı tarafın sırası olduğundan 2'şer geri.
+        for (int i = 4; i <= limit; i += 2)
+            if (keys[n - i] == b.key)
+                return true;
+        return false;
+    }
+
     int  negamax(const Board& b, int depth, int alpha, int beta, int ply);
     int  quiescence(const Board& b, int alpha, int beta, int ply);
     int  score_move(const Board& b, Move m, Move tt_move, int ply) const;
@@ -87,6 +105,19 @@ struct Searcher {
     // Kökte aspiration window ile arar: bir önceki derinliğin puanı etrafında
     // dar pencere dene, fail-low/high olursa genişleterek yeniden ara.
     int  search_root(const Board& b, int depth, int prev_score);
+};
+
+// Düğüm anahtarını arama yığınına ekleyip kapsam çıkışında (her return yolunda,
+// abort dahil) çıkaran RAII yardımcısı. negamax döngü ortasında return edebildiği
+// için pop'un garanti olması şart.
+struct KeyGuard {
+    std::vector<std::uint64_t>& keys;
+    explicit KeyGuard(std::vector<std::uint64_t>& k, std::uint64_t key) : keys(k) {
+        keys.push_back(key);
+    }
+    ~KeyGuard() { keys.pop_back(); }
+    KeyGuard(const KeyGuard&) = delete;
+    KeyGuard& operator=(const KeyGuard&) = delete;
 };
 
 // Bir hamlenin yakalama olup olmadığı (en passant dahil). Hedef karede karşı
@@ -157,6 +188,14 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
     if (ml.size() == 0)
         return terminal_score(b, ply);
 
+    // Tekrar (repetition) beraberliği: kökte (ply 0) uygulanmaz — kök daima bir
+    // hamle üretmeli. Arama, tekrarı 0 skorladığından önde olan taraf tekrar
+    // hattını reddeder, geride olan (perpetual vb.) onu kurtarıcı olarak arar.
+    // 50-hamle ile birlikte TT sondasından ÖNCE: bu beraberlikler Zobrist
+    // anahtarında yok, TT kesmesi onları gözden kaçırabilirdi.
+    if (ply > 0 && is_repetition(b))
+        return 0;
+
     // 50-hamle beraberliği: TT sondasından ÖNCE. halfmove_clock Zobrist
     // anahtarına dahil değil; TT kesmesi bu beraberliği gözden kaçırabilirdi.
     if (b.halfmove_clock >= 100)
@@ -182,6 +221,10 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
         if (tte.bound == Bound::LOWER && s >= beta)    return s;
         if (tte.bound == Bound::UPPER && s <= alpha)   return s;
     }
+
+    // Bu düğümün anahtarını arama yığınına ekle (çocuklar tekrarı görebilsin);
+    // RAII ile fonksiyon çıkışında (abort dahil her yolda) çıkarılır.
+    KeyGuard key_guard(keys, b.key);
 
     // Tüm hamleleri skorla (TT hamlesi, MVV-LVA, killer, history). Her iterasyonda
     // kalanların en yükseğini öne çekiyoruz (lazy selection sort): iyi sıralamada
@@ -381,8 +424,10 @@ int Searcher::search_root(const Board& b, int depth, int prev_score) {
 
 }  // namespace
 
-SearchResult search(const Board& b, int depth, std::int64_t max_time_ms) {
+SearchResult search(const Board& b, int depth, std::int64_t max_time_ms,
+                    const std::vector<std::uint64_t>& history) {
     Searcher s;
+    s.keys = history;  // tekrar tespiti için oyun geçmişiyle tohumla
     if (max_time_ms >= 0) {
         s.use_deadline = true;
         s.deadline = Clock::now() + std::chrono::milliseconds(max_time_ms);
@@ -403,8 +448,10 @@ SearchResult search(const Board& b, int depth, std::int64_t max_time_ms) {
 }
 
 SearchResult search_iterative(const Board& b, const SearchLimits& lim,
-                              const InfoCallback& info) {
+                              const InfoCallback& info,
+                              const std::vector<std::uint64_t>& history) {
     Searcher s;
+    s.keys = history;  // tekrar tespiti için oyun geçmişiyle tohumla
     s.stop = lim.stop;
     if (lim.hard_ms >= 0) {
         s.use_deadline = true;

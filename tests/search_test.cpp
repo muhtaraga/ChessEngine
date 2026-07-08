@@ -114,3 +114,53 @@ TEST(Search, IterativeReturnsMoveUnderTightTime) {
     SearchResult r = search_iterative(b, lim);
     EXPECT_NE(r.best, Move());  // en az derinlik 1'in hamlesi elde olmalı
 }
+
+// --- Tekrar (repetition) tespiti ---
+
+// Zorunlu tekrar KAYBEDEN tarafı kurtarır (ayırt edici mekanizma testi).
+// Beyaz Kh1 çekte (Qh3 h-sütunu), tek legal hamle Kg1. Kg1 sonrası oluşan
+// pozisyon (Kg1/Qh3/Ka8, siyah sırası) geçmişte bir kez daha varsa iki-katlıdır
+// (twofold) -> arama onu 0 (beraberlik) skorlar. Geçmiş verilmezse aynı hamle
+// vezir geride (~ -900) değerlendirilir. Tek fark: history.
+TEST(Search, ForcedRepetitionSavesLosingSide) {
+    // Kg1 sonrası çocuk pozisyon; anahtarı geçmişe konur (Zobrist halfmove'u
+    // içermez, FEN sayaçları anahtarı etkilemez).
+    Board child;
+    ASSERT_TRUE(child.set_fen("k7/8/8/8/8/7q/8/6K1 b - - 0 1"));
+    // is_repetition ply1'de i=4 -> keys[0]'ı yoklar; geçmiş >=3 girişli olmalı
+    // ki tarama i=4'e ulaşsın. 1. ve 2. girişler taranmaz (dolgu).
+    std::vector<std::uint64_t> hist = {child.key, child.key ^ 1u, child.key ^ 2u};
+
+    Board root;
+    // Beyaz Kh1 çekte; halfmove yüksek (tekrar penceresi >=4 ply olsun).
+    ASSERT_TRUE(root.set_fen("k7/8/8/8/8/7q/8/7K w - - 20 40"));
+
+    SearchResult with_hist = search(root, 1, -1, hist);
+    SearchResult no_hist   = search(root, 1);
+
+    EXPECT_EQ(with_hist.best, Move::make(H1, G1));  // tek legal hamle
+    EXPECT_EQ(with_hist.score, 0);                  // zorunlu tekrar -> beraberlik
+    EXPECT_LT(no_hist.score, -500);                 // geçmişsiz: vezir geride, kayıp
+}
+
+// Kazanan taraf tekrar hattını seçmemeli ve tekrar tespiti kazanç skorunu
+// yanlışlıkla 0'a düşürmemeli. Beyaz bir vezir önde; Qa4/a5 + uzak şah sallanması
+// köke geri döner (geçmiş tekrarı içerir). Motor sallanma hamlesini oynamamalı,
+// skor kazançta kalmalı.
+TEST(Search, WinningSideAvoidsRepetition) {
+    // Sallanma: Qa4a5 Kh8g8 Qa5a4 Kg8h8 -> başa dön (beyaz sırası). Geçmişi
+    // gerçek do_move ile üret (anahtar/parite kendiliğinden doğru).
+    Board b;
+    ASSERT_TRUE(b.set_fen("7k/8/8/8/Q7/8/8/7K w - - 0 1"));
+    std::vector<std::uint64_t> hist;
+    const Move seq[] = {Move::make(A4, A5), Move::make(H8, G8),
+                        Move::make(A5, A4), Move::make(G8, H8)};
+    for (Move m : seq) {
+        hist.push_back(b.key);
+        b.do_move(m);
+    }
+    // b artık köke (başlangıç pozisyonuna) eşit, beyaz sırası, bir vezir önde.
+    SearchResult r = search(b, 1, -1, hist);
+    EXPECT_NE(r.best, Move::make(A4, A5));  // tekrarı (Qa4a5) seçme
+    EXPECT_GT(r.score, 800);                // kazanç korunuyor (0'a düşmedi)
+}
