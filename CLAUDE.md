@@ -42,7 +42,7 @@ hamlelerle oynuyor, perft testleri geçiyor.
 ### Faz 2 — Klasik Güçlendirme
 
 - [x] Zobrist hashing + transposition table
-- [ ] Move ordering: MVV-LVA, killer moves, history heuristic
+- [x] Move ordering: MVV-LVA, killer moves, history heuristic
 - [ ] Quiescence search (horizon effect'i azaltmak için)
 - [ ] Iterative deepening + time management
 - [ ] Gelişmiş evaluation: pawn structure, king safety, piece mobility
@@ -67,9 +67,9 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-08): FAZ 1 TAMAMLANDI, FAZ 2 başladı.** Motor UCI
+**Güncel durum (2026-07-08): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
 üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
-geçiyor. Toplam 49 test geçiyor.
+geçiyor. Toplam 50 test geçiyor.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -95,10 +95,19 @@ Faz 2 (devam ediyor):
     ply-normalize. 50-hamle TT'den önce. Ölçüm: startpos d6 soğuk 1.409.591
     düğüm -> sıcak TT 15.483. Bilinen sınır: halfmove_clock anahtarda yok
     (küçük TT hatası, kabul); TT kesmesi PV'yi kısaltabiliyor (kozmetik).
+- Adım 2: Move ordering (TAMAM). `search.cpp` Searcher'a killer moves
+  (`killers[ply][2]`) + history (`history[renk][from][to]`) eklendi. `score_move`:
+  TT hamlesi > MVV-LVA yakalama/promosyon > killer > history (ayrık bantlar).
+  Lazy selection sort ile her iterasyonda en yüksek skorlu hamle öne çekilir.
+  Beta kesmesi yapan quiet hamle killer+history'ye işlenir (depth^2 ödül).
+  Ölçüm: startpos d6 1.409.591 -> 84.909 düğüm (~16.6× az), skor/PV birebir
+  aynı; d8 artık ~1s. Not: killer/history her search() çağrısında (yani her
+  derinlikte) sıfırlanıyor — cross-depth kalıcılık ileride search() API'si
+  yeniden düzenlenince gelebilir (TT hamlesi zaten derinlikler arası taşınıyor).
 
-**Sıradaki: Faz 2 Adım 2 — Move ordering (MVV-LVA, killer moves, history
-heuristic).** (TT hamlesi zaten öne alınıyor; onun üstüne inşa edilecek.)
-Sonra quiescence search, gelişmiş evaluation, cutechess-cli maç/SPRT altyapısı.
+**Sıradaki: Faz 2 Adım 3 — Quiescence search** (horizon effect'i azaltmak için:
+leaf'te dolu pozisyonda yakalamaları/checks'i arayan sessiz-arama). Sonra
+gelişmiş evaluation, cutechess-cli maç/SPRT altyapısı.
 
 ### İlk somut görev
 
