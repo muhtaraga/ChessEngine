@@ -226,6 +226,30 @@ TEST(Search, RazoringKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
+// --- Continuation history ---
+
+// Continuation history yalnızca quiet hamlelerin SIRALAMASINI etkiler; hiçbir
+// hamleyi budamaz. Bedava vezir derin aramada da Rxe5 ile alınmalı (sıralama
+// değişikliği kazanan taktiği kaybettirmemeli).
+TEST(Search, ContHistKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 8);
+    EXPECT_EQ(r.best, Move::make(E1, E5));
+    EXPECT_GT(r.score, 400);
+}
+
+// Continuation history mat aramasını bozmamalı: quiet sıralaması değişse de mat
+// hamlesi (çek veren, budanmayan) bulunur. Arka sıra matı derin aramada korunur.
+TEST(Search, ContHistKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 7);
+    EXPECT_EQ(r.best, Move::make(A1, A8));
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // İki kale + şah ile bare king'e karşı zorunlu mat (baştan sona çek dizisi) makul
 // derinlikte bulunmalı — genel mat-arama regresyon güvencesi.
 TEST(Search, FindsTwoRookMate) {

@@ -6,6 +6,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <memory>
 #include <utility>
 
 #include "engine/bitboard.hpp"
@@ -54,8 +55,31 @@ constexpr int kScoreKiller1  =   800'000;  // 1. killer (bu ply'de kesme yapan q
 constexpr int kScoreKiller2  =   790'000;  // 2. killer
 constexpr int kHistoryMax    =   700'000;  // history taban tavanı (killer'ın altında)
 
+// Continuation history indekslemesi: (renk, tür) çifti tek bir 0..11 taş indeksi.
+// kNoPiece = "bu ply'de gerçek hamle yok" (kök öncesi ya da null move).
+constexpr int kNoPiece = 12;
+constexpr int piece_index(Color c, PieceType pt) {
+    return static_cast<int>(c) * 6 + static_cast<int>(pt);
+}
+
+// Bir history girdisini ödüllendirir/cezalandırır ve [-kHistoryMax, +kHistoryMax]
+// bandına kırpar. Main history ve continuation history aynı şemayı paylaşır.
+inline void add_history(int& h, int bonus) {
+    h += bonus;
+    if (h >  kHistoryMax) h =  kHistoryMax;
+    if (h < -kHistoryMax) h = -kHistoryMax;
+}
+
+// Continuation history tablosu: [önceki hamlenin taşı][önceki hamlenin hedefi]
+// [bu hamlenin taşı][bu hamlenin hedefi]. Yani "rakip şu taşı şuraya oynadıysa,
+// buna karşı hangi cevap işe yaradı" bilgisi. Main history'den bağımsız bir
+// sinyal; countermove'un taşıdığı bilgiyi sert bant yerine yumuşak puan olarak
+// verir. ~2.36 MB -> Searcher stack'te yaşadığı için heap'te tutulur.
+using ContHist =
+    std::array<std::array<std::array<std::array<int, SQUARE_NB>, 12>, SQUARE_NB>, 12>;
+
 // Tek iş parçacıklı arama durumu. Triangular PV table + zaman kesmesi +
-// move ordering durumu (killer moves, history heuristic).
+// move ordering durumu (killer moves, history heuristic, continuation history).
 struct Searcher {
     std::uint64_t     nodes = 0;
     bool              aborted = false;
@@ -75,6 +99,29 @@ struct Searcher {
     // History heuristic: [renk][from][to] için, geçmişte kesme yapan quiet
     // hamlelerin biriken puanı. Quiet hamle sıralamasını yönlendirir.
     int history[COLOR_NB][SQUARE_NB][SQUARE_NB] = {};
+
+    // Continuation history (bir önceki hamlenin bağlamıyla history). Heap'te
+    // (bkz. ContHist yorumu); make_unique değer-başlatma ile sıfırlar.
+    std::unique_ptr<ContHist> cont_hist = std::make_unique<ContHist>();
+
+    // Arama yığını: stack[p] = ply p'de OYNANAN hamlenin bağlamı (p+1'e götüren
+    // hamle). piece == kNoPiece -> o ply'de gerçek hamle yok (null move ya da
+    // hiç girilmemiş). Bir düğümde "önceki hamle" = stack[ply-1] (ply >= 1 ise).
+    struct StackEntry {
+        int    piece = kNoPiece;
+        Square to    = SQ_NONE;
+    };
+    StackEntry stack[MAX_PLY];
+
+    // Bu düğümdeki (b) quiet hamle m'in continuation history puanı. Önceki hamle
+    // yoksa (kök ya da null move ardından) 0.
+    int cont_score(const Board& b, Move m, int ply) const {
+        if (ply < 1 || stack[ply - 1].piece == kNoPiece)
+            return 0;
+        const StackEntry& prev = stack[ply - 1];
+        const int pc = piece_index(b.side_to_move, b.type_on(m.from()));
+        return (*cont_hist)[prev.piece][prev.to][pc][m.to()];
+    }
 
     // Kök (ply 0) izleme: bu derinlikte kökte bulunan en iyi hamle/puan. Süre
     // dolup arama yarıda kesilse bile en son iyileşmeyi elde tutmak için (bkz.
@@ -152,10 +199,14 @@ int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
         return s;
     }
 
-    // Quiet hamle: önce killer, sonra history.
+    // Quiet hamle: önce killer, sonra history. Quiet puanı iki bağımsız sinyalin
+    // toplamı: main history (renk/from/to) + continuation history (önceki hamlenin
+    // bağlamı). Toplam history bandına kırpılır ki killer bandının altında kalsın
+    // (ayrık bant yapısı korunur). cont_hist sıfırken skor eski davranışla birebir.
     if (m == killers[ply][0]) return kScoreKiller1;
     if (m == killers[ply][1]) return kScoreKiller2;
-    return history[b.side_to_move][m.from()][m.to()];
+    const int s = history[b.side_to_move][m.from()][m.to()] + cont_score(b, m, ply);
+    return std::clamp(s, -kHistoryMax, kHistoryMax);
 }
 
 // Beta kesmesi yapan quiet hamleyi (m) ve bu düğümde m'den önce aranmış ama
@@ -163,6 +214,8 @@ int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
 // History gravity: m ödül (+bonus), diğerleri ceza (-bonus). Böylece history
 // işaretli/merkezli olur — sürekli başarısız quiet'ler negatife düşer, iyi
 // olanlar pozitife çıkar (ayrım güçlenir; history-LMR ileride bunu kullanabilir).
+// Aynı ödül/ceza şeması continuation history'ye de (önceki hamlenin bağlamında)
+// uygulanır; önceki hamle yoksa (kök / null move ardı) yalnız main güncellenir.
 void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth,
                                   const Move* quiets, int nq) {
     // Killer: kesme yapan m'i öne al (zaten 1. killer değilse).
@@ -172,17 +225,26 @@ void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth,
     }
     const int   bonus = depth * depth;  // derin kesmeler daha değerli
     const Color us    = b.side_to_move;
-    // m'i ödüllendir (üst sınır kHistoryMax -> killer bandının altında kalsın).
-    int& h = history[us][m.from()][m.to()];
-    h += bonus;
-    if (h > kHistoryMax) h = kHistoryMax;
-    // m'den önce boşuna aranan quiet'leri cezalandır (alt sınır -kHistoryMax).
+
+    // Continuation history bağlamı: bu düğüme götüren (bir önceki) hamle.
+    const bool  has_prev = (ply >= 1 && stack[ply - 1].piece != kNoPiece);
+    const int   pp = has_prev ? stack[ply - 1].piece : 0;
+    const Square pt = has_prev ? stack[ply - 1].to : A1;
+
+    // m'i ödüllendir; m'den önce boşuna aranan quiet'leri cezalandır.
+    add_history(history[us][m.from()][m.to()], bonus);
+    if (has_prev)
+        add_history((*cont_hist)[pp][pt][piece_index(us, b.type_on(m.from()))][m.to()],
+                    bonus);
+
     for (int k = 0; k < nq; ++k) {
         Move q = quiets[k];
         if (q == m) continue;
-        int& hq = history[us][q.from()][q.to()];
-        hq -= bonus;
-        if (hq < -kHistoryMax) hq = -kHistoryMax;
+        add_history(history[us][q.from()][q.to()], -bonus);
+        if (has_prev)
+            add_history(
+                (*cont_hist)[pp][pt][piece_index(us, b.type_on(q.from()))][q.to()],
+                -bonus);
     }
 }
 
@@ -337,6 +399,9 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         const int R = (depth >= 6) ? 3 : 2;
         Board next = b;
         next.make_null_move();
+        // Null-child continuation history bağlamı görmemeli: bu ply'de gerçek bir
+        // hamle oynanmadı, bayat bir bağlam okumasın.
+        stack[ply] = StackEntry{};
         // Null-child'ın anahtarı, recursive negamax'ın kendi KeyGuard'ıyla push edilir.
         int score = -negamax(next, depth - 1 - R, -beta, -beta + 1, ply + 1,
                              /*null_allowed=*/false);
@@ -424,6 +489,11 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // futility + LMP + razoring) çeklerin taktik değeri zaten yakalandığından
         // uzatma ekleyecek bir şey bulamadı. (see() sessiz-hamle genelleştirmesi
         // ileride quiet-move SEE budaması için korundu.)
+
+        // Continuation history bağlamı: çocuk düğümler "bu ply'de hangi taş nereye
+        // oynandı" bilgisini stack[ply]'den okur. Promosyonda hareket eden taş
+        // piyondur (b hamle öncesi tahta).
+        stack[ply] = StackEntry{piece_index(us, b.type_on(m.from())), m.to()};
 
         // PVS (Principal Variation Search): ilk (en iyi sıralanan) hamle tam
         // pencereyle aranır ve PV adayı kabul edilir. Kalan hamleler önce
