@@ -480,16 +480,46 @@ Faz 2C (selective search — devam ediyor):
   - **SPRT GEÇTİ: base e6ed399 (LMR) vs new 7254fa6, 313 oyun, W-D-L 164-107-42,
     Elo +143 ± 32.4, LOS %100, LLR 2.95 (tam kabul), H1 kabul** — LMR'den sonra
     klasik fazın İKİNCİ en büyük tekil kazancı, tutuldu.
+- Adım 6: LMP (Late Move Pruning / move-count) (TAMAM, SPRT GEÇTİ H1 — commit
+  9ea1677). Sığ, çekte-olmayan, mat-olmayan düğümde iyi sıralamada belli sayıdan
+  sonraki quiet, çek vermeyen hamleleri statik eval'e bakmaksızın, SADECE sıra
+  numarasına göre atlar. Futility'nin (eval-tabanlı) tamamlayıcısı — aynı hamle
+  döngüsünde yan yana, paylaşılan `quiet`/`gives_check`/`moves_searched` ile.
+  Sezgisel (davranış-koruyan DEĞİL) -> kabul kapısı SPRT (Elo).
+  - `search.cpp`: `kLmpMaxDepth (8)` + `lmp_count(depth) = 3 + depth*depth` eşik
+    (d1->4, d2->7, d3->12, d4->19; derinde eşik legal hamle sayısını aşıp
+    tetiklenmez — asıl budama sığ). Node seviyesi `can_lmp` kapısı (`!in_check &&
+    ply>0 && depth<=kLmpMaxDepth && !is_mate_score(alpha) && !is_mate_score(beta)`);
+    döngüde futility `continue`'sunun ardına `moves_searched >= lmp_count(depth) &&
+    quiet && !gives_check -> continue`.
+  - Doğal güvenlik: ply>0 (kök tam), mat penceresinde kapalı, !gives_check + quiet
+    (taktik/çek/yakalama korunur), lmp_count>=4 -> en az PV + birkaç hamle daima
+    aranır (fail-low düğümde bile hamle/PV kalır).
+  - Testler (93->95): LmpKeepsWinningTactic (bedava vezir d4'te hâlâ Rxe5),
+    LmpKeepsMateSearch (mat-in-1 d5'te korunur). Düğüm sağlaması (Release, futility
+    baseline 7254fa6, d10): startpos 176K->70K (best d2d4 korundu); Kiwipete
+    340K->467K + best e2a6->d5e6 (heuristik, davranış-koruyan DEĞİL — tek taktik
+    düğümde LMP cutoff-üreten hamleyi budayıp ağacı yeniden şekillendirebilir; bu
+    bir sağlama, kapı değil).
+  - Metodolojik not: erken kareler (247 oyun) düz görünüyordu (Elo +4.3, LLR 0.03);
+    LMP mütevazı bir etki olduğundan LMR/futility gibi 313 oyunda patlamadı, daha
+    çok oyun istedi. Sabırla koşu tamamlandı. Bilinçli ertelenen: improving farkı,
+    PV/non-PV ayrımı, LMP+LMR eşik ortak tuning'i.
+  - **SPRT GEÇTİ: base 7254fa6 (futility) vs new 9ea1677, 1413 oyun, W-D-L
+    520-513-380, Elo +34.5 ± 14.5, LOS %100, LLR 2.95 (tam kabul), H1 kabul** —
+    tutuldu.
 
 **FAZ 2B EVALUATION TAMAM. Faz 2C — PVS (Adım 1) + null move (Adım 2, +56.3 Elo)
 + SEE (Adım 3, +27.8 Elo) + LMR (Adım 4, +164.5 Elo — açık ara en büyük) +
-futility ailesi (Adım 5, +143 Elo — ikinci en büyük) TAMAM, hepsi SPRT'den geçti.
-Sonraki: LMP (late move pruning, move-count).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
+futility ailesi (Adım 5, +143 Elo — ikinci en büyük) + LMP (Adım 6, +34.5 Elo)
+TAMAM, hepsi SPRT'den geçti. Sonraki: razoring -> extensions (check + ileride
+singular).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
 gelişmiş evaluation kısmı bitti. Faz 2C sırası: **PVS** (LMR'nin çerçevesi, önce
-bu) -> null move -> SEE -> LMR (en büyük Elo) -> futility ailesi -> LMP -> razoring
--> extensions. Her biri ayrı commit. NOT: PVS davranışı koruyan (exact) bir
+bu) -> null move -> SEE -> LMR (en büyük Elo) -> futility ailesi -> LMP (hepsi
+TAMAM) -> **razoring (sıradaki)** -> extensions. Her biri ayrı commit. NOT: PVS
+davranışı koruyan (exact) bir
 optimizasyon olduğundan **SPRT KOŞULMAYACAK — kapı exactness ispatı** (sabit
 derinlikte best move + score PVS öncesiyle birebir aynı + düğüm düşüşü); SPRT
 LMR'ye saklandı (kullanıcı kararı). Faz 2D (Lazy SMP multi-threading) klasik fazın
