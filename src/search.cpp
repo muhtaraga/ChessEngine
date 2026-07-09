@@ -203,6 +203,14 @@ int lmr_reduction(int depth, int move_num) {
     return table[std::min(depth, 63)][std::min(move_num, 63)];
 }
 
+// History-tabanlı LMR ayarı (işaretli history ile): base indirimden
+// history/kLmrHistoryDivisor çıkarılır (±kLmrHistoryMax ply ile sınırlı).
+// Pozitif history (sık kesen iyi quiet) -> daha az indir; negatif history
+// (sürekli başarısız quiet, malus almış) -> daha çok indir. İki yönlü sinyal,
+// history malus sayesinde artık çalışır. Bölen/tavan SPRT ile ayarlanabilir.
+constexpr int kLmrHistoryDivisor = 2'000;
+constexpr int kLmrHistoryMax     = 2;
+
 // --- Futility ailesi parametreleri (santipiyon) ---
 // Reverse futility (static null move): sığ düğümde static_eval, beta'yı
 // kRfpMargin*depth kadar aşıyorsa dal budanır.
@@ -446,6 +454,10 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             if (depth >= 3 && i >= 2 && quiet && !in_check && !gives_check &&
                 m != killers[ply][0] && m != killers[ply][1]) {
                 reduction = lmr_reduction(depth, i);
+                // History-tabanlı ayar: iyi (pozitif history) quiet'i az, kötü
+                // (negatif history) quiet'i çok indir. ±kLmrHistoryMax ply sınırlı.
+                reduction -= std::clamp(history[us][m.from()][m.to()] / kLmrHistoryDivisor,
+                                        -kLmrHistoryMax, kLmrHistoryMax);
                 if (reduction > depth - 2) reduction = depth - 2;  // reduced >= 1 ply
                 if (reduction < 0)         reduction = 0;
             }
