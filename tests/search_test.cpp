@@ -226,23 +226,9 @@ TEST(Search, RazoringKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
-// --- Check extension ---
-
-// Check extension yalnız aramanın derinliğini değiştirir, hamle seçimini değil:
-// bilinen bedava-vezir pozisyonunda motor hâlâ Rxe5 ile veziri almalı (uzatma
-// kazanan taktiği bozmuyor).
-TEST(Search, CheckExtensionKeepsWinningTactic) {
-    Board b;
-    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
-    SearchResult r = search(b, 4);
-    EXPECT_EQ(r.best, Move::make(E1, E5));
-    EXPECT_GT(r.score, 400);
-}
-
-// Check extension çek hatlarını derinleştirir: iki kale + şah ile bare king'e
-// karşı zorunlu mat (baştan sona çek dizisi) makul derinlikte bulunmalı. Uzatma
-// bu çek ağını kısaltır; mat skoru dönmeli.
-TEST(Search, CheckExtensionFindsForcedMate) {
+// İki kale + şah ile bare king'e karşı zorunlu mat (baştan sona çek dizisi) makul
+// derinlikte bulunmalı — genel mat-arama regresyon güvencesi.
+TEST(Search, FindsTwoRookMate) {
     Board b;
     ASSERT_TRUE(b.set_fen("7k/8/8/8/8/8/R7/1R5K w - - 0 1"));
     SearchResult r = search(b, 8);

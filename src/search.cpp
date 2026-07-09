@@ -392,20 +392,12 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             continue;
         ++moves_searched;
 
-        // --- Check extension (SEE-kapılı) ---
-        // Çek veren hamle rakibin cevabını daraltır (forcing) -> bu hattı 1 ply
-        // uzat. Horizon effect'i azaltır, zorunlu çek/mat dizilerini sığ derinlikte
-        // bulur. Ama TÜM çekleri uzatmak ağacı boş/spekülatif çeklerle şişirir
-        // (SPRT'de nötr çıktı) -> yalnız materyal kaybettirmeyen çekleri (SEE >= 0)
-        // uzat (Stockfish see_ge deseni). gives_check kısa devresi sayesinde see()
-        // yalnız çeklerde çağrılır (çek-olmayan hamlede ek maliyet yok); see(b,m)
-        // do_move ÖNCESİ tahtada çağrılır. Promosyon çekleri nadir + zorlayıcı,
-        // see()'ye verilmez -> koşulsuz uzatılır. MAX_PLY tavanı + repetition
-        // tespiti perpetual-check patlamasını sınırlar. LMR gate'i zaten
-        // !gives_check olduğundan çek hamlesi indirilmez -> uzatma ile çakışmaz.
-        const bool see_ok    = m.type() == PROMOTION || see(b, m) >= 0;
-        const int  extension = (gives_check && see_ok) ? 1 : 0;
-        const int  new_depth = depth - 1 + extension;
+        // NOT: Check extension (çek veren hamleyi 1 ply uzat) hem naif hem
+        // SEE-kapılı formda denendi; ikisi de SPRT'de NÖTR kaldı (LLR ~0) ->
+        // rafa kaldırıldı. Bizim gibi çok-budayan bir motorda (LMR + null +
+        // futility + LMP + razoring) çeklerin taktik değeri zaten yakalandığından
+        // uzatma ekleyecek bir şey bulamadı. (see() sessiz-hamle genelleştirmesi
+        // ileride quiet-move SEE budaması için korundu.)
 
         // PVS (Principal Variation Search): ilk (en iyi sıralanan) hamle tam
         // pencereyle aranır ve PV adayı kabul edilir. Kalan hamleler önce
@@ -416,7 +408,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // re-search nadirdir, net kazanç düğüm sayısında. (LMR'nin oturacağı çerçeve.)
         int score;
         if (i == 0) {
-            score = -negamax(next, new_depth, -beta, -alpha, ply + 1);
+            score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
         } else {
             // --- LMR (Late Move Reductions) ---
             // Geç sıralanan quiet, çek-vermeyen hamleler büyük olasılıkla alpha'yı
@@ -433,15 +425,15 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             }
 
             // Azaltılmış derinlikte null-window (scout) arama.
-            score = -negamax(next, new_depth - reduction, -alpha - 1, -alpha, ply + 1);
+            score = -negamax(next, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
             // İndirimli scout alpha'yı geçtiyse indirim yanlıştı: tam derinlikte
             // null-window ile yeniden ara (PVS re-search'ten önce).
             if (!aborted && reduction > 0 && score > alpha)
-                score = -negamax(next, new_depth, -alpha - 1, -alpha, ply + 1);
+                score = -negamax(next, depth - 1, -alpha - 1, -alpha, ply + 1);
             // PVS: null-window alpha'yı geçip beta'nın altında kaldıysa gerçek
             // değeri bulmak için tam pencereyle yeniden ara.
             if (!aborted && score > alpha && score < beta)
-                score = -negamax(next, new_depth, -beta, -alpha, ply + 1);
+                score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
         }
 
         if (aborted)
