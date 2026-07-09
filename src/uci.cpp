@@ -32,6 +32,11 @@ std::thread       g_search_thread;
 // = hayır). "quit" sınırlı aramayı doğal bitişine bırakır (pipe/batch kullanımında
 // tam çıktı), yalnızca sınırsız aramayı zorla durdurur.
 std::atomic<bool> g_search_bounded{false};
+
+// Move ordering tabloları: bir OYUN boyunca yaşar (aramalar arası birikim korunur,
+// her arama başında yaşlanır), "ucinewgame"de temizlenir. Arama thread'inden okunur;
+// her go öncesi stop_search() thread'i join ettiği için yarış yok.
+SearchTables g_tables;
 // Çıktı akışı (out) iki thread'den yazılabildiği için (arama: info/bestmove;
 // ana döngü: readyok vб.) tüm yazımlar bu kilit altında yapılır.
 std::mutex        g_io_mtx;
@@ -267,7 +272,7 @@ void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
             }
             out << '\n';
             out.flush();
-        }, hist);
+        }, hist, &g_tables);
 
         std::lock_guard<std::mutex> lk(g_io_mtx);
         if (best.best == Move())
@@ -315,6 +320,7 @@ void uci_loop(std::istream& in, std::ostream& out) {
             board.set_startpos();
             history.clear();  // yeni oyun: pozisyon geçmişini sıfırla
             TT.clear();  // yeni oyun: önceki oyunun girişlerini at
+            g_tables.clear();  // yeni oyun: killer/history/continuation history sıfır
         } else if (cmd == "setoption") {
             handle_setoption(ss);  // Hash / Clear Hash (kendi içinde stop_search)
         } else if (cmd == "position") {

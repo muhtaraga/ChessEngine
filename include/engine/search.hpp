@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include "engine/board.hpp"
@@ -24,6 +25,30 @@ constexpr int MATE_IN_MAX = MATE - 1000;  // |puan| bunun üstündeyse mat
 inline bool is_mate_score(int score) {
     return score > MATE_IN_MAX || score < -MATE_IN_MAX;
 }
+
+// Move ordering tabloları (killer moves, history, continuation history).
+//
+// Bu tablolar TEK BİR ARAMADAN daha uzun yaşamalıdır: bir hamlelik aramada (tipik
+// maçta ~200 ms) biriken sinyal, özellikle seyrek continuation history için, hemen
+// hemen boştur. Stockfish de bunları oyun boyunca taşır ve yalnızca "ucinewgame"de
+// temizler. Bu yüzden sahiplik çağırana (UCI) verildi: bir oyun için tek örnek
+// tutulur, search_iterative'e verilir, ucinewgame'de clear() çağrılır.
+//
+// nullptr geçilirse arama kendi geçici tablolarını kullanır -> testler deterministik
+// kalır (birbirine sızan durum yok). Faz 2D'de her thread kendi örneğini alır.
+class SearchTables {
+public:
+    SearchTables();
+    ~SearchTables();
+    SearchTables(const SearchTables&) = delete;
+    SearchTables& operator=(const SearchTables&) = delete;
+
+    // Yeni oyun: tüm tabloları sıfırla.
+    void clear();
+
+    struct Impl;                 // tanımı search.cpp'de (tablolar iç detay)
+    std::unique_ptr<Impl> impl;
+};
 
 struct SearchResult {
     Move              best;      // bulunan en iyi hamle (terminalde geçersiz)
@@ -68,8 +93,12 @@ using InfoCallback = std::function<void(const SearchResult& result, int depth)>;
 // windows kullanarak. Zaman sınırı dolunca yarım kalan derinliği atar ama o
 // derinlikte kökte gerçek bir iyileşme bulunduysa onu korur (abort'ta blunder
 // önleme). info verilirse her tamamlanan derinlikte çağrılır.
+// tables: oyun boyunca yaşayan move ordering tabloları (bkz. SearchTables). Verilirse
+// her arama başında yaşlandırılır (history yarılanır, killer'lar temizlenir) ve
+// aramalar arası birikim korunur. nullptr -> geçici, sıfırdan tablolar.
 SearchResult search_iterative(const Board& b, const SearchLimits& lim,
                               const InfoCallback& info = {},
-                              const std::vector<std::uint64_t>& history = {});
+                              const std::vector<std::uint64_t>& history = {},
+                              SearchTables* tables = nullptr);
 
 }  // namespace engine

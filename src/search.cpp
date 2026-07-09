@@ -6,6 +6,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <utility>
 
@@ -70,17 +71,65 @@ inline void add_history(int& h, int bonus) {
     if (h < -kHistoryMax) h = -kHistoryMax;
 }
 
-// Continuation history tablosu: [önceki hamlenin taşı][önceki hamlenin hedefi]
-// [bu hamlenin taşı][bu hamlenin hedefi]. Yani "rakip şu taşı şuraya oynadıysa,
-// buna karşı hangi cevap işe yaradı" bilgisi. Main history'den bağımsız bir
-// sinyal; countermove'un taşıdığı bilgiyi sert bant yerine yumuşak puan olarak
-// verir. ~2.36 MB -> Searcher stack'te yaşadığı için heap'te tutulur.
-using ContHist =
-    std::array<std::array<std::array<std::array<int, SQUARE_NB>, 12>, SQUARE_NB>, 12>;
+}  // namespace
 
-// Tek iş parçacıklı arama durumu. Triangular PV table + zaman kesmesi +
-// move ordering durumu (killer moves, history heuristic, continuation history).
+// Move ordering tabloları. Sahiplik çağırandadır (bkz. search.hpp SearchTables):
+// bir oyun boyunca yaşarlar, her arama başında yaşlanırlar, ucinewgame'de temizlenir.
+struct SearchTables::Impl {
+    // Killer moves: her ply'de beta kesmesi yapan iki quiet hamle. Aynı derinlik
+    // seviyesindeki kardeş düğümlerde erken denenir.
+    Move killers[MAX_PLY][2] = {};
+
+    // History heuristic: [renk][from][to] için, geçmişte kesme yapan quiet
+    // hamlelerin biriken (işaretli) puanı. Quiet hamle sıralamasını yönlendirir.
+    int history[COLOR_NB][SQUARE_NB][SQUARE_NB] = {};
+
+    // Continuation history: [önceki hamlenin taşı][önceki hamlenin hedefi]
+    // [bu hamlenin taşı][bu hamlenin hedefi]. Yani "rakip şu taşı şuraya oynadıysa,
+    // buna karşı hangi cevap işe yaradı" bilgisi. Main history'den bağımsız bir
+    // sinyal; countermove'un taşıdığı bilgiyi sert bant yerine yumuşak puan verir.
+    // ~2.36 MB -> heap (Impl unique_ptr arkasında olsa da tablo büyük).
+    using ContHist =
+        std::array<std::array<std::array<std::array<int, SQUARE_NB>, 12>, SQUARE_NB>, 12>;
+    std::unique_ptr<ContHist> cont_hist = std::make_unique<ContHist>();
+
+    // Yeni oyun: her şey sıfır.
+    void clear() {
+        std::memset(killers, 0, sizeof(killers));
+        std::memset(history, 0, sizeof(history));
+        cont_hist->fill({});
+    }
+
+    // Yeni arama: history yarılanır, killer'lar temizlenir.
+    //  - Yarılama iki iş yapar: (a) sert clamp'li biriktirme oyun boyunca ±kHistoryMax
+    //    tavanına oturup sinyali doyurmasın (doymuş history = her yerde aynı puan =
+    //    bilgi yok), (b) eski pozisyonlardan kalan bilgi zamanla sönsün.
+    //  - Killer'lar ply-indeksli: kök iki ply kaydığından bir sonraki aramada aynı
+    //    ply artık başka bir pozisyona denk gelir, taşımak anlamsız.
+    void age() {
+        std::memset(killers, 0, sizeof(killers));
+        for (auto& c : history)
+            for (auto& f : c)
+                for (int& h : f) h /= 2;
+        for (auto& a : *cont_hist)
+            for (auto& b : a)
+                for (auto& c : b)
+                    for (int& h : c) h /= 2;
+    }
+};
+
+SearchTables::SearchTables() : impl(std::make_unique<Impl>()) {}
+SearchTables::~SearchTables() = default;
+void SearchTables::clear() { impl->clear(); }
+
+namespace {
+
+// Tek iş parçacıklı arama durumu. Triangular PV table + zaman kesmesi + arama
+// yığını. Move ordering tabloları dışarıda yaşar (tb), aramalar arası korunur.
 struct Searcher {
+    SearchTables::Impl& tb;
+    explicit Searcher(SearchTables::Impl& t) : tb(t) {}
+
     std::uint64_t     nodes = 0;
     bool              aborted = false;
     bool              use_deadline = false;
@@ -91,18 +140,6 @@ struct Searcher {
 
     Move pv_table[MAX_PLY][MAX_PLY];
     int  pv_len[MAX_PLY] = {};
-
-    // Killer moves: her ply'de beta kesmesi yapan iki quiet hamle. Aynı derinlik
-    // seviyesindeki kardeş düğümlerde erken denenir.
-    Move killers[MAX_PLY][2] = {};
-
-    // History heuristic: [renk][from][to] için, geçmişte kesme yapan quiet
-    // hamlelerin biriken puanı. Quiet hamle sıralamasını yönlendirir.
-    int history[COLOR_NB][SQUARE_NB][SQUARE_NB] = {};
-
-    // Continuation history (bir önceki hamlenin bağlamıyla history). Heap'te
-    // (bkz. ContHist yorumu); make_unique değer-başlatma ile sıfırlar.
-    std::unique_ptr<ContHist> cont_hist = std::make_unique<ContHist>();
 
     // Arama yığını: stack[p] = ply p'de OYNANAN hamlenin bağlamı (p+1'e götüren
     // hamle). piece == kNoPiece -> o ply'de gerçek hamle yok (null move ya da
@@ -120,7 +157,7 @@ struct Searcher {
             return 0;
         const StackEntry& prev = stack[ply - 1];
         const int pc = piece_index(b.side_to_move, b.type_on(m.from()));
-        return (*cont_hist)[prev.piece][prev.to][pc][m.to()];
+        return (*tb.cont_hist)[prev.piece][prev.to][pc][m.to()];
     }
 
     // Kök (ply 0) izleme: bu derinlikte kökte bulunan en iyi hamle/puan. Süre
@@ -203,9 +240,9 @@ int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
     // toplamı: main history (renk/from/to) + continuation history (önceki hamlenin
     // bağlamı). Toplam history bandına kırpılır ki killer bandının altında kalsın
     // (ayrık bant yapısı korunur). cont_hist sıfırken skor eski davranışla birebir.
-    if (m == killers[ply][0]) return kScoreKiller1;
-    if (m == killers[ply][1]) return kScoreKiller2;
-    const int s = history[b.side_to_move][m.from()][m.to()] + cont_score(b, m, ply);
+    if (m == tb.killers[ply][0]) return kScoreKiller1;
+    if (m == tb.killers[ply][1]) return kScoreKiller2;
+    const int s = tb.history[b.side_to_move][m.from()][m.to()] + cont_score(b, m, ply);
     return std::clamp(s, -kHistoryMax, kHistoryMax);
 }
 
@@ -219,9 +256,9 @@ int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
 void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth,
                                   const Move* quiets, int nq) {
     // Killer: kesme yapan m'i öne al (zaten 1. killer değilse).
-    if (killers[ply][0] != m) {
-        killers[ply][1] = killers[ply][0];
-        killers[ply][0] = m;
+    if (tb.killers[ply][0] != m) {
+        tb.killers[ply][1] = tb.killers[ply][0];
+        tb.killers[ply][0] = m;
     }
     const int   bonus = depth * depth;  // derin kesmeler daha değerli
     const Color us    = b.side_to_move;
@@ -232,18 +269,18 @@ void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth,
     const Square pt = has_prev ? stack[ply - 1].to : A1;
 
     // m'i ödüllendir; m'den önce boşuna aranan quiet'leri cezalandır.
-    add_history(history[us][m.from()][m.to()], bonus);
+    add_history(tb.history[us][m.from()][m.to()], bonus);
     if (has_prev)
-        add_history((*cont_hist)[pp][pt][piece_index(us, b.type_on(m.from()))][m.to()],
+        add_history((*tb.cont_hist)[pp][pt][piece_index(us, b.type_on(m.from()))][m.to()],
                     bonus);
 
     for (int k = 0; k < nq; ++k) {
         Move q = quiets[k];
         if (q == m) continue;
-        add_history(history[us][q.from()][q.to()], -bonus);
+        add_history(tb.history[us][q.from()][q.to()], -bonus);
         if (has_prev)
             add_history(
-                (*cont_hist)[pp][pt][piece_index(us, b.type_on(q.from()))][q.to()],
+                (*tb.cont_hist)[pp][pt][piece_index(us, b.type_on(q.from()))][q.to()],
                 -bonus);
     }
 }
@@ -514,7 +551,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             // çekteyken (kaçış), çek veren hamle, killer'lar.
             int reduction = 0;
             if (depth >= 3 && i >= 2 && quiet && !in_check && !gives_check &&
-                m != killers[ply][0] && m != killers[ply][1]) {
+                m != tb.killers[ply][0] && m != tb.killers[ply][1]) {
                 reduction = lmr_reduction(depth, i);
                 if (reduction > depth - 2) reduction = depth - 2;  // reduced >= 1 ply
                 if (reduction < 0)         reduction = 0;
@@ -711,7 +748,9 @@ int Searcher::search_root(const Board& b, int depth, int prev_score) {
 
 SearchResult search(const Board& b, int depth, std::int64_t max_time_ms,
                     const std::vector<std::uint64_t>& history) {
-    Searcher s;
+    // Sabit derinlik: her çağrı sıfırdan tablolarla, deterministik (testlerin kapısı).
+    SearchTables local;
+    Searcher s(*local.impl);
     s.keys = history;  // tekrar tespiti için oyun geçmişiyle tohumla
     if (max_time_ms >= 0) {
         s.use_deadline = true;
@@ -734,8 +773,16 @@ SearchResult search(const Board& b, int depth, std::int64_t max_time_ms,
 
 SearchResult search_iterative(const Board& b, const SearchLimits& lim,
                               const InfoCallback& info,
-                              const std::vector<std::uint64_t>& history) {
-    Searcher s;
+                              const std::vector<std::uint64_t>& history,
+                              SearchTables* tables) {
+    // Kalıcı tablolar verildiyse aramalar arası birikimi koru, ama yaşlandır
+    // (history yarılanır -> doyma yok, eski bilgi söner; killer'lar temizlenir).
+    // Verilmediyse geçici, sıfırdan tablolar (testler deterministik kalır).
+    SearchTables local;
+    SearchTables& t = tables ? *tables : local;
+    if (tables) t.impl->age();
+
+    Searcher s(*t.impl);
     s.keys = history;  // tekrar tespiti için oyun geçmişiyle tohumla
     s.stop = lim.stop;
     if (lim.hard_ms >= 0) {
