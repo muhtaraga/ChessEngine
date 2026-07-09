@@ -104,7 +104,8 @@ struct Searcher {
                  bool null_allowed = true);
     int  quiescence(const Board& b, int alpha, int beta, int ply);
     int  score_move(const Board& b, Move m, Move tt_move, int ply) const;
-    void update_quiet_stats(const Board& b, Move m, int ply, int depth);
+    void update_quiet_stats(const Board& b, Move m, int ply, int depth,
+                            const Move* quiets, int nq);
 
     // Kökte aspiration window ile arar: bir önceki derinliğin puanı etrafında
     // dar pencere dene, fail-low/high olursa genişleterek yeniden ara.
@@ -157,18 +158,32 @@ int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
     return history[b.side_to_move][m.from()][m.to()];
 }
 
-// Beta kesmesi yapan bir quiet hamleyi killer ve history tablolarına işler.
-void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth) {
-    // Killer: yeni hamleyi öne al (zaten 1. killer değilse).
+// Beta kesmesi yapan quiet hamleyi (m) ve bu düğümde m'den önce aranmış ama
+// kesme yapmayan quiet hamleleri (quiets[0..nq)) killer/history'ye işler.
+// History gravity: m ödül (+bonus), diğerleri ceza (-bonus). Böylece history
+// işaretli/merkezli olur — sürekli başarısız quiet'ler negatife düşer, iyi
+// olanlar pozitife çıkar (ayrım güçlenir; history-LMR ileride bunu kullanabilir).
+void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth,
+                                  const Move* quiets, int nq) {
+    // Killer: kesme yapan m'i öne al (zaten 1. killer değilse).
     if (killers[ply][0] != m) {
         killers[ply][1] = killers[ply][0];
         killers[ply][0] = m;
     }
-    // History: derinlik karesi kadar ödüllendir (derin kesmeler daha değerli).
-    int& h = history[b.side_to_move][m.from()][m.to()];
-    h += depth * depth;
-    if (h > kHistoryMax)
-        h = kHistoryMax;  // killer bandının altında kalsın
+    const int   bonus = depth * depth;  // derin kesmeler daha değerli
+    const Color us    = b.side_to_move;
+    // m'i ödüllendir (üst sınır kHistoryMax -> killer bandının altında kalsın).
+    int& h = history[us][m.from()][m.to()];
+    h += bonus;
+    if (h > kHistoryMax) h = kHistoryMax;
+    // m'den önce boşuna aranan quiet'leri cezalandır (alt sınır -kHistoryMax).
+    for (int k = 0; k < nq; ++k) {
+        Move q = quiets[k];
+        if (q == m) continue;
+        int& hq = history[us][q.from()][q.to()];
+        hq -= bonus;
+        if (hq < -kHistoryMax) hq = -kHistoryMax;
+    }
 }
 
 // LMR indirim tablosu: derinlik ve hamle sırası (kaçıncı hamleyi arıyoruz)
@@ -343,6 +358,12 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     Move best_move = Move();
     int  moves_searched = 0;  // futility: en az bir hamle tam arandı mı
 
+    // History malus için: bu düğümde aranmış (kesme yapmadan geçilmiş) quiet
+    // hamleler. Beta kesmesinde kesen hamle ödül, bunlar ceza alır. 64 tavan
+    // (nadiren aşılır; aşarsa fazlası cezasız kalır, zararsız).
+    Move quiets_searched[64];
+    int  nquiets = 0;
+
     // --- Futility pruning kapısı (node seviyesi) ---
     // Sığ, çekte-olmayan, mat-olmayan düğümde statik eval + margin bile alpha'ya
     // ulaşamıyorsa quiet hamleler (materyali pek değiştirmez) alpha'yı geçemez ->
@@ -391,6 +412,11 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         if (can_lmp && moves_searched >= lmp_count(depth) && quiet && !gives_check)
             continue;
         ++moves_searched;
+
+        // History malus: aranan quiet hamleyi kaydet (kesme olursa bunlardan
+        // kesmeyi yapan ödül, kalanlar ceza alır).
+        if (quiet && nquiets < 64)
+            quiets_searched[nquiets++] = m;
 
         // NOT: Check extension (çek veren hamleyi 1 ply uzat) hem naif hem
         // SEE-kapılı formda denendi; ikisi de SPRT'de NÖTR kaldı (LLR ~0) ->
@@ -461,7 +487,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             // Beta kesmesi: kesmeyi yapan quiet hamleyi killer + history'ye işle
             // (yakalamalar MVV-LVA ile sıralanır, history'yi kirletmezler).
             if (!is_capture(b, m) && m.type() != PROMOTION)
-                update_quiet_stats(b, m, ply, depth);
+                update_quiet_stats(b, m, ply, depth, quiets_searched, nquiets);
             break;
         }
     }
