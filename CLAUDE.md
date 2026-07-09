@@ -54,12 +54,12 @@ düğüm sayısıyla değil, ancak eski versiyona karşı maç sonucuyla (Elo) d
 - [x] Iterative deepening + aspiration windows + time management
 - [x] Asenkron stop / go infinite + UCI seçenekleri (Hash, Clear Hash)
 
-**Faz 2B — Değerlendirme + test altyapısı (sıradaki, ön koşul)**
+**Faz 2B — Değerlendirme + test altyapısı (TAMAM)**
 
-- [ ] Gelişmiş evaluation: pawn structure (isole/çift/geçer piyon), king safety
+- [x] Gelişmiş evaluation: pawn structure (isole/çift/geçer piyon), king safety
       (şah bölgesi saldırıları, piyon kalkanı), piece mobility, bishop pair,
       rook on open/semi-open file. Tapered eval (middlegame/endgame interpolasyon).
-- [ ] **cutechess-cli ile otomatik maç + SPRT regresyon altyapısı.** Bir betik:
+- [x] **cutechess-cli ile otomatik maç + SPRT regresyon altyapısı.** Bir betik:
       iki versiyonu (yeni vs. baz) N oyun, sabit zaman kontrolünde oynatır, Elo
       farkı + hata payı + LOS/SPRT kararı (H0 reddedildi mi?) raporlar. Açılış
       kitabı (varyasyon için), tekrar/aynılık kontrolü. **Bundan sonraki her
@@ -73,25 +73,25 @@ düğüm sayısıyla değil, ancak eski versiyona karşı maç sonucuyla (Elo) d
 Her madde ayrı bir commit + ayrı bir SPRT koşusu. Kazanç göstermeyen ya da
 regresyon veren teknik geri alınır. Sıralama, altyapı bağımlılığına göre:
 
-- [ ] **PVS (Principal Variation Search)**: ilk hamle tam pencereyle, kalanlar
+- [x] **PVS (Principal Variation Search)**: ilk hamle tam pencereyle, kalanlar
       null-window [α, α+1] ile aranır; α'yı geçen olursa tam pencereyle yeniden
       aranır. LMR'nin oturduğu çerçeve — önce bu gelmeli.
-- [ ] **Null move pruning**: rakibe bedava hamle ver, azaltılmış derinlikte
+- [x] **Null move pruning**: rakibe bedava hamle ver, azaltılmış derinlikte
       (R≈2-3) beta etrafında ara; sonuç ≥ beta ise dalı buda. **Dikkat:** çekteyken,
       çok sığ derinlikte ve zugzwang riskinde (yalnız şah+piyon kalınca) uygulanmaz;
       yüksek derinlikte verification search ile zugzwang blunder'ı önlenir.
-- [ ] **SEE (Static Exchange Evaluation)** + quiescence temizliği: bir karedeki
+- [x] **SEE (Static Exchange Evaluation)** + quiescence temizliği: bir karedeki
       taş alışverişinin materyal sonucunu hesapla. Kullanımı: (a) qsearch'te kayıplı
       yakalamaları ele, (b) delta pruning (Adım 3 notundaki ertelenen işler), (c)
       ileride LMR/futility kararlarında "taktik olarak kazançlı hamleyi budama".
-- [ ] **LMR (Late Move Reductions)**: move ordering'de geç gelen, quiet, çek
+- [x] **LMR (Late Move Reductions)**: move ordering'de geç gelen, quiet, çek
       olmayan hamleleri azaltılmış derinlikte ara (derinlik+sıraya bağlı log tablo);
       α'yı geçerse tam derinlikte yeniden ara. **Tek başına en büyük Elo kazancı**
       ve nominal derinliği en çok şişiren teknik (Stockfish'in bizden hızlı
       derinleşmesinin ana sebebi).
-- [ ] **Futility + reverse futility (static null move)**: yaprağa yakın, static
+- [x] **Futility + reverse futility (static null move)**: yaprağa yakın, static
       eval ± margin ile umutsuz quiet hamleleri/dalları ele.
-- [ ] **Late move pruning (move-count)**: sığ derinlikte, belli sayıdan sonraki
+- [x] **Late move pruning (move-count)**: sığ derinlikte, belli sayıdan sonraki
       quiet hamleleri hiç arama.
 - [ ] **Razoring**: sığ derinlikte eval çok geriyse doğrudan qsearch'e düş, o da
       α'nın altındaysa buda.
@@ -134,21 +134,12 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-09): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
-üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
-geçiyor. Toplam 93 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
-SPRT altyapısı (cutechess-cli KURULU + komutsuz web GUI) tamam. Tapered eval'in
-Elo katkısı SPRT ile doğrulandı (+42.8 ± 16.3, H1). İlk gelişmiş eval terimi
-**pawn structure (isole/çift/geçer piyon) da SPRT'den geçti (+45.4 ± 16.8, H1)**.
-Ayrıca **arama tekrar (repetition) tespiti eklendi ve SPRT'den geçti (+27.2 ±
-12.7, H1)** — motor artık kazandığı pozisyonda 3-hamle tekrarına düşmüyor. İkinci
-gelişmiş eval terimi **piece mobility de SPRT'den geçti (H1 kabul)**. Üçüncü yama
-**bishop pair + rook-on-open/semi-open-file de SPRT'den geçti (H1 kabul)**. Son
-gelişmiş evaluation terimi **king safety (piyon kalkanı + şah bölgesi saldırıları,
-attack-unit tablosu) da eklendi ve KABUL EDİLDİ** (base 9abe61b vs 7eea85f). Not:
-bu terim tam SPRT sınırına (LLR ±2.94) ulaşmadan, 1000 oyunda kullanıcı kararıyla
-erken kabul edildi — kanıt güçlü pozitifti: **Elo +28.6 ± 18.6, LOS %99.9, LLR
-1.46, W-D-L 411-260-329**. Böylece Faz 2B'nin gelişmiş evaluation kısmı tamamlandı.
+**Güncel durum (2026-07-09): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C devam ediyor.**
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 95
+test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
+eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
+LMR + futility ailesi + LMP TAMAM (hepsi SPRT'den geçti). **Sıradaki: razoring.**
+Ayrıntılı adım-adım kayıt ve en güncel özet aşağıdaki bölümlerde.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -525,13 +516,6 @@ derinlikte best move + score PVS öncesiyle birebir aynı + düğüm düşüşü
 LMR'ye saklandı (kullanıcı kararı). Faz 2D (Lazy SMP multi-threading) klasik fazın
 son adımı, NNUE'dan önce. Yol haritası detayı için "Faz 2 — Klasik Güçlendirme"
 bölümüne bak.
-
-### İlk somut görev
-
-Faz 1, adım 1'den başlayalım: proje iskeletini kur (CMake ile, C++20 standardı
-tercih edilir), temel bitboard struct'ını ve board representation'ı oluştur,
-boş bir board'u UTF-8 satranç sembolleriyle terminale basan basit bir debug
-fonksiyonu yaz. Bundan sonraki adımda move generation'a geçeceğiz.
 
 ### Notlar
 
