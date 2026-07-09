@@ -365,7 +365,7 @@ Faz 2C (selective search — devam ediyor):
   10-hamle dolu PV), score+bestmove değişmiyor. Düğüm düşüşü derinlikle büyüyor
   (tipik PVS). 81 test geçiyor (IterativeMatchesFixedDepth PVS iç tutarlılığını
   yakalar). Not: PVS'in asıl değeri LMR/null-move'un oturacağı null-window çerçevesi.
-- Adım 2: Null move pruning (KOD TAMAM, SPRT BEKLİYOR). Sıradaki tarafa "bedava
+- Adım 2: Null move pruning (TAMAM, SPRT GEÇTİ H1). Sıradaki tarafa "bedava
   hamle" (pass) verilir; oluşan pozisyon azaltılmış derinlikte beta etrafında
   null-window ile aranır, skor >= beta ise dal budanır. Sezgisel (heuristic)
   budama — davranış-koruyan DEĞİL, kabul kapısı SPRT (Elo), düğüm düşüşü değil.
@@ -389,10 +389,12 @@ Faz 2C (selective search — devam ediyor):
     (PVS ile aynı — taktik pozisyon daha az budanıyor, beklenen). Bu bir sağlama,
     kapı değil. Bilinçli ertelenen: verification search (yüksek derinlik zugzwang
     doğrulaması), statik eval>=beta gate (reverse-futility ile birleşecek), R ince
-    ayarı. **Kabul: base 1883432 (PVS) vs yeni commit SPRT'si beklenirken.**
+    ayarı. **SPRT: base 1883432 (PVS) vs new 0dfac0b, 1021 oyun, W-D-L 476-233-312,
+  Elo +56.3 ± 18.9, LOS %100, LLR 2.95 (tam kabul, erken durdurma değil), H1
+  kabul** — Faz 2C'nin şu ana dek en büyük tekil kazancı, tutuldu.
 
-**FAZ 2B EVALUATION TAMAM. Faz 2C — PVS (Adım 1) TAMAM, null move (Adım 2) kod
-tamam SPRT bekliyor.** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
+**FAZ 2B EVALUATION TAMAM. Faz 2C — PVS (Adım 1) + null move (Adım 2, +56.3 Elo)
+TAMAM. Sıradaki: SEE / LMR (en büyük Elo).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
 gelişmiş evaluation kısmı bitti. Faz 2C sırası: **PVS** (LMR'nin çerçevesi, önce
