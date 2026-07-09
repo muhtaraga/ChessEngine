@@ -444,11 +444,14 @@ Faz 2C (selective search — devam ediyor):
     Nominal derinlik aynı düğüm bütçesinde çok daha derine iniyor. Bu bir sağlama,
     kapı değil. Bilinçli ertelenen: PV-node/improving farkı, history-tabanlı
     indirim, depth-bağımlı gate (LMP ile birleşir), bölen/taban ince tuning.
-  - **SPRT SIRADA:** base b3f7586 (SEE) vs new LMR commit'i, GUI'den.
+  - **SPRT GEÇTİ: base b3f7586 (SEE) vs new fa57661 (LMR), 313 oyun, W-D-L
+    184-83-46, Elo +164.5 ± 35.3, LOS %100, LLR 2.95 (tam kabul), H1 kabul** —
+    yol haritasının öngördüğü gibi klasik fazın AÇIK ARA en büyük tekil kazancı
+    (null move +56.3'ün ~3 katı), tutuldu.
 
 **FAZ 2B EVALUATION TAMAM. Faz 2C — PVS (Adım 1) + null move (Adım 2, +56.3 Elo)
-+ SEE (Adım 3, +27.8 Elo) TAMAM. LMR (Adım 4) kod+testler TAMAM, SPRT SIRADA
-(base b3f7586). Sonraki: futility ailesi.** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
++ SEE (Adım 3, +27.8 Elo) + LMR (Adım 4, +164.5 Elo — açık ara en büyük) TAMAM,
+hepsi SPRT'den geçti. Sonraki: futility ailesi.** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
 gelişmiş evaluation kısmı bitti. Faz 2C sırası: **PVS** (LMR'nin çerçevesi, önce
