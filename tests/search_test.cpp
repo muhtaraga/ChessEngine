@@ -129,6 +129,30 @@ TEST(Search, NullMoveKeepsZugzwangCorrectness) {
     EXPECT_GT(r.score, 150);    // kazanan pozisyon: skor açıkça pozitif kalmalı
 }
 
+// --- LMR (Late Move Reductions) ---
+
+// LMR aktifken (derinlik 3'ten büyük, geç quiet hamleler indirilir) taktik
+// korunmalı: re-search azaltılmış aramada gözden kaçan iyi hamleyi kurtarır.
+// Bedava veziri derin aramada da almalı.
+TEST(Search, LmrPreservesTacticAtDeepDepth) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 8);         // LMR belirgin aktif
+    EXPECT_EQ(r.best, Move::make(E1, E5));  // yine bedava veziri al
+    EXPECT_GT(r.score, 400);
+}
+
+// LMR azaltmaları mat bulmayı engellememeli: mat-in-1 derin aramada da korunur
+// (mat hamlesi çek verir -> indirilmez; ayrıca en iyi sıralanır).
+TEST(Search, LmrFindsMateUnderReductions) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 7);
+    EXPECT_EQ(r.best, Move::make(A1, A8));
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- Tekrar (repetition) tespiti ---
 
 // Zorunlu tekrar KAYBEDEN tarafı kurtarır (ayırt edici mekanizma testi).

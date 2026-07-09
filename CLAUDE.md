@@ -419,9 +419,36 @@ Faz 2C (selective search — devam ediyor):
     futility'de kullanımı, promosyon SEE, incremental x-ray, SEE move-ordering.
     **SPRT: base 0dfac0b (null move) vs new b3f7586, 2016 oyun, W-D-L 802-573-641,
     Elo +27.8 ± 12.8, LOS %100, LLR 2.95 (tam kabul), H1 kabul** — tutuldu.
+- Adım 4: LMR (Late Move Reductions) (TAMAM — kod + testler; SPRT SIRADA).
+  Klasik fazın en büyük tekil Elo kazancı beklenen teknik. İyi move ordering'de
+  geç sıralanan quiet hamleler büyük olasılıkla alpha'yı geçmez -> azaltılmış
+  derinlikte (null-window scout) aranır; beklenmedik şekilde alpha'yı geçerse
+  indirim yanlıştı -> tam derinlikte yeniden aranır (re-search kayıp taktiği
+  kurtarır). Heuristik (davranış-koruyan DEĞİL) -> kabul kapısı SPRT (Elo).
+  - `search.cpp`: (a) namespace `lmr_reduction(depth,move_num)` — bir kez
+    hesaplanan log-tabanlı `int8_t[64][64]` tablo, r = 0.75 + ln(d)*ln(m)/2.25
+    (CPW/Stockfish tarzı; bölen/taban SPRT ile ayarlanabilir). `<array>`+`<cmath>`.
+    (b) `in_check` + `us` move üretiminden sonra bir kez hesaplanıp hoist edildi
+    (null-move koşulu + LMR paylaşıyor, per-move maliyet yok). (c) PVS scout `else`
+    dalı LMR ile sarıldı: reduction hesapla -> `depth-1-reduction` null-window scout
+    -> scout alpha'yı geçtiyse `depth-1` null-window re-search -> PVS tam-pencere
+    re-search. Abort yoklamaları + fail-soft korundu.
+  - İndirim uygulanmaz (gate): ilk iki hamle (i<2, PV+ilk scout), depth<3,
+    yakalama/promosyon, çekteyken (kaçış), çek veren hamle, killer'lar. reduced
+    derinlik en az 1 ply (reduction <= depth-2).
+  - Testler (89->91): LmrPreservesTacticAtDeepDepth (bedava vezir d8'de hâlâ Rxe5),
+    LmrFindsMateUnderReductions (mat-in-1 d7'de korunur). Tüm 91 test geçiyor.
+  - Düğüm sağlaması (Release, SEE baseline b3f7586'ya karşı, d10): startpos
+    4.11M->253K (~16× az), best b1c3 korundu (skor cp1->cp17, heuristik kayması
+    beklenen); Kiwipete 16.38M->1.24M (~13× az), best e2a6 korundu (cp-10->cp-2).
+    Nominal derinlik aynı düğüm bütçesinde çok daha derine iniyor. Bu bir sağlama,
+    kapı değil. Bilinçli ertelenen: PV-node/improving farkı, history-tabanlı
+    indirim, depth-bağımlı gate (LMP ile birleşir), bölen/taban ince tuning.
+  - **SPRT SIRADA:** base b3f7586 (SEE) vs new LMR commit'i, GUI'den.
 
 **FAZ 2B EVALUATION TAMAM. Faz 2C — PVS (Adım 1) + null move (Adım 2, +56.3 Elo)
-+ SEE (Adım 3, +27.8 Elo) TAMAM. Sıradaki: LMR (en büyük Elo).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
++ SEE (Adım 3, +27.8 Elo) TAMAM. LMR (Adım 4) kod+testler TAMAM, SPRT SIRADA
+(base b3f7586). Sonraki: futility ailesi.** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
 gelişmiş evaluation kısmı bitti. Faz 2C sırası: **PVS** (LMR'nin çerçevesi, önce

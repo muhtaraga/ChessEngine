@@ -3,7 +3,9 @@
 #include "engine/search.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <utility>
 
 #include "engine/bitboard.hpp"
@@ -169,6 +171,23 @@ void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth) {
         h = kHistoryMax;  // killer bandının altında kalsın
 }
 
+// LMR indirim tablosu: derinlik ve hamle sırası (kaçıncı hamleyi arıyoruz)
+// arttıkça indirim artar. İyi move ordering'de geç gelen quiet hamlelerin
+// alpha'yı geçmesi düşük olasılık, o yüzden azaltılmış derinlikte aranırlar.
+// r = 0.75 + ln(depth)*ln(move)/2.25 (CPW/Stockfish tarzı; bölen SPRT ile ayarlanır).
+// Tablo bir kez hesaplanır.
+int lmr_reduction(int depth, int move_num) {
+    static const auto table = [] {
+        std::array<std::array<std::int8_t, 64>, 64> t{};
+        for (int d = 1; d < 64; ++d)
+            for (int m = 1; m < 64; ++m)
+                t[d][m] = static_cast<std::int8_t>(
+                    0.75 + std::log(d) * std::log(m) / 2.25);
+        return t;
+    }();
+    return table[std::min(depth, 63)][std::min(move_num, 63)];
+}
+
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
                       bool null_allowed) {
     // Kesme kontrolü (her ~4096 düğümde bir; saat/atomik okuma nispeten pahalı).
@@ -229,6 +248,11 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // RAII ile fonksiyon çıkışında (abort dahil her yolda) çıkarılır.
     KeyGuard key_guard(keys, b.key);
 
+    // Çekte miyiz? Bir kez hesaplanır: hem null move koşulunda (çekteyken pass
+    // edilemez) hem LMR'de (çekten kaçış hamleleri indirilmez) kullanılır.
+    const Color us       = b.side_to_move;
+    const bool  in_check = is_square_attacked(b, b.king_square(us), ~us);
+
     // --- Null move pruning ---
     // Sıradaki tarafa "bedava hamle" (pass) ver; oluşan pozisyonu azaltılmış
     // derinlikte (R) beta etrafında null-window ile ara. Rakip iki kez üst üste
@@ -240,10 +264,8 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     //   - beta mat penceresi değil (beta=INF dahil): mat aramasında null yok.
     //   - piyon-dışı materyal var: zugzwang koruması (yalnız şah+piyon'da kapalı).
     //   - çekte değil : çekteyken pass edilemez (en son, tek is_square_attacked).
-    const Color us = b.side_to_move;
     if (null_allowed && ply > 0 && depth >= 3 && !is_mate_score(beta) &&
-        b.has_non_pawn_material(us) &&
-        !is_square_attacked(b, b.king_square(us), ~us)) {
+        b.has_non_pawn_material(us) && !in_check) {
         const int R = (depth >= 6) ? 3 : 2;
         Board next = b;
         next.make_null_move();
@@ -293,7 +315,31 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         if (i == 0) {
             score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
         } else {
-            score = -negamax(next, depth - 1, -alpha - 1, -alpha, ply + 1);
+            // --- LMR (Late Move Reductions) ---
+            // Geç sıralanan quiet, çek-vermeyen hamleler büyük olasılıkla alpha'yı
+            // geçmez; azaltılmış derinlikte (scout) aranırlar. Beklenmedik şekilde
+            // alpha'yı geçerse indirim yanlıştı -> tam derinlikte yeniden aranır.
+            // İndirim uygulanmaz: ilk iki hamle (PV + ilk scout), yakalama/promosyon,
+            // çekteyken (kaçış), çek veren hamle, killer'lar.
+            int reduction = 0;
+            const bool quiet = !is_capture(b, m) && m.type() != PROMOTION;
+            const bool gives_check = is_square_attacked(
+                next, next.king_square(next.side_to_move), ~next.side_to_move);
+            if (depth >= 3 && i >= 2 && quiet && !in_check && !gives_check &&
+                m != killers[ply][0] && m != killers[ply][1]) {
+                reduction = lmr_reduction(depth, i);
+                if (reduction > depth - 2) reduction = depth - 2;  // reduced >= 1 ply
+                if (reduction < 0)         reduction = 0;
+            }
+
+            // Azaltılmış derinlikte null-window (scout) arama.
+            score = -negamax(next, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
+            // İndirimli scout alpha'yı geçtiyse indirim yanlıştı: tam derinlikte
+            // null-window ile yeniden ara (PVS re-search'ten önce).
+            if (!aborted && reduction > 0 && score > alpha)
+                score = -negamax(next, depth - 1, -alpha - 1, -alpha, ply + 1);
+            // PVS: null-window alpha'yı geçip beta'nın altında kaldıysa gerçek
+            // değeri bulmak için tam pencereyle yeniden ara.
             if (!aborted && score > alpha && score < beta)
                 score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
         }
