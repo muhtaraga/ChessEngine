@@ -136,7 +136,7 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-09): FAZ 1 TAMAMLANDI, FAZ 2 devam ediyor.** Motor UCI
 üzerinden GUI'ye bağlanabiliyor, legal hamlelerle oynuyor, perft testleri
-geçiyor. Toplam 81 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
+geçiyor. Toplam 93 test geçiyor. Faz 2A tamam; Faz 2B'de tapered eval + to_fen +
 SPRT altyapısı (cutechess-cli KURULU + komutsuz web GUI) tamam. Tapered eval'in
 Elo katkısı SPRT ile doğrulandı (+42.8 ± 16.3, H1). İlk gelişmiş eval terimi
 **pawn structure (isole/çift/geçer piyon) da SPRT'den geçti (+45.4 ± 16.8, H1)**.
@@ -448,10 +448,43 @@ Faz 2C (selective search — devam ediyor):
     184-83-46, Elo +164.5 ± 35.3, LOS %100, LLR 2.95 (tam kabul), H1 kabul** —
     yol haritasının öngördüğü gibi klasik fazın AÇIK ARA en büyük tekil kazancı
     (null move +56.3'ün ~3 katı), tutuldu.
+- Adım 5: Futility ailesi — RFP + futility pruning (TAMAM, SPRT GEÇTİ H1 —
+  commit 7254fa6). Yol haritasının "Futility + reverse futility (static null
+  move)" maddesi, tek commit (kullanıcı kararı: yol haritası tek madde olarak
+  grupluyor). İki tamamlayıcı near-leaf heuristik, düğüm seviyesinde bir kez
+  hesaplanan `static_eval`'i paylaşır — evaluate() artık interior düğümde de
+  çağrılıyor (önce yalnız quiescence yaprağındaydı). Sezgisel (davranış-koruyan
+  DEĞİL) -> kabul kapısı SPRT (Elo).
+  - `search.cpp` negamax: (a) `in_check` sonrası `static_eval = in_check ? 0 :
+    evaluate(b)` (çekteyken kullanılmaz). (b) RFP (reverse futility / static null
+    move) — null move bloğundan önce: `!in_check && ply>0 && depth<=kRfpMaxDepth
+    (6) && !is_mate_score(beta) && static_eval - kRfpMargin(80)*depth >= beta` ->
+    `return static_eval` (fail-soft; static_eval>=beta olduğundan geçerli fail-high;
+    TT'ye yazmaz, null move deseni). (c) Futility pruning — node-level `can_futility`
+    bayrağı (`!in_check && ply>0 && depth<=kFutilityMaxDepth (3) && !is_mate_score
+    (alpha) && static_eval + kFutilityMargin[depth] ({0,150,250,400}) <= alpha`);
+    döngüde çek vermeyen quiet hamleler `moves_searched>0` guard'ıyla aranmadan
+    atlanır (`continue`). (d) Döngü refaktörü: `quiet`/`gives_check` do_move sonrası
+    bir kez hesaplanıp futility + LMR paylaşır (çift hesap yok); `moves_searched`
+    sayacı. i==0 (PVS ilk hamle) daima aranır -> fail-low düğümde bile bir hamle/PV
+    kalır.
+  - Doğal güvenlik: ply>0 (kök tam aranır), !is_mate_score (mat penceresinde
+    kapalı, beta/alpha=±INF dahil -> PV düğümlerinde budama yok), !gives_check +
+    quiet (taktik/çek hatları korunur), moves_searched>0 (en az bir hamle garanti).
+  - Testler (91->93): FutilityKeepsWinningTactic (bedava vezir d4'te hâlâ Rxe5 —
+    yakalama quiet değil, budanmaz), RfpKeepsMateSearch (mat-in-1 d5'te korunur).
+    Düğüm sağlaması (Debug, LMR baseline'a karşı, d10): startpos 253K->176K (−30%,
+    best d2d4), Kiwipete 1.24M->340K (−73%, best e2a6 + cp-2 birebir). Bu bir
+    sağlama, kapı değil. Bilinçli ertelenen: margin/max-depth tuning, null move
+    `static_eval>=beta` gate ile birleştirme.
+  - **SPRT GEÇTİ: base e6ed399 (LMR) vs new 7254fa6, 313 oyun, W-D-L 164-107-42,
+    Elo +143 ± 32.4, LOS %100, LLR 2.95 (tam kabul), H1 kabul** — LMR'den sonra
+    klasik fazın İKİNCİ en büyük tekil kazancı, tutuldu.
 
 **FAZ 2B EVALUATION TAMAM. Faz 2C — PVS (Adım 1) + null move (Adım 2, +56.3 Elo)
-+ SEE (Adım 3, +27.8 Elo) + LMR (Adım 4, +164.5 Elo — açık ara en büyük) TAMAM,
-hepsi SPRT'den geçti. Sonraki: futility ailesi.** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
++ SEE (Adım 3, +27.8 Elo) + LMR (Adım 4, +164.5 Elo — açık ara en büyük) +
+futility ailesi (Adım 5, +143 Elo — ikinci en büyük) TAMAM, hepsi SPRT'den geçti.
+Sonraki: LMP (late move pruning, move-count).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
 gelişmiş evaluation kısmı bitti. Faz 2C sırası: **PVS** (LMR'nin çerçevesi, önce
