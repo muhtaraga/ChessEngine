@@ -392,6 +392,15 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             continue;
         ++moves_searched;
 
+        // --- Check extension ---
+        // Çek veren hamle rakibin cevabını daraltır (forcing) -> bu hattı 1 ply
+        // uzat. Horizon effect'i azaltır, zorunlu çek/mat dizilerini sığ derinlikte
+        // bulur. MAX_PLY tavanı + repetition tespiti perpetual-check patlamasını
+        // sınırlar. LMR gate'i zaten !gives_check olduğundan çek hamlesi asla
+        // indirilmez -> uzatma varken reduction=0, çakışma yok.
+        const int extension = gives_check ? 1 : 0;
+        const int new_depth = depth - 1 + extension;
+
         // PVS (Principal Variation Search): ilk (en iyi sıralanan) hamle tam
         // pencereyle aranır ve PV adayı kabul edilir. Kalan hamleler önce
         // null-window (scout) [-alpha-1, -alpha] ile aranır — bu yalnızca "bu
@@ -401,7 +410,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // re-search nadirdir, net kazanç düğüm sayısında. (LMR'nin oturacağı çerçeve.)
         int score;
         if (i == 0) {
-            score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
+            score = -negamax(next, new_depth, -beta, -alpha, ply + 1);
         } else {
             // --- LMR (Late Move Reductions) ---
             // Geç sıralanan quiet, çek-vermeyen hamleler büyük olasılıkla alpha'yı
@@ -418,15 +427,15 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             }
 
             // Azaltılmış derinlikte null-window (scout) arama.
-            score = -negamax(next, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
+            score = -negamax(next, new_depth - reduction, -alpha - 1, -alpha, ply + 1);
             // İndirimli scout alpha'yı geçtiyse indirim yanlıştı: tam derinlikte
             // null-window ile yeniden ara (PVS re-search'ten önce).
             if (!aborted && reduction > 0 && score > alpha)
-                score = -negamax(next, depth - 1, -alpha - 1, -alpha, ply + 1);
+                score = -negamax(next, new_depth, -alpha - 1, -alpha, ply + 1);
             // PVS: null-window alpha'yı geçip beta'nın altında kaldıysa gerçek
             // değeri bulmak için tam pencereyle yeniden ara.
             if (!aborted && score > alpha && score < beta)
-                score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
+                score = -negamax(next, new_depth, -beta, -alpha, ply + 1);
         }
 
         if (aborted)
