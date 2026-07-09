@@ -198,6 +198,13 @@ constexpr int kRfpMargin   = 80;
 constexpr int kFutilityMaxDepth  = 3;
 constexpr int kFutilityMargin[4] = {0, 150, 250, 400};
 
+// --- LMP (late move pruning / move-count) parametreleri ---
+// Sığ, çekte-olmayan düğümde, iyi sıralamada belli sayıdan sonraki quiet
+// hamleler statik eval'e bakılmaksızın atlanır. Eşik derinlikle kare-yasası
+// büyür (sığ derinlik = agresif budama). Bölen/max SPRT ile ayarlanabilir.
+constexpr int kLmpMaxDepth = 8;
+inline int lmp_count(int depth) { return 3 + depth * depth; }
+
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
                       bool null_allowed) {
     // Kesme kontrolü (her ~4096 düğümde bir; saat/atomik okuma nispeten pahalı).
@@ -324,6 +331,13 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         !is_mate_score(alpha) &&
         static_eval + kFutilityMargin[depth] <= alpha;
 
+    // --- LMP (late move pruning) kapısı (node seviyesi) ---
+    // Sığ, çekte-olmayan, mat-olmayan düğümde belli sayıdan sonraki quiet, çek
+    // vermeyen hamleler eval'e bakılmaksızın sıra numarasına göre budanır.
+    const bool can_lmp =
+        !in_check && ply > 0 && depth <= kLmpMaxDepth &&
+        !is_mate_score(alpha) && !is_mate_score(beta);
+
     for (int i = 0; i < ml.count; ++i) {
         // Selection sort adımı: [i..) arasında en yüksek skorlu hamleyi i'ye getir.
         int best_j = i;
@@ -348,6 +362,11 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // best güvenilir), çek vermeyen quiet umutsuz hamleyi hiç arama. i==0
         // (PVS ilk hamle) daima aranır -> fail-low düğümde bile bir hamle/PV kalır.
         if (can_futility && moves_searched > 0 && quiet && !gives_check)
+            continue;
+        // Late move pruning: yeterince geç sıralanmış quiet, çek-vermeyen hamleyi
+        // eval'e bakmadan atla. lmp_count(depth) >= 4 olduğundan en az PV +
+        // birkaç hamle daima aranır (moves_searched eşiğe ulaşana dek).
+        if (can_lmp && moves_searched >= lmp_count(depth) && quiet && !gives_check)
             continue;
         ++moves_searched;
 
