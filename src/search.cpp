@@ -392,14 +392,20 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             continue;
         ++moves_searched;
 
-        // --- Check extension ---
+        // --- Check extension (SEE-kapılı) ---
         // Çek veren hamle rakibin cevabını daraltır (forcing) -> bu hattı 1 ply
         // uzat. Horizon effect'i azaltır, zorunlu çek/mat dizilerini sığ derinlikte
-        // bulur. MAX_PLY tavanı + repetition tespiti perpetual-check patlamasını
-        // sınırlar. LMR gate'i zaten !gives_check olduğundan çek hamlesi asla
-        // indirilmez -> uzatma varken reduction=0, çakışma yok.
-        const int extension = gives_check ? 1 : 0;
-        const int new_depth = depth - 1 + extension;
+        // bulur. Ama TÜM çekleri uzatmak ağacı boş/spekülatif çeklerle şişirir
+        // (SPRT'de nötr çıktı) -> yalnız materyal kaybettirmeyen çekleri (SEE >= 0)
+        // uzat (Stockfish see_ge deseni). gives_check kısa devresi sayesinde see()
+        // yalnız çeklerde çağrılır (çek-olmayan hamlede ek maliyet yok); see(b,m)
+        // do_move ÖNCESİ tahtada çağrılır. Promosyon çekleri nadir + zorlayıcı,
+        // see()'ye verilmez -> koşulsuz uzatılır. MAX_PLY tavanı + repetition
+        // tespiti perpetual-check patlamasını sınırlar. LMR gate'i zaten
+        // !gives_check olduğundan çek hamlesi indirilmez -> uzatma ile çakışmaz.
+        const bool see_ok    = m.type() == PROMOTION || see(b, m) >= 0;
+        const int  extension = (gives_check && see_ok) ? 1 : 0;
+        const int  new_depth = depth - 1 + extension;
 
         // PVS (Principal Variation Search): ilk (en iyi sıralanan) hamle tam
         // pencereyle aranır ve PV adayı kabul edilir. Kalan hamleler önce

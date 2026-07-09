@@ -59,3 +59,21 @@ TEST(See, EnPassantWinsPawn) {
     ASSERT_TRUE(b.set_fen("4k3/8/8/2pP4/8/8/8/4K3 w - c6 0 1"));
     EXPECT_EQ(see(b, Move::make(D5, C6, EN_PASSANT)), 100);
 }
+
+// --- Sessiz (yakalama olmayan) hamle genelleştirmesi (check-extension SEE-gate) ---
+
+// Sessiz hamle güvenli boş kareye: hiçbir şey alınmaz, taş saldırıya uğramaz ->
+// see = 0. Ra1-a5, a5 boş ve siyah tarafından tehdit edilmiyor.
+TEST(See, QuietSafeMoveIsZero) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/8/8/8/8/R3K3 w - - 0 1"));
+    EXPECT_EQ(see(b, Move::make(A1, A5)), 0);
+}
+
+// Sessiz hamle, taşı düşman piyonuyla savunulan boş kareye koyar: taş asılır ->
+// negatif. Ra1-a6, a6 boş ama b7 piyonu vuruyor; kale savunmasız -> see = -500.
+TEST(See, QuietHangingPieceIsNegative) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/1p6/8/8/8/8/8/R3K3 w - - 0 1"));
+    EXPECT_EQ(see(b, Move::make(A1, A6)), -500);
+}

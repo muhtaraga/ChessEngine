@@ -47,21 +47,25 @@ int see(const Board& b, Move m) {
 
     Bitboard occ = b.occupancy();
 
-    // İlk yakalanan taşın değeri (gain[0]).
-    PieceType captured;
-    if (mt == EN_PASSANT) {
-        captured = PAWN;
-        // Ep ile alınan piyon, hedefin arkasında (from ile aynı sırada) durur;
-        // tahtadan kalkar. X-ray (arkadaki kale/vezir) için occ'tan çıkarılmalı.
-        Square capsq = make_square(file_of(to), rank_of(from));
-        occ ^= square_bb(capsq);
-    } else {
-        captured = b.type_on(to);  // ön koşul: m bir yakalama
-    }
-
     int gain[32];
     int d = 0;
-    gain[0] = see_value(captured);
+
+    // İlk (gain[0]) değer: alınan taşın değeri. Üç durum:
+    //  - EN_PASSANT: bir piyon alınır; ep piyonu hedefin arkasında (from ile aynı
+    //    sırada) durur, occ'tan çıkarılır (x-ray için).
+    //  - Gerçek yakalama (hedefte karşı renk taş): o taşın değeri.
+    //  - Sessiz hamle (hedef boş): hiçbir şey alınmaz -> gain[0]=0. Swap yine
+    //    "taşımız `to` karesinde tutunuyor mu"yu ölçer (çek uzatması SEE-gate'i
+    //    için genelleştirme; yakalama yolu değişmez).
+    if (mt == EN_PASSANT) {
+        Square capsq = make_square(file_of(to), rank_of(from));
+        occ ^= square_bb(capsq);
+        gain[0] = see_value(PAWN);
+    } else if (test_bit(b.colors[~b.side_to_move], to)) {
+        gain[0] = see_value(b.type_on(to));
+    } else {
+        gain[0] = 0;  // sessiz hamle: alınan taş yok
+    }
 
     PieceType aPiece  = b.type_on(from);  // ilk saldıran (bu turda vuran)
     Bitboard  from_bb = square_bb(from);
