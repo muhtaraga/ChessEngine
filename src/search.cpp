@@ -198,6 +198,13 @@ constexpr int kRfpMargin   = 80;
 constexpr int kFutilityMaxDepth  = 3;
 constexpr int kFutilityMargin[4] = {0, 150, 250, 400};
 
+// --- Razoring parametreleri (santipiyon) ---
+// Sığ düğümde static_eval, alpha'yı kRazorMargin[depth] kadar aşağıdan bile
+// yakalayamıyorsa: tam-derinlik aramaya girmeden qsearch ile doğrula; qsearch de
+// alpha'nın altındaysa dalı buda (fail-low). RFP'nin fail-low aynası.
+constexpr int kRazorMaxDepth  = 3;
+constexpr int kRazorMargin[4] = {0, 300, 500, 700};  // SPRT ile ayarlanabilir
+
 // --- LMP (late move pruning / move-count) parametreleri ---
 // Sığ, çekte-olmayan düğümde, iyi sıralamada belli sayıdan sonraki quiet
 // hamleler statik eval'e bakılmaksızın atlanır. Eşik derinlikle kare-yasası
@@ -273,6 +280,21 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // Futility ailesi için statik eval: çekteyken anlamsız (eval gürültülü, kaçış
     // zorunlu), yalnız çekte değilken hesaplanır. RFP + futility pruning paylaşır.
     const int static_eval = in_check ? 0 : evaluate(b);
+
+    // --- Razoring ---
+    // Sığ düğümde static_eval, alpha'nın kRazorMargin[depth] kadar altındaysa bu
+    // dal büyük olasılıkla fail-low. Tam-derinlik aramaya girmek yerine qsearch
+    // ile doğrula: qsearch skoru da alpha'yı geçemiyorsa dalı buda (döneni
+    // fail-low olarak yay). RFP'nin fail-low aynası; ikisi karşılıklı dışlayıcı
+    // (static_eval aynı anda hem beta'yı hem alpha'yı aşamaz). Koşullar RFP/
+    // futility ile aynı desende: çekte değil, kökte değil (ply>0), sığ derinlik,
+    // mat penceresi değil. Taktik/yakalama qsearch'te hâlâ görülür -> budanmaz.
+    if (!in_check && ply > 0 && depth <= kRazorMaxDepth && !is_mate_score(alpha) &&
+        static_eval + kRazorMargin[depth] <= alpha) {
+        int score = quiescence(b, alpha, beta, ply);
+        if (score <= alpha)
+            return score;  // qsearch doğruladı: fail-low, dalı buda
+    }
 
     // --- Reverse futility pruning (RFP / static null move) ---
     // Sığ düğümde statik eval, beta'yı kRfpMargin*depth kadar aşıyorsa: rakip

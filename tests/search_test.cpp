@@ -203,6 +203,29 @@ TEST(Search, LmpKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
+// --- Razoring ---
+
+// Razoring qsearch'e düşse bile yakalamalar qsearch'te görülür: bedava vezir
+// hâlâ Rxe5 ile alınır (kazanan taktik korunur).
+TEST(Search, RazoringKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 4);
+    EXPECT_EQ(r.best, Move::make(E1, E5));  // yakalama budanmaz
+    EXPECT_GT(r.score, 400);
+}
+
+// Razoring mat aramasını bozmamalı: mat penceresinde devre dışı (!is_mate_score)
+// ve mat hamlesi qsearch'te de bulunur. Arka sıra matı korunur.
+TEST(Search, RazoringKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 5);
+    EXPECT_EQ(r.best, Move::make(A1, A8));  // arka sıra matı hâlâ bulunur
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- Tekrar (repetition) tespiti ---
 
 // Zorunlu tekrar KAYBEDEN tarafı kurtarır (ayırt edici mekanizma testi).
