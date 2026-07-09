@@ -188,6 +188,16 @@ int lmr_reduction(int depth, int move_num) {
     return table[std::min(depth, 63)][std::min(move_num, 63)];
 }
 
+// --- Futility ailesi parametreleri (santipiyon) ---
+// Reverse futility (static null move): sığ düğümde static_eval, beta'yı
+// kRfpMargin*depth kadar aşıyorsa dal budanır.
+constexpr int kRfpMaxDepth = 6;
+constexpr int kRfpMargin   = 80;
+// Futility pruning: sığ düğümde static_eval + kFutilityMargin[depth] bile alpha'ya
+// ulaşamıyorsa quiet hamleler aranmaz. İndeks = depth (0 zaten quiescence'a gider).
+constexpr int kFutilityMaxDepth  = 3;
+constexpr int kFutilityMargin[4] = {0, 150, 250, 400};
+
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
                       bool null_allowed) {
     // Kesme kontrolü (her ~4096 düğümde bir; saat/atomik okuma nispeten pahalı).
@@ -253,6 +263,20 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     const Color us       = b.side_to_move;
     const bool  in_check = is_square_attacked(b, b.king_square(us), ~us);
 
+    // Futility ailesi için statik eval: çekteyken anlamsız (eval gürültülü, kaçış
+    // zorunlu), yalnız çekte değilken hesaplanır. RFP + futility pruning paylaşır.
+    const int static_eval = in_check ? 0 : evaluate(b);
+
+    // --- Reverse futility pruning (RFP / static null move) ---
+    // Sığ düğümde statik eval, beta'yı kRfpMargin*depth kadar aşıyorsa: rakip
+    // normalde bu farkı tek bir alt-ağaçta telafi edemez -> dalı buda (fail-soft,
+    // static_eval >= beta olduğundan geçerli fail-high). Koşullar: çekte değil,
+    // kökte değil (ply>0), sığ derinlik, mat penceresi değil (beta=INF dahil).
+    // TT'ye yazılmaz (null move deseni; sahte skor sızmasın).
+    if (!in_check && ply > 0 && depth <= kRfpMaxDepth && !is_mate_score(beta) &&
+        static_eval - kRfpMargin * depth >= beta)
+        return static_eval;
+
     // --- Null move pruning ---
     // Sıradaki tarafa "bedava hamle" (pass) ver; oluşan pozisyonu azaltılmış
     // derinlikte (R) beta etrafında null-window ile ara. Rakip iki kez üst üste
@@ -288,6 +312,17 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     const int alpha_orig = alpha;
     int  best      = -INF;
     Move best_move = Move();
+    int  moves_searched = 0;  // futility: en az bir hamle tam arandı mı
+
+    // --- Futility pruning kapısı (node seviyesi) ---
+    // Sığ, çekte-olmayan, mat-olmayan düğümde statik eval + margin bile alpha'ya
+    // ulaşamıyorsa quiet hamleler (materyali pek değiştirmez) alpha'yı geçemez ->
+    // döngüde çek vermeyen quiet hamleler aranmadan atlanır. alpha burada düğüm
+    // giriş değerinde (döngü henüz değiştirmedi).
+    const bool can_futility =
+        !in_check && ply > 0 && depth <= kFutilityMaxDepth &&
+        !is_mate_score(alpha) &&
+        static_eval + kFutilityMargin[depth] <= alpha;
 
     for (int i = 0; i < ml.count; ++i) {
         // Selection sort adımı: [i..) arasında en yüksek skorlu hamleyi i'ye getir.
@@ -303,6 +338,18 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         const Move m = ml.moves[i];
         Board next = b;
         next.do_move(m);
+
+        // quiet / gives_check bir kez hesaplanır (futility + LMR paylaşır).
+        const bool quiet = !is_capture(b, m) && m.type() != PROMOTION;
+        const bool gives_check = is_square_attacked(
+            next, next.king_square(next.side_to_move), ~next.side_to_move);
+
+        // Futility pruning: en az bir hamle tam arandıysa (moves_searched>0 ->
+        // best güvenilir), çek vermeyen quiet umutsuz hamleyi hiç arama. i==0
+        // (PVS ilk hamle) daima aranır -> fail-low düğümde bile bir hamle/PV kalır.
+        if (can_futility && moves_searched > 0 && quiet && !gives_check)
+            continue;
+        ++moves_searched;
 
         // PVS (Principal Variation Search): ilk (en iyi sıralanan) hamle tam
         // pencereyle aranır ve PV adayı kabul edilir. Kalan hamleler önce
@@ -322,9 +369,6 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             // İndirim uygulanmaz: ilk iki hamle (PV + ilk scout), yakalama/promosyon,
             // çekteyken (kaçış), çek veren hamle, killer'lar.
             int reduction = 0;
-            const bool quiet = !is_capture(b, m) && m.type() != PROMOTION;
-            const bool gives_check = is_square_attacked(
-                next, next.king_square(next.side_to_move), ~next.side_to_move);
             if (depth >= 3 && i >= 2 && quiet && !in_check && !gives_check &&
                 m != killers[ply][0] && m != killers[ply][1]) {
                 reduction = lmr_reduction(depth, i);
