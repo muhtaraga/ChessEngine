@@ -392,7 +392,7 @@ Faz 2C (selective search — devam ediyor):
     ayarı. **SPRT: base 1883432 (PVS) vs new 0dfac0b, 1021 oyun, W-D-L 476-233-312,
   Elo +56.3 ± 18.9, LOS %100, LLR 2.95 (tam kabul, erken durdurma değil), H1
   kabul** — Faz 2C'nin şu ana dek en büyük tekil kazancı, tutuldu.
-- Adım 3: SEE — Static Exchange Evaluation (KOD TAMAM, SPRT BEKLİYOR). Bir
+- Adım 3: SEE — Static Exchange Evaluation (TAMAM, SPRT GEÇTİ H1). Bir
   karedeki taş alışverişinin materyal sonucunu STATİK hesaplar (swap algoritması,
   CPW). Yol haritası kullanımı üçe ayrılıyor: (a) qsearch'te kayıplı yakalamaları
   ele [BU ADIM], (b) delta pruning [ertelendi], (c) LMR/futility [sonraki adımlar].
@@ -417,10 +417,11 @@ Faz 2C (selective search — devam ediyor):
     d10 (taktik) 26.35M->16.38M (−%38), skor/bestmove/PV birebir aynı (cp-10, e2a6).
     Bu bir sağlama, kapı değil. Bilinçli ertelenen: delta pruning, SEE'nin LMR/
     futility'de kullanımı, promosyon SEE, incremental x-ray, SEE move-ordering.
-    **Kabul için SPRT: base 0dfac0b (null move) vs yeni SEE commit'i beklenirken.**
+    **SPRT: base 0dfac0b (null move) vs new b3f7586, 2016 oyun, W-D-L 802-573-641,
+    Elo +27.8 ± 12.8, LOS %100, LLR 2.95 (tam kabul), H1 kabul** — tutuldu.
 
 **FAZ 2B EVALUATION TAMAM. Faz 2C — PVS (Adım 1) + null move (Adım 2, +56.3 Elo)
-TAMAM; SEE (Adım 3) kod tamam SPRT bekliyor. Sıradaki: LMR (en büyük Elo).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
++ SEE (Adım 3, +27.8 Elo) TAMAM. Sıradaki: LMR (en büyük Elo).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
 gelişmiş evaluation kısmı bitti. Faz 2C sırası: **PVS** (LMR'nin çerçevesi, önce
