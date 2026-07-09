@@ -52,7 +52,8 @@ constexpr int kScoreCapture  = 1'000'000;  // yakalama tabanı (+ MVV-LVA)
 constexpr int kScorePromo    =   900'000;  // promosyon ek primi (yakalamaya eklenir)
 constexpr int kScoreKiller1  =   800'000;  // 1. killer (bu ply'de kesme yapan quiet)
 constexpr int kScoreKiller2  =   790'000;  // 2. killer
-constexpr int kHistoryMax    =   700'000;  // history taban tavanı (killer'ın altında)
+constexpr int kScoreCounter  =   780'000;  // countermove (önceki hamleyi çürüten quiet)
+constexpr int kHistoryMax    =   700'000;  // history taban tavanı (killer/counter'ın altında)
 
 // Tek iş parçacıklı arama durumu. Triangular PV table + zaman kesmesi +
 // move ordering durumu (killer moves, history heuristic).
@@ -75,6 +76,11 @@ struct Searcher {
     // History heuristic: [renk][from][to] için, geçmişte kesme yapan quiet
     // hamlelerin biriken puanı. Quiet hamle sıralamasını yönlendirir.
     int history[COLOR_NB][SQUARE_NB][SQUARE_NB] = {};
+
+    // Countermove heuristic: [renk][prev.from][prev.to] -> önceki (rakip) hamleyi
+    // beta kesmesiyle çürüten quiet hamle. Aynı rakip hamlesi tekrar geldiğinde
+    // bu çürütücü erken denenir (killer'lardan sonra, history'den önce).
+    Move counters[COLOR_NB][SQUARE_NB][SQUARE_NB] = {};
 
     // Kök (ply 0) izleme: bu derinlikte kökte bulunan en iyi hamle/puan. Süre
     // dolup arama yarıda kesilse bile en son iyileşmeyi elde tutmak için (bkz.
@@ -101,10 +107,10 @@ struct Searcher {
     }
 
     int  negamax(const Board& b, int depth, int alpha, int beta, int ply,
-                 bool null_allowed = true);
+                 bool null_allowed = true, Move prev_move = Move());
     int  quiescence(const Board& b, int alpha, int beta, int ply);
-    int  score_move(const Board& b, Move m, Move tt_move, int ply) const;
-    void update_quiet_stats(const Board& b, Move m, int ply, int depth);
+    int  score_move(const Board& b, Move m, Move tt_move, Move counter, int ply) const;
+    void update_quiet_stats(const Board& b, Move m, int ply, int depth, Move prev_move);
 
     // Kökte aspiration window ile arar: bir önceki derinliğin puanı etrafında
     // dar pencere dene, fail-low/high olursa genişleterek yeniden ara.
@@ -132,7 +138,7 @@ bool is_capture(const Board& b, Move m) {
 
 // Move ordering skoru: yüksek = önce ara. TT hamlesi, MVV-LVA'lı yakalamalar,
 // promosyonlar, killer'lar ve history sırasıyla değerlendirilir.
-int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
+int Searcher::score_move(const Board& b, Move m, Move tt_move, Move counter, int ply) const {
     if (m == tt_move)
         return kScoreTT;
 
@@ -151,14 +157,18 @@ int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
         return s;
     }
 
-    // Quiet hamle: önce killer, sonra history.
+    // Quiet hamle: önce killer'lar, sonra countermove, sonra history.
     if (m == killers[ply][0]) return kScoreKiller1;
     if (m == killers[ply][1]) return kScoreKiller2;
+    if (m == counter)         return kScoreCounter;
     return history[b.side_to_move][m.from()][m.to()];
 }
 
-// Beta kesmesi yapan bir quiet hamleyi killer ve history tablolarına işler.
-void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth) {
+// Beta kesmesi yapan bir quiet hamleyi killer, history ve countermove
+// tablolarına işler. prev_move (bu düğüme gelen rakip hamlesi) countermove
+// anahtarıdır; geçerliyse m onun çürütücüsü olarak kaydedilir.
+void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth,
+                                  Move prev_move) {
     // Killer: yeni hamleyi öne al (zaten 1. killer değilse).
     if (killers[ply][0] != m) {
         killers[ply][1] = killers[ply][0];
@@ -169,6 +179,9 @@ void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth) {
     h += depth * depth;
     if (h > kHistoryMax)
         h = kHistoryMax;  // killer bandının altında kalsın
+    // Countermove: prev_move'un çürütücüsü olarak m'i kaydet.
+    if (prev_move != Move())
+        counters[b.side_to_move][prev_move.from()][prev_move.to()] = m;
 }
 
 // LMR indirim tablosu: derinlik ve hamle sırası (kaçıncı hamleyi arıyoruz)
@@ -213,7 +226,7 @@ constexpr int kLmpMaxDepth = 8;
 inline int lmp_count(int depth) { return 3 + depth * depth; }
 
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
-                      bool null_allowed) {
+                      bool null_allowed, Move prev_move) {
     // Kesme kontrolü (her ~4096 düğümde bir; saat/atomik okuma nispeten pahalı).
     // Önce dış "stop" bayrağı (zaman sınırından bağımsız), sonra deadline.
     if ((nodes & 4095) == 0) {
@@ -334,9 +347,15 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // Tüm hamleleri skorla (TT hamlesi, MVV-LVA, killer, history). Her iterasyonda
     // kalanların en yükseğini öne çekiyoruz (lazy selection sort): iyi sıralamada
     // beta kesmesi çoğunlukla ilk birkaç hamlede olur, kalanı sıralamak boşa gider.
+    // Bu düğümün countermove'u: önceki (rakip) hamlenin çürütücüsü. prev_move
+    // geçerliyse tabloda ara; quiet hamle sıralamasında killer'lardan sonra öne çekilir.
+    const Move counter = (prev_move != Move())
+                       ? counters[us][prev_move.from()][prev_move.to()]
+                       : Move();
+
     int scores[256];
     for (int i = 0; i < ml.count; ++i)
-        scores[i] = score_move(b, ml.moves[i], tt_move, ply);
+        scores[i] = score_move(b, ml.moves[i], tt_move, counter, ply);
 
     const int alpha_orig = alpha;
     int  best      = -INF;
@@ -408,7 +427,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // re-search nadirdir, net kazanç düğüm sayısında. (LMR'nin oturacağı çerçeve.)
         int score;
         if (i == 0) {
-            score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
+            score = -negamax(next, depth - 1, -beta, -alpha, ply + 1, true, m);
         } else {
             // --- LMR (Late Move Reductions) ---
             // Geç sıralanan quiet, çek-vermeyen hamleler büyük olasılıkla alpha'yı
@@ -425,15 +444,15 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             }
 
             // Azaltılmış derinlikte null-window (scout) arama.
-            score = -negamax(next, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
+            score = -negamax(next, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1, true, m);
             // İndirimli scout alpha'yı geçtiyse indirim yanlıştı: tam derinlikte
             // null-window ile yeniden ara (PVS re-search'ten önce).
             if (!aborted && reduction > 0 && score > alpha)
-                score = -negamax(next, depth - 1, -alpha - 1, -alpha, ply + 1);
+                score = -negamax(next, depth - 1, -alpha - 1, -alpha, ply + 1, true, m);
             // PVS: null-window alpha'yı geçip beta'nın altında kaldıysa gerçek
             // değeri bulmak için tam pencereyle yeniden ara.
             if (!aborted && score > alpha && score < beta)
-                score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
+                score = -negamax(next, depth - 1, -beta, -alpha, ply + 1, true, m);
         }
 
         if (aborted)
@@ -461,7 +480,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             // Beta kesmesi: kesmeyi yapan quiet hamleyi killer + history'ye işle
             // (yakalamalar MVV-LVA ile sıralanır, history'yi kirletmezler).
             if (!is_capture(b, m) && m.type() != PROMOTION)
-                update_quiet_stats(b, m, ply, depth);
+                update_quiet_stats(b, m, ply, depth, prev_move);
             break;
         }
     }
