@@ -246,6 +246,22 @@ void Board::do_move(Move m) {
     key ^= ZOBRIST.side;  // sıra değişti: side anahtarını toggle et
 }
 
+void Board::make_null_move() {
+    // En passant hakkı pass'ten sonra geçersiz kalır (o çift-itme fırsatı geçti).
+    // do_move'daki ep işleyişiyle aynı: eski ep sütun anahtarını çıkar, sıfırla.
+    if (en_passant != SQ_NONE) {
+        key ^= ZOBRIST.en_passant[file_of(en_passant)];
+        en_passant = SQ_NONE;
+    }
+
+    // Taş oynatılmadı (yakalama/piyon hamlesi yok) -> 50-hamle sayacı artar.
+    ++halfmove_clock;
+
+    // Sırayı karşı tarafa ver ve side anahtarını toggle et (do_move sonuyla aynı).
+    side_to_move = ~side_to_move;
+    key ^= ZOBRIST.side;
+}
+
 namespace {
 
 // FEN harfini (renk, tür) ikilisine çevirir. Geçersizse false.

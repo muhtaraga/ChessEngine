@@ -365,9 +365,34 @@ Faz 2C (selective search — devam ediyor):
   10-hamle dolu PV), score+bestmove değişmiyor. Düğüm düşüşü derinlikle büyüyor
   (tipik PVS). 81 test geçiyor (IterativeMatchesFixedDepth PVS iç tutarlılığını
   yakalar). Not: PVS'in asıl değeri LMR/null-move'un oturacağı null-window çerçevesi.
+- Adım 2: Null move pruning (KOD TAMAM, SPRT BEKLİYOR). Sıradaki tarafa "bedava
+  hamle" (pass) verilir; oluşan pozisyon azaltılmış derinlikte beta etrafında
+  null-window ile aranır, skor >= beta ise dal budanır. Sezgisel (heuristic)
+  budama — davranış-koruyan DEĞİL, kabul kapısı SPRT (Elo), düğüm düşüşü değil.
+  - `board.hpp/cpp`: `make_null_move()` (do_move ep+side Zobrist deseniyle
+    simetrik: ep hakkını düşür, sırayı çevir, halfmove_clock++, key artımlı) +
+    `has_non_pawn_material(c)` (zugzwang koruması: `colors[c] & ~pawn & ~king`).
+  - `search.cpp`: negamax'a `bool null_allowed = true` parametresi (mevcut çağrı
+    yerleri değişmeden derlenir; yalnız null-child'a false geçilir -> üst üste iki
+    null yasak). TT sonda + KeyGuard sonrası, move döngüsünden önce null bloğu.
+    Koşullar: null_allowed && ply>0 (kökte asla) && depth>=3 && !is_mate_score(beta)
+    (beta=INF PV-ilk hamlesini de dışlar) && has_non_pawn_material(us) && çekte
+    değil. R=(depth>=6)?3:2, `[-beta,-beta+1]` null-window, score>=beta -> return
+    beta (fail-hard; TT'ye yazmaz). copy-make (`Board next=b; next.make_null_move()`).
+  - Doğal güvenlik: kökte null yok (PV/bestmove bozulmaz); PVS'te PV-ilk hamlesi
+    beta=INF -> is_mate_score true -> o düğümde null denenmez.
+  - Testler (81->84): BoardNullMove.FlipsSideAndKeepsKey (key==compute_key, ep
+    düştü, side çevrildi), HasNonPawnMaterial, Search.NullMoveKeepsZugzwangCorrectness
+    (K+P endgame'de guard null'ı kapatır, kazanç korunur). Tüm eski testler geçiyor.
+  - Düğüm sağlaması (Debug, PVS baseline'a karşı): startpos d10 44.04M -> 3.90M
+    (~11× az), skor cp1 aynı, bestmove b1c3; Kiwipete d10 26.35M, bestmove e2a6
+    (PVS ile aynı — taktik pozisyon daha az budanıyor, beklenen). Bu bir sağlama,
+    kapı değil. Bilinçli ertelenen: verification search (yüksek derinlik zugzwang
+    doğrulaması), statik eval>=beta gate (reverse-futility ile birleşecek), R ince
+    ayarı. **Kabul: base 1883432 (PVS) vs yeni commit SPRT'si beklenirken.**
 
-**FAZ 2B EVALUATION TAMAM. Sıradaki: Faz 2C — PVS (selective search'ün ilk
-adımı).** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
+**FAZ 2B EVALUATION TAMAM. Faz 2C — PVS (Adım 1) TAMAM, null move (Adım 2) kod
+tamam SPRT bekliyor.** Tapered eval (+42.8), pawn structure (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
 gelişmiş evaluation kısmı bitti. Faz 2C sırası: **PVS** (LMR'nin çerçevesi, önce

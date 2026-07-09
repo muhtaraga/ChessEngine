@@ -115,6 +115,20 @@ TEST(Search, IterativeReturnsMoveUnderTightTime) {
     EXPECT_NE(r.best, Move());  // en az derinlik 1'in hamlesi elde olmalı
 }
 
+// Null move pruning zugzwang'da (yalnız şah+piyon materyali) doğru sonucu
+// bozmamalı: has_non_pawn_material guard'ı bu dalda null'ı kapatır. Beyaz
+// K+P vs K endgame'inde açıkça kazanan pozisyonda motor pozitif skor + geçerli
+// bir hamle bulmalı (null-move blunder regresyonuna karşı).
+TEST(Search, NullMoveKeepsZugzwangCorrectness) {
+    Board b;
+    // Beyaz Ke6 + e5 piyonu (şahla desteklenen, 6. sıraya doğru), siyah şah uzakta.
+    // Piyon-dışı materyal yok -> null move guard devrede.
+    ASSERT_TRUE(b.set_fen("8/8/4K3/4P3/8/8/8/7k w - - 0 1"));
+    SearchResult r = search(b, 12);
+    EXPECT_NE(r.best, Move());  // geçerli bir hamle dönmeli
+    EXPECT_GT(r.score, 150);    // kazanan pozisyon: skor açıkça pozitif kalmalı
+}
+
 // --- Tekrar (repetition) tespiti ---
 
 // Zorunlu tekrar KAYBEDEN tarafı kurtarır (ayırt edici mekanizma testi).

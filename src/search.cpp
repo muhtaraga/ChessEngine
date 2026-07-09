@@ -97,7 +97,8 @@ struct Searcher {
         return false;
     }
 
-    int  negamax(const Board& b, int depth, int alpha, int beta, int ply);
+    int  negamax(const Board& b, int depth, int alpha, int beta, int ply,
+                 bool null_allowed = true);
     int  quiescence(const Board& b, int alpha, int beta, int ply);
     int  score_move(const Board& b, Move m, Move tt_move, int ply) const;
     void update_quiet_stats(const Board& b, Move m, int ply, int depth);
@@ -167,7 +168,8 @@ void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth) {
         h = kHistoryMax;  // killer bandının altında kalsın
 }
 
-int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
+int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
+                      bool null_allowed) {
     // Kesme kontrolü (her ~4096 düğümde bir; saat/atomik okuma nispeten pahalı).
     // Önce dış "stop" bayrağı (zaman sınırından bağımsız), sonra deadline.
     if ((nodes & 4095) == 0) {
@@ -225,6 +227,33 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply) {
     // Bu düğümün anahtarını arama yığınına ekle (çocuklar tekrarı görebilsin);
     // RAII ile fonksiyon çıkışında (abort dahil her yolda) çıkarılır.
     KeyGuard key_guard(keys, b.key);
+
+    // --- Null move pruning ---
+    // Sıradaki tarafa "bedava hamle" (pass) ver; oluşan pozisyonu azaltılmış
+    // derinlikte (R) beta etrafında null-window ile ara. Rakip iki kez üst üste
+    // oynamış gibi olmasına rağmen skor hâlâ >= beta ise, bu düğüm zaten çok iyi
+    // demektir -> dalı buda. Koşullar (ucuzdan pahalıya, kısa devre için):
+    //   - null_allowed: üst üste iki null yasak (null-child'a false geçilir).
+    //   - ply > 0     : kökte asla (kök gerçek hamle üretmeli).
+    //   - depth >= 3  : çok sığında budama gürültülü.
+    //   - beta mat penceresi değil (beta=INF dahil): mat aramasında null yok.
+    //   - piyon-dışı materyal var: zugzwang koruması (yalnız şah+piyon'da kapalı).
+    //   - çekte değil : çekteyken pass edilemez (en son, tek is_square_attacked).
+    const Color us = b.side_to_move;
+    if (null_allowed && ply > 0 && depth >= 3 && !is_mate_score(beta) &&
+        b.has_non_pawn_material(us) &&
+        !is_square_attacked(b, b.king_square(us), ~us)) {
+        const int R = (depth >= 6) ? 3 : 2;
+        Board next = b;
+        next.make_null_move();
+        // Null-child'ın anahtarı, recursive negamax'ın kendi KeyGuard'ıyla push edilir.
+        int score = -negamax(next, depth - 1 - R, -beta, -beta + 1, ply + 1,
+                             /*null_allowed=*/false);
+        if (aborted)
+            return 0;  // süre doldu: sonuç yukarıda yok sayılır (fn başıyla tutarlı)
+        if (score >= beta)
+            return beta;  // fail-high: dalı buda (fail-hard; sahte mat skoru sızmasın)
+    }
 
     // Tüm hamleleri skorla (TT hamlesi, MVV-LVA, killer, history). Her iterasyonda
     // kalanların en yükseğini öne çekiyoruz (lazy selection sort): iyi sıralamada

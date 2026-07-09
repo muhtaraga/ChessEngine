@@ -122,3 +122,39 @@ TEST(BoardFen, EnPassantAfterDoublePush) {
     EXPECT_EQ(b.to_fen(),
               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
 }
+
+// --- Null move (null move pruning altyapısı) ---
+
+// make_null_move: sırayı çevirir, en passant hakkını düşürür, Zobrist anahtarını
+// tutarlı tutar (key == compute_key()). İkinci kez uygulayınca sıra geri döner.
+TEST(BoardNullMove, FlipsSideAndKeepsKey) {
+    Board b;
+    // 1.e4 sonrası: siyah sırada, ep hedefi e3 var. Null move ep'yi düşürmeli.
+    ASSERT_TRUE(b.set_fen(
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"));
+    const Color side_before = b.side_to_move;
+
+    b.make_null_move();
+
+    EXPECT_EQ(b.side_to_move, ~side_before);           // sıra karşı tarafa geçti
+    EXPECT_EQ(b.en_passant, SQ_NONE);                  // ep hakkı düştü
+    EXPECT_EQ(b.key, b.compute_key());                 // anahtar tutarlı (artımlı)
+
+    b.make_null_move();
+    EXPECT_EQ(b.side_to_move, side_before);            // ikinci null -> sıra geri
+    EXPECT_EQ(b.key, b.compute_key());                 // yine tutarlı
+}
+
+// has_non_pawn_material (zugzwang koruması): başlangıçta iki renkte de var;
+// yalnız şah+piyon endgame'inde her ikisinde de yok.
+TEST(BoardNullMove, HasNonPawnMaterial) {
+    Board start;
+    start.set_startpos();
+    EXPECT_TRUE(start.has_non_pawn_material(WHITE));
+    EXPECT_TRUE(start.has_non_pawn_material(BLACK));
+
+    Board kp;
+    ASSERT_TRUE(kp.set_fen("4k3/4p3/8/8/8/8/4P3/4K3 w - - 0 1"));
+    EXPECT_FALSE(kp.has_non_pawn_material(WHITE));
+    EXPECT_FALSE(kp.has_non_pawn_material(BLACK));
+}

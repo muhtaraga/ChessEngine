@@ -41,6 +41,13 @@ struct Board {
     // Her iki rengin toplam doluluğu.
     Bitboard occupancy() const { return colors[WHITE] | colors[BLACK]; }
 
+    // Verilen rengin piyon (ve şah) dışında en az bir taşı (at/fil/kale/vezir)
+    // var mı? Null move pruning'de zugzwang koruması: yalnız şah+piyon kalınca
+    // (bu false döner) bedava hamle vermek yanıltıcı olur, null uygulanmaz.
+    bool has_non_pawn_material(Color c) const {
+        return (colors[c] & ~pieces[PAWN] & ~pieces[KING]) != 0;
+    }
+
     // Bir karedeki taşın türü (kare dolu varsayılır; boşsa PIECE_TYPE_NB).
     PieceType type_on(Square sq) const;
 
@@ -55,6 +62,13 @@ struct Board {
     // (rok hakları, en passant, sayaçlar, sıra) günceller. Perft copy-make
     // yaklaşımıyla çalışır: geri alma yok, çağıran gerekirse kopya tutar.
     void do_move(Move m);
+
+    // Null (boş) hamle uygular: taş oynatmadan yalnızca sırayı karşı tarafa verir.
+    // Null move pruning'de kullanılır (rakibe "bedava hamle"). En passant hakkını
+    // düşürür (pass sonrası ep hedefi geçersiz), sırayı çevirir, 50-hamle sayacını
+    // artırır. Zobrist anahtarını artımlı günceller (ep + side). do_move gibi
+    // copy-make: geri alma yok, çağıran gerekirse kopya tutar.
+    void make_null_move();
 
     // Pozisyonun Zobrist anahtarını taş dizilimi + durum bilgisinden sıfırdan
     // hesaplar. do_move'un artımlı güncellemesini doğrulamak için de kullanılır
