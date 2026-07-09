@@ -21,6 +21,7 @@ add_library(engine STATIC
     src/zobrist.cpp
     src/tt.cpp
     src/eval.cpp
+    src/see.cpp
     src/search.cpp
     src/uci.cpp
 )

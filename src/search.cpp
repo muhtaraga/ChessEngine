@@ -9,6 +9,7 @@
 #include "engine/bitboard.hpp"
 #include "engine/eval.hpp"
 #include "engine/movegen.hpp"
+#include "engine/see.hpp"
 #include "engine/tt.hpp"
 
 namespace engine {
@@ -383,10 +384,16 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
         best = stand_pat;
     }
 
-    // Aranacak hamleler: çekteyken hepsi; değilse yalnızca yakalama + promosyon.
+    // Aranacak hamleler: çekteyken hepsi; değilse yakalama + promosyon. SEE
+    // budaması: çekte değilken, promosyon olmayan yakalamalardan yalnızca kayıplı
+    // OLMAYANLAR (see >= 0) aranır — statik olarak materyal kaybettiren yakalamalar
+    // (ör. savunmalı taşa kaleyle vurma) qsearch'ü şişirmeden elenir. Promosyonlar
+    // SEE'den muaf (daima aranır; nadir + genelde iyi, promosyon SEE ertelendi).
     MoveList todo;
     for (Move m : ml)
-        if (in_check || is_capture(b, m) || m.type() == PROMOTION)
+        if (in_check
+            || m.type() == PROMOTION
+            || (is_capture(b, m) && see(b, m) >= 0))
             todo.add(m);
 
     // MVV-LVA (+ promosyon primi) ile skorla.
