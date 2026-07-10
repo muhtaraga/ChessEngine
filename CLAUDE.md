@@ -161,15 +161,45 @@ oynar; **çekteyken pinli taşın hiç legal hamlesi yoktur**.
 tek sıradan iki taş kaldırır -> pin makinesine görünmez, ayrı occupancy testi şart;
 (c) çift çekte yalnız şah hamlesi. Rok zaten tam legal üretiliyor (`generate_castling`).
 
-- [ ] **Aşama 1 (DAVRANIŞ-KORUYAN)**: `generate_pseudo` aynen kalır; yalnız kopya-
-      tabanlı filtre predikatla değişir. Hamle kümesi VE SIRASI birebir aynı ->
-      düğüm sayıları/skor/PV baseline ile birebir. Kapı: perft + düğüm-sayısı-eşitliği
-      (PVS'teki exactness ispatının aynısı). Sonra SPRT yalnız **hız→Elo** dönüşümünü ölçer.
-- [ ] **Aşama 1b**: qsearch için yakalama-üreten kardeş fonksiyon (aynı göreli sıra ->
-      hâlâ exact).
-- [ ] **Aşama 2**: tam pin-aware üretim (hedef maskeleriyle doğrudan legal üretim).
+- [x] **Aşama 1 (DAVRANIŞ-KORUYAN, commit `bfc7aab`)**: `generate_pseudo` aynen kaldı;
+      kopya-tabanlı filtre predikatla değişti. Düğüm başına bir kez `LegalityContext`
+      (checkers / check_mask / pinned, sniper algoritması), sonra hamle başına sabit
+      sayıda bit işlemi. `between_bb` + `line_bb` constexpr tabloları (attacks.hpp).
+      Üç tuzak da ele alındı (şah occupancy'den çıkar, ep ayrı tam occupancy testi,
+      çift çekte yalnız şah). Eski üreteç `generate_legal_reference` olarak korundu.
+- [x] **Aşama 1b (DAVRANIŞ-KORUYAN, commit `127d4f0`)**: `generate_noisy` (yakalama +
+      TÜM promosyonlar, sessiz 8. sıra itmeleri dahil), `generate_pseudo`'nun tarama
+      düzeninde -> göreli sıra aynı. qsearch çekte değilken bunu kullanır (çekteyken
+      `generate_legal` şart: kaçış gürültülü olmak zorunda değil + mat tespiti tüm
+      hamlelerin yokluğuna bakar). BONUS (aynı exactness): `stand_pat` artık hamle
+      üretiminden ÖNCE — beta kesmesinde üretilen liste tamamen çöptü.
+- [x] **SPRT (Aşama 1 + 1b tek koşuda): base `4147016` vs new `127d4f0`, 186 oyun,
+      W-D-L 94-63-29, Elo +126.8 ± 42, LOS %100, LLR 2.96 (tam kabul), H1 kabul.**
+      Klasik fazın ÜÇÜNCÜ en büyük tekil kazancı (LMR +164.5, futility +143 ardından).
+      Arama mantığı hiç değişmeden — döviz kuru (2× süre ≈ +195 Elo) doğrulandı.
+      **YENİ BASELINE `127d4f0`.**
+
+  Kapılar (üçü de geçti): (1) perft birebir — startpos d6 = 119.060.324, Kiwipete
+  d5 = 193.690.690; (2) düğüm-sayısı eşitliği — taze arama d10 startpos 62.541 /
+  Kiwipete 633.106, d13 startpos 627.044, d12 Kiwipete 1.590.343, bestmove+skor+PV
+  baseline ile birebir; (3) diferansiyel test — perft ağacında `generate_legal` ==
+  `generate_legal_reference` ve `generate_noisy` == süzülmüş `generate_legal`, AYNI
+  SIRADA (ep-pin, çift çek, şah gölgesi pozisyonları dahil). 104 -> 105 test.
+  Perft tek başına yetmezdi: bir legal hamle elenip bir illegal eklenirse toplam
+  değişmez; diferansiyel test bu hata sınıfını kapatır.
+
+  Ölçüm (Release, baseline -> Aşama 1 -> +1b):
+  - perft startpos d6: 1.878 s -> 0.908 s (63.4M -> 131.1M nps, 2.07×)
+  - perft Kiwipete d5: 2.745 s -> 1.128 s (70.3M -> 171.7M nps, 2.43×)
+  - **arama** startpos d13 nps: 1.104M -> 1.624M -> 1.866M (+%69)
+  - **arama** Kiwipete d12 nps: 1.053M -> 1.662M -> 2.363M (+%125)
+
+- [ ] **Aşama 2 (opsiyonel, cazibesi AZALDI)**: tam pin-aware üretim (hedef
+      maskeleriyle doğrudan legal üretim). Kopyalar Aşama 1'de zaten kalktı; geriye
+      kalan kazanç yalnız sessiz hamlelerin legallik testini büsbütün atlamak.
       Üretim sırası değişir -> exact DEĞİL, ayrı commit + ayrı SPRT. Yan ürün: ucuz
-      `gives_check`, SEE'ye pin bilgisi (mevcut bilinen sınırımız).
+      `gives_check` (negamax'ta `Board next`'i budama kararlarından önce kurma
+      israfını kaldırır), SEE'ye pin bilgisi.
 
 **Ölçüm önce (ucuz ve kesin):** `chess perft` saf bir movegen benchmark'ıdır (arama/eval
 yok). Aşama 1 yazılıp `perft 6` süresi karşılaştırılır -> hem doğruluk (referans
@@ -222,8 +252,11 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-10): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C büyük ölçüde bitti.**
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 104
+**Güncel durum (2026-07-10): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
+(Aşama 1/1b) bitti. SIRADAKİ: FAZ 2D (Lazy SMP).** Yeni baseline `127d4f0`
+(pin-aware legallik + gürültülü üreteç, SPRT +126.8 Elo). Proje fork'landı: NNUE işi
+`../ChessEngineNNUE`'da; bu iki commit oraya cherry-pick edilecek.
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 105
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
