@@ -2,6 +2,7 @@
 build/
 build-release/
 build-rel/
+build-perft/
 out/
 cmake-build-*/
 
