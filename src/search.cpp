@@ -402,9 +402,9 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // güvenilir olsun. Yeterince derin bir girişte sınıra göre kes.
     if (tt_hit && ply > 0 && tte.depth >= depth) {
         int s = score_from_tt(tte.score, ply);
-        if (tte.bound == Bound::EXACT)                 return s;
-        if (tte.bound == Bound::LOWER && s >= beta)    return s;
-        if (tte.bound == Bound::UPPER && s <= alpha)   return s;
+        if (tte.bound() == Bound::EXACT)                 return s;
+        if (tte.bound() == Bound::LOWER && s >= beta)    return s;
+        if (tte.bound() == Bound::UPPER && s <= alpha)   return s;
     }
 
     // Bu düğümün anahtarını arama yığınına ekle (çocuklar tekrarı görebilsin);
@@ -646,10 +646,13 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // best <= alpha_orig: hiçbir hamle alpha'yı geçmedi -> üst sınır (fail-low).
     // best >= beta      : beta kesmesi -> alt sınır (fail-high).
     // aksi              : gerçek değer (exact).
+    // eval alanına HAM statik eval yazılır (çekteyken yok). Rafine edilmiş bir
+    // değer yazılsaydı sonraki sonda onu tekrar rafine eder, hata birikirdi.
     Bound bound = (best <= alpha_orig) ? Bound::UPPER
                 : (best >= beta)       ? Bound::LOWER
                 :                        Bound::EXACT;
-    TT.store(b.key, depth, score_to_tt(best, ply), bound, best_move);
+    TT.store(b.key, depth, score_to_tt(best, ply), bound, best_move,
+             in_check ? kEvalNone : static_eval);
 
     return best;
 }

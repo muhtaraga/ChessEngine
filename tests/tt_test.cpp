@@ -16,20 +16,77 @@
 
 using namespace engine;
 
-// --- Birim: store + probe roundtrip ---
+// --- Birim: giriş boyutu (Faz 2D lockless-XOR geometrisinin ön koşulu) ---
+TEST(TT, EntryIsSixteenBytes) {
+    EXPECT_EQ(sizeof(TTEntry), 16u);
+}
+
+// --- Birim: store + probe roundtrip (paketlenmiş alanlar dahil) ---
 TEST(TT, StoreProbeRoundtrip) {
     TT.clear();
     const std::uint64_t key = 0xDEADBEEFCAFEBABEULL;
     Move mv = Move::make(E2, E4);
-    TT.store(key, /*depth=*/7, /*score=*/123, Bound::EXACT, mv);
+    TT.store(key, /*depth=*/7, /*score=*/123, Bound::EXACT, mv, /*eval=*/-45);
 
     TTEntry e;
     ASSERT_TRUE(TT.probe(key, e));
     EXPECT_EQ(e.key, key);
     EXPECT_EQ(e.depth, 7);
     EXPECT_EQ(e.score, 123);
-    EXPECT_EQ(e.bound, Bound::EXACT);
+    EXPECT_EQ(e.bound(), Bound::EXACT);
     EXPECT_EQ(e.move, mv);
+    EXPECT_EQ(e.eval, -45);
+    EXPECT_EQ(e.generation(), 0u);
+}
+
+// --- Birim: bound ve nesil aynı bayta paketlendi, birbirini bozmuyor ---
+TEST(TT, GenerationAndBoundCoexist) {
+    TT.clear();
+    const std::uint64_t key = 0x0F0F0F0F0F0F0F0FULL;
+    for (int i = 0; i < 5; ++i)
+        TT.new_search();  // nesil 5
+    TT.store(key, 3, 10, Bound::UPPER, Move::make(A2, A3));
+
+    TTEntry e;
+    ASSERT_TRUE(TT.probe(key, e));
+    EXPECT_EQ(e.bound(), Bound::UPPER);
+    EXPECT_EQ(e.generation(), 5u);
+}
+
+// --- Birim: nesil sayacı 6 bitte sarar (girişte 6 bit var; maske sayaçta) ---
+TEST(TT, GenerationWrapsAtSixtyFour) {
+    TT.clear();
+    for (int i = 0; i < 64; ++i)
+        TT.new_search();
+    // 64 arama sonra sayaç yine 0: giriş 0 nesliyle saklanır, 6 bite sığar.
+    const std::uint64_t key = 0x1234567890ABCDEFULL;
+    TT.store(key, 1, 1, Bound::EXACT, Move());
+    TTEntry e;
+    ASSERT_TRUE(TT.probe(key, e));
+    EXPECT_EQ(e.generation(), 0u);
+}
+
+// --- Birim: depth int8'e sığdırılır (UCI "go depth 200" sarmasın) ---
+TEST(TT, DepthClampedToMax) {
+    TT.clear();
+    const std::uint64_t key = 0x00FF00FF00FF00FFULL;
+    TT.store(key, /*depth=*/200, 5, Bound::EXACT, Move());
+    TTEntry e;
+    ASSERT_TRUE(TT.probe(key, e));
+    EXPECT_EQ(e.depth, 127);
+}
+
+// --- Birim: eval yokluğu (çekteki düğüm) aynı pozisyonun eski eval'ini silmez ---
+TEST(TT, PreservesOldEvalWhenNoneStored) {
+    TT.clear();
+    const std::uint64_t key = 0xAAAA5555AAAA5555ULL;
+    TT.store(key, 4, 20, Bound::EXACT, Move::make(D2, D4), /*eval=*/77);
+    TT.store(key, 5, 30, Bound::LOWER, Move::make(D2, D4), /*eval=*/kEvalNone);
+
+    TTEntry e;
+    ASSERT_TRUE(TT.probe(key, e));
+    EXPECT_EQ(e.depth, 5);
+    EXPECT_EQ(e.eval, 77);
 }
 
 // --- Birim: bilinmeyen anahtar sondası boş döner ---

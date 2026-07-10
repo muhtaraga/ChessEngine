@@ -35,7 +35,7 @@ bool TranspositionTable::probe(std::uint64_t key, TTEntry& out) const {
         return false;
 
     const TTEntry& e = table_[key & mask_];
-    if (e.bound != Bound::NONE && e.key == key) {
+    if (e.bound() != Bound::NONE && e.key == key) {
         out = e;
         return true;
     }
@@ -43,32 +43,40 @@ bool TranspositionTable::probe(std::uint64_t key, TTEntry& out) const {
 }
 
 void TranspositionTable::store(std::uint64_t key, int depth, int score,
-                              Bound bound, Move move) {
+                              Bound bound, Move move, int eval) {
     if (table_.empty())
         return;
+
+    if (depth > kMaxTtDepth)
+        depth = kMaxTtDepth;  // int8 alan sarmasın
 
     TTEntry& e = table_[key & mask_];
 
     // Değiştirme politikası: boş yuvayı, aynı pozisyonu, eski nesilden bir girişi,
     // ya da en az bizim kadar derin aranmışı (depth-preferred) üzerine yaz.
     // Aksi halde (farklı pozisyon, daha sığ, aynı nesil) mevcut derin girişi koru.
-    const bool replace = e.bound == Bound::NONE || e.key == key ||
-                         e.gen != generation_ || depth >= e.depth;
+    const bool replace = e.bound() == Bound::NONE || e.key == key ||
+                         e.generation() != generation_ || depth >= e.depth;
     if (!replace)
         return;
 
-    // Aynı pozisyona ait, hamlesi olan daha sığ bir giriş üstüne yazarken en iyi
-    // hamleyi kaybetmeyelim: yeni hamle boşsa eskisini koru.
+    // Aynı pozisyona ait bir girişin üstüne yazarken elimizdekinden daha zengin
+    // olan alanları kaybetmeyelim: yeni hamle/eval boşsa eskisini koru.
     Move best_move = move;
     if (best_move == Move() && e.key == key)
         best_move = e.move;
 
-    e.key   = key;
-    e.score = static_cast<std::int32_t>(score);
-    e.move  = best_move;
-    e.depth = static_cast<std::int16_t>(depth);
-    e.bound = bound;
-    e.gen   = generation_;
+    std::int16_t new_eval = static_cast<std::int16_t>(eval);
+    if (new_eval == kEvalNone && e.key == key)
+        new_eval = e.eval;
+
+    e.key       = key;
+    e.score     = static_cast<std::int16_t>(score);
+    e.eval      = new_eval;
+    e.move      = best_move;
+    e.depth     = static_cast<std::int8_t>(depth);
+    e.gen_bound = static_cast<std::uint8_t>((generation_ << 2) |
+                                            static_cast<std::uint8_t>(bound));
 }
 
 TranspositionTable TT;
