@@ -39,14 +39,6 @@ int score_from_tt(int score, int ply) {
     return score;
 }
 
-// Bir düğümün terminal (mat/pat) skoru. Mat: sıradaki taraf çekte -> -MATE+ply.
-int terminal_score(const Board& b, int ply) {
-    Square ksq = b.king_square(b.side_to_move);
-    if (is_square_attacked(b, ksq, ~b.side_to_move))
-        return -MATE + ply;  // mat edildik
-    return 0;                // pat
-}
-
 // Move ordering skor bantları. Yüksek skor önce aranır. Bantlar çakışmayacak
 // şekilde ayrık: TT > promosyon/yakalama > killer > history(quiet).
 constexpr int kScoreTT       = 2'000'000;  // TT (hash) hamlesi
@@ -367,11 +359,19 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     ++nodes;
     pv_len[ply] = ply;  // bu ply için PV başlangıçta boş
 
-    MoveList ml;
-    generate_legal(b, ml);
+    // Legallik bağlamı düğüm başına BİR KEZ. Üretim onun maskeleriyle doğrudan legal
+    // hamle çıkarır; ayrıca "çekte miyiz?" sorusu ctx.checkers'tan bedavaya cevaplanır
+    // (eskiden burada + terminal_score'da iki ayrı is_square_attacked çağrısı vardı).
+    const MoveGenContext ctx = make_context(b);
+    const Color us       = b.side_to_move;
+    const bool  in_check = ctx.checkers != 0;
 
+    MoveList ml;
+    generate_legal(b, ml, ctx);
+
+    // Terminal düğüm: legal hamle yok -> çekteysek mat, değilsek pat.
     if (ml.size() == 0)
-        return terminal_score(b, ply);
+        return in_check ? -MATE + ply : 0;
 
     // Tekrar (repetition) beraberliği: kökte (ply 0) uygulanmaz — kök daima bir
     // hamle üretmeli. Arama, tekrarı 0 skorladığından önde olan taraf tekrar
@@ -410,11 +410,6 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // Bu düğümün anahtarını arama yığınına ekle (çocuklar tekrarı görebilsin);
     // RAII ile fonksiyon çıkışında (abort dahil her yolda) çıkarılır.
     KeyGuard key_guard(keys, b.key);
-
-    // Çekte miyiz? Bir kez hesaplanır: hem null move koşulunda (çekteyken pass
-    // edilemez) hem LMR'de (çekten kaçış hamleleri indirilmez) kullanılır.
-    const Color us       = b.side_to_move;
-    const bool  in_check = is_square_attacked(b, b.king_square(us), ~us);
 
     // Futility ailesi için statik eval: çekteyken anlamsız (eval gürültülü, kaçış
     // zorunlu), yalnız çekte değilken hesaplanır. RFP + futility pruning paylaşır.
@@ -508,6 +503,13 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         !in_check && ply > 0 && depth <= kLmpMaxDepth &&
         !is_mate_score(alpha) && !is_mate_score(beta);
 
+    // Çek-verme bağlamı TEMBEL kurulur. gives_check yalnızca i >= 1'de sorulur
+    // (futility moves_searched>0 ister, LMP eşiği >= 4, LMR i >= 2) — yani ilk
+    // hamlede beta kesmesi yapan düğümlerde, ki iyi sıralamada çoğunluk onlardır,
+    // hiç ödenmez.
+    CheckInfo ci;
+    bool      ci_ready = false;
+
     for (int i = 0; i < ml.count; ++i) {
         // Selection sort adımı: [i..) arasında en yüksek skorlu hamleyi i'ye getir.
         int best_j = i;
@@ -520,25 +522,36 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         }
 
         const Move m = ml.moves[i];
-        Board next = b;
-        next.do_move(m);
 
-        // quiet / gives_check bir kez hesaplanır (futility + LMR paylaşır).
+        // quiet / gives_ck bir kez hesaplanır (futility + LMP + LMR paylaşır).
+        // gives_ck artık ÇOCUK TAHTA KURULMADAN belirleniyor — bu, aşağıdaki iki
+        // budamanın kopya + do_move bedelini tamamen ortadan kaldırmasını sağlıyor
+        // (eskiden budanan hamle bile tam bir Board kopyası ödüyordu).
         const bool quiet = !is_capture(b, m) && m.type() != PROMOTION;
-        const bool gives_check = is_square_attacked(
-            next, next.king_square(next.side_to_move), ~next.side_to_move);
+        bool gives_ck = false;
+        if (i > 0) {
+            if (!ci_ready) {
+                ci       = make_check_info(b);
+                ci_ready = true;
+            }
+            gives_ck = gives_check(b, m, ci);
+        }
 
         // Futility pruning: en az bir hamle tam arandıysa (moves_searched>0 ->
         // best güvenilir), çek vermeyen quiet umutsuz hamleyi hiç arama. i==0
         // (PVS ilk hamle) daima aranır -> fail-low düğümde bile bir hamle/PV kalır.
-        if (can_futility && moves_searched > 0 && quiet && !gives_check)
+        if (can_futility && moves_searched > 0 && quiet && !gives_ck)
             continue;
         // Late move pruning: yeterince geç sıralanmış quiet, çek-vermeyen hamleyi
         // eval'e bakmadan atla. lmp_count(depth) >= 4 olduğundan en az PV +
         // birkaç hamle daima aranır (moves_searched eşiğe ulaşana dek).
-        if (can_lmp && moves_searched >= lmp_count(depth) && quiet && !gives_check)
+        if (can_lmp && moves_searched >= lmp_count(depth) && quiet && !gives_ck)
             continue;
         ++moves_searched;
+
+        // Budama kararları geçildi: ancak ŞİMDİ çocuk tahtayı kur.
+        Board next = b;
+        next.do_move(m);
 
         // History malus: aranan quiet hamleyi kaydet (kesme olursa bunlardan
         // kesmeyi yapan ödül, kalanlar ceza alır).
@@ -575,7 +588,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             // İndirim uygulanmaz: ilk iki hamle (PV + ilk scout), yakalama/promosyon,
             // çekteyken (kaçış), çek veren hamle, killer'lar.
             int reduction = 0;
-            if (depth >= 3 && i >= 2 && quiet && !in_check && !gives_check &&
+            if (depth >= 3 && i >= 2 && quiet && !in_check && !gives_ck &&
                 m != tb.killers[ply][0] && m != tb.killers[ply][1]) {
                 reduction = lmr_reduction(depth, i);
                 // Sıra numarasının verdiği taban indirimi, hamlenin birleşik history
