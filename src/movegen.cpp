@@ -224,6 +224,18 @@ bool en_passant_is_legal(const Board& b, Square from, Square to, Color us, Squar
     return true;
 }
 
+// Bir taş türünün `sq`'den saldırdığı kareler. Yalnız promosyon sonrası taş için
+// gerekli (piyon ve şah çağrılmaz).
+Bitboard piece_attacks(PieceType pt, Square sq, Bitboard occ) {
+    switch (pt) {
+        case KNIGHT: return knight_attacks(sq);
+        case BISHOP: return bishop_attacks(sq, occ);
+        case ROOK:   return rook_attacks(sq, occ);
+        case QUEEN:  return queen_attacks(sq, occ);
+        default:     return 0;
+    }
+}
+
 // Pinli bir taş yalnız şah-pinner ışını üzerinde oynayabilir; pinli değilse serbest.
 Bitboard pin_mask(const MoveGenContext& ctx, Square from) {
     return test_bit(ctx.pinned, from) ? line_bb(ctx.ksq, from) : ~Bitboard{0};
@@ -377,6 +389,91 @@ MoveGenContext make_context(const Board& b) {
     }
 
     return ctx;
+}
+
+CheckInfo make_check_info(const Board& b) {
+    const Color    us   = b.side_to_move;
+    const Color    them = ~us;
+    const Bitboard occ  = b.occupancy();
+
+    CheckInfo ci{};
+    ci.oksq = b.king_square(them);
+
+    // Piyon: bizim piyonumuz `sq`'den oksq'ye çek verir <=> sq, pawn_attacks(them, oksq)
+    // kümesindedir (is_square_attacked'deki aynı simetri).
+    ci.check_squares[PAWN]   = pawn_attacks(them, ci.oksq);
+    ci.check_squares[KNIGHT] = knight_attacks(ci.oksq);
+    ci.check_squares[BISHOP] = bishop_attacks(ci.oksq, occ);
+    ci.check_squares[ROOK]   = rook_attacks(ci.oksq, occ);
+    ci.check_squares[QUEEN]  = ci.check_squares[BISHOP] | ci.check_squares[ROOK];
+    ci.check_squares[KING]   = 0;  // şah çek veremez (rok'un kalesi ayrı ele alınır)
+
+    // Keşif çeki adayları: make_context'teki sniper algoritmasının aynası — ışınlar
+    // RAKİP şahtan çekilir, sniper'lar BİZİM slider'larımızdır. Araya giren taş sayısı
+    // (her iki renk dahil) tam 1 ise ve o taş bizimse, kalkınca çek açar.
+    const Bitboard snipers =
+        ((rook_attacks(ci.oksq, 0) & (b.pieces[ROOK] | b.pieces[QUEEN])) |
+         (bishop_attacks(ci.oksq, 0) & (b.pieces[BISHOP] | b.pieces[QUEEN]))) &
+        b.colors[us];
+
+    Bitboard s = snipers;
+    while (s) {
+        Square   sniper  = pop_lsb(s);
+        Bitboard blocker = between_bb(ci.oksq, sniper) & occ;
+        if (blocker && (blocker & (blocker - 1)) == 0)
+            ci.blockers |= blocker & b.colors[us];
+    }
+
+    return ci;
+}
+
+bool gives_check(const Board& b, Move m, const CheckInfo& ci) {
+    const Color  us   = b.side_to_move;
+    const Square from = m.from();
+    const Square to   = m.to();
+
+    // Rok: şah ve kale AYNI anda iki kare boşaltıp iki kare doldurur; hem doğrudan
+    // (kale) hem keşif çeki yolları bit hilesiyle tuzaklı. Düğüm başına en fazla iki
+    // rok hamlesi var -> doğruluk uğruna kopya-tabanlı referansa düşülür.
+    if (m.type() == CASTLING) {
+        Board next = b;
+        next.do_move(m);
+        return is_square_attacked(next, ci.oksq, us);
+    }
+
+    // Doğrudan çek: taş hedefe oynayıp oksq'yi vuruyor mu? (Promosyonda bu test
+    // PİYON tablosuna bakar ve daima false verir — promosyon karesi 8. sırada, piyon
+    // çek kareleri oksq'nin bir sırasında; aşağıdaki switch gerçek taşla karar verir.)
+    if (test_bit(ci.check_squares[b.type_on(from)], to))
+        return true;
+
+    // Keşif çeki: taşımız oksq-slider ışınından çıkıyorsa çek açılır. Işın üzerinde
+    // kalıyorsa (line_bb hedefi içeriyor) hâlâ kapatıyor demektir.
+    if (test_bit(ci.blockers, from) && !test_bit(line_bb(ci.oksq, from), to))
+        return true;
+
+    switch (m.type()) {
+        case PROMOTION: {
+            // Piyon `from`'u boşaltır; yeni taş `to`'dan saldırır.
+            const Bitboard occ = b.occupancy() ^ square_bb(from);
+            return test_bit(piece_attacks(m.promotion_type(), to, occ), ci.oksq);
+        }
+        case EN_PASSANT: {
+            // İki kare aynı anda boşalır (from + alınan piyon) -> keşif testi yetmez,
+            // slider'lar yeni occupancy ile yeniden sorgulanır. Atlar/piyonlar/şah
+            // occupancy'ye bağlı olmadığından yukarıdaki doğrudan test onları kapsar.
+            const Square capsq =
+                static_cast<Square>(static_cast<int>(to) + (us == WHITE ? -8 : 8));
+            const Bitboard occ =
+                (b.occupancy() ^ square_bb(from) ^ square_bb(capsq)) | square_bb(to);
+            const Bitboard our_bq = (b.pieces[BISHOP] | b.pieces[QUEEN]) & b.colors[us];
+            const Bitboard our_rq = (b.pieces[ROOK]   | b.pieces[QUEEN]) & b.colors[us];
+            return (bishop_attacks(ci.oksq, occ) & our_bq) ||
+                   (rook_attacks(ci.oksq, occ) & our_rq);
+        }
+        default:
+            return false;
+    }
 }
 
 void generate_legal(const Board& b, MoveList& list, const MoveGenContext& ctx) {

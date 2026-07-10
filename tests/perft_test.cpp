@@ -129,6 +129,19 @@ void assert_generators_agree(Board& b, int depth) {
         ASSERT_EQ(noisy[i].raw(), expected[i].raw())
             << "noisy FEN: " << b.to_fen() << " hamle #" << i;
 
+    // gives_check (kopyasız) == kopya-tabanlı referans. Bu, aramanın hamle
+    // döngüsündeki eski `is_square_attacked(next, ...)` hesabının tam ifadesi:
+    // eşitlik tutuyorsa budama kararları değişmez, yani arama ağacı korunur.
+    const CheckInfo ci = make_check_info(b);
+    for (Move m : fast) {
+        Board next = b;
+        next.do_move(m);
+        const bool ref = is_square_attacked(next, next.king_square(next.side_to_move),
+                                            ~next.side_to_move);
+        ASSERT_EQ(gives_check(b, m, ci), ref)
+            << "gives_check FEN: " << b.to_fen() << " hamle " << m.to_uci();
+    }
+
     if (depth <= 1)
         return;
 
@@ -149,7 +162,55 @@ const char* kDoubleCheck = "4r2k/8/8/8/8/5n2/8/4K3 w - - 0 1";
 // Şah occupancy'den çıkarılmazsa f4 yanlışlıkla "güvenli" görünür.
 const char* kKingShadow = "8/4k3/8/8/r3K3/8/8/8 w - - 0 1";
 
+// gives_check'in üç özel durumu (rok / promosyon / en passant):
+// Rok: şah G1'e giderken KALE F1'den çek verir (kısa), D1'den (uzun).
+const char* kCastleCheckShort = "5k2/8/8/8/8/8/8/4K2R w K - 0 1";
+const char* kCastleCheckLong  = "3k4/8/8/8/8/8/8/R3K3 w Q - 0 1";
+// Promosyon: b8=Q ve b8=R çek verir, b8=B ve b8=N vermez -> yeni taşla karar
+// verilmeli (piyon tablosuna bakmak yetmez).
+const char* kPromoCheck = "4k3/1P6/8/8/8/8/8/4K3 w - - 0 1";
+// Promosyon (at): c8=N, Ke7'ye çek verir; vezir/kale/fil vermez.
+const char* kPromoKnightCheck = "8/2P1k3/8/8/8/8/8/4K3 w - - 0 1";
+// En passant keşif çeki: exd6 e.p. AYNI ANDA d5 ve e5'i boşaltır, Rh5 Ka5'i görür.
+// Keşif testi tek başına yakalayamaz (e5 tek blocker değil: aralıkta iki taş var)
+// -> ep dalının slider yeniden-sorgusu şart.
+const char* kEpDiscoveredCheck = "8/8/8/k2pP2R/8/8/8/7K w - d6 0 1";
+
+// FEN'deki `uci` hamlesi rakip şaha çek veriyor mu? (Diferansiyel test yalnız
+// "gives_check == referans" der; yukarıdaki FEN'ler gerçekten çek ÜRETMEZSE o test
+// boş yere geçer. Aşağıdaki iddialar kenar durumlarının canlı olduğunu garanti eder.)
+bool gives_check_of(const char* fen, const std::string& uci) {
+    Board b;
+    EXPECT_TRUE(b.set_fen(fen)) << fen;
+    MoveList ml;
+    generate_legal(b, ml);
+    const CheckInfo ci = make_check_info(b);
+    for (Move m : ml)
+        if (m.to_uci() == uci)
+            return gives_check(b, m, ci);
+    ADD_FAILURE() << "legal hamle bulunamadi: " << uci << "  FEN: " << fen;
+    return false;
+}
+
 }  // namespace
+
+// gives_check'in üç özel dalı (rok / promosyon / en passant) gerçekten tetikleniyor.
+TEST(MoveGen, GivesCheckSpecialCases) {
+    // Rok: çeki KALE verir, şah değil.
+    EXPECT_TRUE(gives_check_of(kCastleCheckShort, "e1g1"));
+    EXPECT_TRUE(gives_check_of(kCastleCheckLong, "e1c1"));
+
+    // Promosyon: karar yeni taşa göre verilmeli, piyona göre değil.
+    EXPECT_TRUE(gives_check_of(kPromoCheck, "b7b8q"));
+    EXPECT_TRUE(gives_check_of(kPromoCheck, "b7b8r"));
+    EXPECT_FALSE(gives_check_of(kPromoCheck, "b7b8b"));
+    EXPECT_FALSE(gives_check_of(kPromoCheck, "b7b8n"));
+    EXPECT_TRUE(gives_check_of(kPromoKnightCheck, "c7c8n"));
+    EXPECT_FALSE(gives_check_of(kPromoKnightCheck, "c7c8q"));
+
+    // En passant: iki kare birden boşalır -> keşif testi yetmez, slider yeniden sorgu.
+    EXPECT_TRUE(gives_check_of(kEpDiscoveredCheck, "e5d6"));
+}
 
 TEST(Perft, LegalGeneratorMatchesReference) {
     struct Case { const char* fen; int depth; };
@@ -158,6 +219,8 @@ TEST(Perft, LegalGeneratorMatchesReference) {
         {kPosition4, 3},  {kPosition5, 3},       {kPosition6, 3},
         {kEpPinHorizontal, 3}, {kEpPinRook, 3},  {kDoubleCheck, 3},
         {kKingShadow, 3},
+        {kCastleCheckShort, 3}, {kCastleCheckLong, 3}, {kPromoCheck, 3},
+        {kPromoKnightCheck, 3}, {kEpDiscoveredCheck, 3},
     };
 
     for (const Case& c : cases) {

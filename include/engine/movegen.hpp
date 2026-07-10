@@ -55,6 +55,29 @@ void generate_legal(const Board& b, MoveList& list);
 void generate_noisy(const Board& b, MoveList& list, const MoveGenContext& ctx);
 void generate_noisy(const Board& b, MoveList& list);
 
+// Bir düğümde BİR KEZ hesaplanan "çek verme" bağlamı. gives_check bununla, çocuk
+// tahtayı KURMADAN, hamle başına sabit sayıda bit işlemiyle karar verir — böylece
+// budanan hamleler (futility/LMP) kopya + do_move bedelini hiç ödemez.
+struct CheckInfo {
+    Square   oksq = SQ_NONE;  // rakip şahın karesi
+    // check_squares[pt]: bizim `pt` türünden bir taşımız BU karelerden birine
+    // oynarsa rakip şaha doğrudan çek verir. KING girdisi daima 0 (şah çek veremez).
+    Bitboard check_squares[PIECE_TYPE_NB] = {};
+    // Bizim taşlarımızdan, rakip şah ile kendi slider'ımız arasında TEK taş olanlar:
+    // ışından çıkarlarsa keşif (discovered) çeki açarlar.
+    Bitboard blockers = 0;
+};
+
+// side_to_move için çek-verme bağlamını kurar.
+CheckInfo make_check_info(const Board& b);
+
+// `m` (side_to_move'un legal bir hamlesi) rakip şaha çek veriyor mu?
+// Kopya-tabanlı karşılığı birebir şudur:
+//   Board next = b; next.do_move(m);
+//   is_square_attacked(next, next.king_square(next.side_to_move), ~next.side_to_move)
+// Diferansiyel test (perft ağacında) bu eşitliği iddia eder.
+bool gives_check(const Board& b, Move m, const CheckInfo& ci);
+
 // generate_legal'ın eski, KOPYA-TABANLI referans implementasyonu: her pseudo-legal
 // hamleyi tahtaya oynayıp şah güvenliğini test eder. Yavaş ama apaçık doğru.
 // Yalnızca diferansiyel testte (yeni pin-aware filtrenin oracle'ı) kullanılır —
