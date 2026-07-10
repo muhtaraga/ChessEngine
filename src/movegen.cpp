@@ -7,9 +7,7 @@
 
 namespace engine {
 
-bool is_square_attacked(const Board& b, Square sq, Color by) {
-    Bitboard occ = b.occupancy();
-
+bool is_square_attacked(const Board& b, Square sq, Color by, Bitboard occ) {
     // Piyon: sq karesini 'by' piyonu vuruyorsa, o piyon pawn_attacks(~by, sq)
     // kümesindedir (piyon saldırıları renk simetriktir).
     if (pawn_attacks(~by, sq) & b.pieces[PAWN] & b.colors[by])
@@ -28,6 +26,10 @@ bool is_square_attacked(const Board& b, Square sq, Color by) {
         return true;
 
     return false;
+}
+
+bool is_square_attacked(const Board& b, Square sq, Color by) {
+    return is_square_attacked(b, sq, by, b.occupancy());
 }
 
 namespace {
@@ -173,7 +175,147 @@ void generate_pseudo(const Board& b, MoveList& list) {
     generate_castling(b, list, us);
 }
 
+namespace {
+
+// Bir düğümde BİR KEZ hesaplanan legallik bağlamı: şahı çeken taşlar, tek çekte
+// izin verilen hedef kareler ve kendi şahımızı bir rakip ışınına karşı kapatan
+// (pinli) taşlarımız. Bu üçlüyle her pseudo-legal hamlenin legalliği tahtayı
+// KOPYALAMADAN, sabit sayıda bit işlemiyle karara bağlanır.
+struct LegalityContext {
+    Square   ksq;
+    Bitboard checkers;    // şahımıza saldıran rakip taşlar
+    Bitboard check_mask;  // tek çekte hedef kare bu kümede olmalı (araya gir ya da al)
+    Bitboard pinned;      // şahımızla bir rakip sniper arasındaki TEK taş olan kendi taşlarımız
+    int      num_checkers;
+};
+
+// `sq` karesine saldıran `by` renginden TÜM taşlar (küme biçimi).
+Bitboard attackers_of(const Board& b, Square sq, Color by, Bitboard occ) {
+    const Bitboard diag = (b.pieces[BISHOP] | b.pieces[QUEEN]) & b.colors[by];
+    const Bitboard orth = (b.pieces[ROOK] | b.pieces[QUEEN]) & b.colors[by];
+
+    return (pawn_attacks(~by, sq) & b.pieces[PAWN] & b.colors[by])
+         | (knight_attacks(sq) & b.pieces[KNIGHT] & b.colors[by])
+         | (king_attacks(sq) & b.pieces[KING] & b.colors[by])
+         | (bishop_attacks(sq, occ) & diag)
+         | (rook_attacks(sq, occ) & orth);
+}
+
+LegalityContext make_context(const Board& b, Color us) {
+    const Color    them = ~us;
+    const Bitboard occ  = b.occupancy();
+
+    LegalityContext ctx{};
+    ctx.ksq          = b.king_square(us);
+    ctx.checkers     = attackers_of(b, ctx.ksq, them, occ);
+    ctx.num_checkers = popcount(ctx.checkers);
+
+    // Tek çekte: çeken taşı al ya da (sliding ise) arasına gir. Çift çekte maske
+    // kullanılmaz (yalnız şah hamlesi legaldir). Çek yoksa maske serbest.
+    if (ctx.num_checkers == 1) {
+        Square checker = lsb(ctx.checkers);
+        ctx.check_mask = between_bb(ctx.ksq, checker) | ctx.checkers;
+    } else {
+        ctx.check_mask = ~Bitboard{0};
+    }
+
+    // Pin tespiti (sniper algoritması): şahtan BOŞ tahta ışınları çekip aynı ışın
+    // üzerindeki rakip slider'ları bul; arada tam bir taş varsa o taş pinlidir.
+    // Işınlar boş tahtada üretildiği için araya giren taşlar körleştirmez.
+    const Bitboard snipers =
+        ((rook_attacks(ctx.ksq, 0) & (b.pieces[ROOK] | b.pieces[QUEEN])) |
+         (bishop_attacks(ctx.ksq, 0) & (b.pieces[BISHOP] | b.pieces[QUEEN]))) &
+        b.colors[them];
+
+    Bitboard s = snipers;
+    while (s) {
+        Square   sniper  = pop_lsb(s);
+        Bitboard blocker = between_bb(ctx.ksq, sniper) & occ;
+        // Tam bir taş (b & b-1 == 0 -> en fazla bir bit) ve o taş bizimse pinli.
+        if (blocker && (blocker & (blocker - 1)) == 0)
+            ctx.pinned |= blocker & b.colors[us];
+    }
+
+    return ctx;
+}
+
+// En passant legalliği: tek hamlede BİR SIRADAN İKİ taş kalkar (oynayan piyon ve
+// alınan piyon), bu yüzden pin makinesine görünmez — ayrı, tam bir occupancy
+// testi şarttır. Klasik tuzak: yan yana duran şah + kale/vezir hattında ep
+// oynamak şahı açar.
+bool en_passant_is_legal(const Board& b, Move m, Color us, Square ksq) {
+    const Color  them = ~us;
+    const Square from = m.from();
+    const Square to   = m.to();
+    // Alınan piyon hedef karenin ARKASINDA durur (ep hedefi boş karedir).
+    const Square captured =
+        static_cast<Square>(static_cast<int>(to) + (us == WHITE ? -8 : 8));
+
+    const Bitboard occ = (b.occupancy() ^ square_bb(from) ^ square_bb(captured)) |
+                         square_bb(to);
+    // Alınan piyon artık tahtada değil (çek veren piyon o olabilir).
+    const Bitboard their_pawns = (b.pieces[PAWN] & b.colors[them]) ^ square_bb(captured);
+
+    if (pawn_attacks(us, ksq) & their_pawns)
+        return false;
+    if (knight_attacks(ksq) & b.pieces[KNIGHT] & b.colors[them])
+        return false;
+    if (king_attacks(ksq) & b.pieces[KING] & b.colors[them])
+        return false;
+    if (bishop_attacks(ksq, occ) & (b.pieces[BISHOP] | b.pieces[QUEEN]) & b.colors[them])
+        return false;
+    if (rook_attacks(ksq, occ) & (b.pieces[ROOK] | b.pieces[QUEEN]) & b.colors[them])
+        return false;
+
+    return true;
+}
+
+// Bir pseudo-legal hamlenin legalliği — tahta kopyalamadan.
+bool is_legal(const Board& b, Move m, Color us, const LegalityContext& ctx) {
+    const Square from = m.from();
+    const Square to   = m.to();
+
+    if (m.type() == EN_PASSANT)
+        return en_passant_is_legal(b, m, us, ctx.ksq);
+
+    if (from == ctx.ksq) {
+        // Rok zaten generate_castling'de tam legal üretiliyor (çek, geçilen ve
+        // varış kareleri orada sınanır).
+        if (m.type() == CASTLING)
+            return true;
+        // Şah kendi eski karesinden ÇIKARILIR: aksi halde çek veren ışında geriye
+        // kaçış, şahın kendi gölgesi yüzünden güvenli görünür.
+        return !is_square_attacked(b, to, ~us, b.occupancy() ^ square_bb(ctx.ksq));
+    }
+
+    // Buradan sonrası şah dışı taşlar.
+    if (ctx.num_checkers >= 2)
+        return false;  // çift çekte yalnız şah hamlesi kurtarır
+    if (!test_bit(ctx.check_mask, to))
+        return false;  // tek çekte: ya çekeni al ya araya gir (çek yoksa maske serbest)
+    if (test_bit(ctx.pinned, from) && !test_bit(line_bb(ctx.ksq, from), to))
+        return false;  // pinli taş yalnız şah-pinner ışını üzerinde oynayabilir
+
+    return true;
+}
+
+}  // namespace
+
 void generate_legal(const Board& b, MoveList& list) {
+    const Color us = b.side_to_move;
+
+    MoveList pseudo;
+    generate_pseudo(b, pseudo);
+
+    const LegalityContext ctx = make_context(b, us);
+
+    for (Move m : pseudo) {
+        if (is_legal(b, m, us, ctx))
+            list.add(m);
+    }
+}
+
+void generate_legal_reference(const Board& b, MoveList& list) {
     const Color us = b.side_to_move;
 
     MoveList pseudo;

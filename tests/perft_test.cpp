@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "engine/board.hpp"
+#include "engine/movegen.hpp"
 #include "engine/perft.hpp"
 
 using namespace engine;
@@ -85,4 +86,61 @@ TEST(Perft, Position6) {
     EXPECT_EQ(perft_fen(kPosition6, 2), 2079u);
     EXPECT_EQ(perft_fen(kPosition6, 3), 89890u);
     EXPECT_EQ(perft_fen(kPosition6, 4), 3894594u);
+}
+
+// --- Diferansiyel test: pin-aware filtre == kopya-tabanlı referans ---
+//
+// Perft yalnız hamle SAYISINI karşılaştırır; iki hata birbirini götürebilir
+// (bir legal hamle elenip bir illegal hamle eklenirse toplam değişmez). Bu test
+// perft ağacında yürüyüp iki üretecin AYNI hamleleri AYNI SIRADA verdiğini
+// iddia eder — Aşama 1'in davranış-koruyan olduğunun ispatı. (Magic bitboard'ları
+// ray-tracing'e karşı doğrulama deseninin aynısı.)
+namespace {
+
+void assert_generators_agree(Board& b, int depth) {
+    MoveList fast, ref;
+    generate_legal(b, fast);
+    generate_legal_reference(b, ref);
+
+    ASSERT_EQ(fast.size(), ref.size()) << "FEN: " << b.to_fen();
+    for (int i = 0; i < fast.size(); ++i)
+        ASSERT_EQ(fast[i].raw(), ref[i].raw())
+            << "FEN: " << b.to_fen() << " hamle #" << i;
+
+    if (depth <= 1)
+        return;
+
+    for (Move m : fast) {
+        Board next = b;
+        next.do_move(m);
+        assert_generators_agree(next, depth - 1);
+    }
+}
+
+// En passant'ın pin makinesine görünmeyen tuzağı: ep tek sıradan İKİ taş kaldırır.
+// Aşağıdaki iki pozisyonda ep oynamak yatay kale/vezir ışığında şahı açar.
+const char* kEpPinHorizontal = "8/8/8/8/k2Pp2Q/8/8/3K4 b - d3 0 1";
+const char* kEpPinRook       = "8/8/8/K2pP2r/8/8/8/6k1 w - d6 0 1";
+// Çift çek (Re8 + Nf3): yalnız şah hamlesi legaldir.
+const char* kDoubleCheck = "4r2k/8/8/8/8/5n2/8/4K3 w - - 0 1";
+// Şah gölgesi: Ke4, Ra4'ten çek yiyor. Kf4 ışın üzerinde kalır -> illegal.
+// Şah occupancy'den çıkarılmazsa f4 yanlışlıkla "güvenli" görünür.
+const char* kKingShadow = "8/4k3/8/8/r3K3/8/8/8 w - - 0 1";
+
+}  // namespace
+
+TEST(Perft, LegalGeneratorMatchesReference) {
+    struct Case { const char* fen; int depth; };
+    const Case cases[] = {
+        {kStartpos, 4},   {kKiwipete, 3},        {kPosition3, 4},
+        {kPosition4, 3},  {kPosition5, 3},       {kPosition6, 3},
+        {kEpPinHorizontal, 3}, {kEpPinRook, 3},  {kDoubleCheck, 3},
+        {kKingShadow, 3},
+    };
+
+    for (const Case& c : cases) {
+        Board b;
+        ASSERT_TRUE(b.set_fen(c.fen)) << c.fen;
+        assert_generators_agree(b, c.depth);
+    }
 }
