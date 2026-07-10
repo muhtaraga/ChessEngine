@@ -421,30 +421,49 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
                           : (tt_hit && tte.eval != kEvalNone)   ? tte.eval
                           :                                       evaluate(b);
 
+    // Budama kapılarının kullandığı eval: TT skoru, statik eval'den daha bilgili
+    // bir tahmindir (bir aramadan gelir, statik terimlerden değil). Yalnız sınırın
+    // izin verdiği YÖNDE kullanılır: LOWER gerçek değerin altına inmez (eval'i
+    // yukarı çeker), UPPER üstüne çıkmaz (aşağı çeker), EXACT doğrudan geçer.
+    // Mat skorları dışarıda: RFP `return eval` yapıyor, sahte mat skoru sızmasın.
+    //
+    // Rafine değer TT'ye ASLA yazılmaz (store ham static_eval'i yazar): yazılsaydı
+    // sonraki sonda rafineyi tekrar rafine eder, hata birikirdi. Blok 1/3'ün
+    // improving'i de ham değeri isteyecek.
+    int eval = static_eval;
+    if (!in_check && tt_hit) {
+        const int s = score_from_tt(tte.score, ply);
+        if (!is_mate_score(s) &&
+            (tte.bound() == Bound::EXACT ||
+             (tte.bound() == Bound::LOWER && s > eval) ||
+             (tte.bound() == Bound::UPPER && s < eval)))
+            eval = s;
+    }
+
     // --- Razoring ---
     // Sığ düğümde static_eval, alpha'nın kRazorMargin[depth] kadar altındaysa bu
     // dal büyük olasılıkla fail-low. Tam-derinlik aramaya girmek yerine qsearch
     // ile doğrula: qsearch skoru da alpha'yı geçemiyorsa dalı buda (döneni
     // fail-low olarak yay). RFP'nin fail-low aynası; ikisi karşılıklı dışlayıcı
-    // (static_eval aynı anda hem beta'yı hem alpha'yı aşamaz). Koşullar RFP/
+    // (eval aynı anda hem beta'yı hem alpha'yı aşamaz). Koşullar RFP/
     // futility ile aynı desende: çekte değil, kökte değil (ply>0), sığ derinlik,
     // mat penceresi değil. Taktik/yakalama qsearch'te hâlâ görülür -> budanmaz.
     if (!in_check && ply > 0 && depth <= kRazorMaxDepth && !is_mate_score(alpha) &&
-        static_eval + kRazorMargin[depth] <= alpha) {
+        eval + kRazorMargin[depth] <= alpha) {
         int score = quiescence(b, alpha, beta, ply);
         if (score <= alpha)
             return score;  // qsearch doğruladı: fail-low, dalı buda
     }
 
     // --- Reverse futility pruning (RFP / static null move) ---
-    // Sığ düğümde statik eval, beta'yı kRfpMargin*depth kadar aşıyorsa: rakip
+    // Sığ düğümde eval, beta'yı kRfpMargin*depth kadar aşıyorsa: rakip
     // normalde bu farkı tek bir alt-ağaçta telafi edemez -> dalı buda (fail-soft,
-    // static_eval >= beta olduğundan geçerli fail-high). Koşullar: çekte değil,
+    // eval >= beta olduğundan geçerli fail-high). Koşullar: çekte değil,
     // kökte değil (ply>0), sığ derinlik, mat penceresi değil (beta=INF dahil).
     // TT'ye yazılmaz (null move deseni; sahte skor sızmasın).
     if (!in_check && ply > 0 && depth <= kRfpMaxDepth && !is_mate_score(beta) &&
-        static_eval - kRfpMargin * depth >= beta)
-        return static_eval;
+        eval - kRfpMargin * depth >= beta)
+        return eval;
 
     // --- Null move pruning ---
     // Sıradaki tarafa "bedava hamle" (pass) ver; oluşan pozisyonu azaltılmış
@@ -493,14 +512,14 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     int  nquiets = 0;
 
     // --- Futility pruning kapısı (node seviyesi) ---
-    // Sığ, çekte-olmayan, mat-olmayan düğümde statik eval + margin bile alpha'ya
+    // Sığ, çekte-olmayan, mat-olmayan düğümde eval + margin bile alpha'ya
     // ulaşamıyorsa quiet hamleler (materyali pek değiştirmez) alpha'yı geçemez ->
     // döngüde çek vermeyen quiet hamleler aranmadan atlanır. alpha burada düğüm
     // giriş değerinde (döngü henüz değiştirmedi).
     const bool can_futility =
         !in_check && ply > 0 && depth <= kFutilityMaxDepth &&
         !is_mate_score(alpha) &&
-        static_eval + kFutilityMargin[depth] <= alpha;
+        eval + kFutilityMargin[depth] <= alpha;
 
     // --- LMP (late move pruning) kapısı (node seviyesi) ---
     // Sığ, çekte-olmayan, mat-olmayan düğümde belli sayıdan sonraki quiet, çek
