@@ -302,11 +302,54 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
       kalibre bir araç: bir nps optimizasyonunun Elo'sunu KODU YAZMADAN, yalnız
       benchmark'tan kestirebiliyoruz. Mütevazı etki -> çok oyun istedi (1099; LMP
       +34.5 / 1413 oyun deseni).
-- [ ] **2. TT yenileme paketi**: TTEntry'ye static_eval alanı + qsearch TT
-      probe/store (şu an quiescence TT'ye HİÇ dokunmuyor — qsearch düğümlerin
-      yarıdan fazlası) + TT skorunu static_eval tahminini iyileştirmede kullanma.
-      Beklenti +10-25. Yapısal: 2D'nin thread-safe TT'si (lockless XOR / atomik)
-      bu entry formatının üstüne kurulacak — format şimdi oturmalı.
+- [x] **2. TT yenileme paketi (TAMAM). İki SPRT, toplam ~+46 Elo. Beş commit
+      (`1d73725` B1 .. `23d28b0` B5). YENİ BASELINE `23d28b0`.** Yol haritasının
+      +10-25 beklentisini aştı. İki bağımsız kabul kapısı:
+      - **SPRT-A: base `d07e7f2` vs new `bf462a3` (B1..B4), +12.9 ± 8.2 Elo, LLR 2.95
+        TAM KABUL (4024 oyun, 1254-1665-1105, LOS %99.9).** LMP/razoring gibi çok
+        oyun istedi. B1+B2 exact (nps), B3+B4 sezgisel.
+      - **SPRT-B: base `bf462a3` vs new `23d28b0` (yalnız B5 qsearch TT), +33 ± 14.1
+        Elo, LLR 2.96 TAM KABUL (1438 oyun, 510-554-374, LOS %100).** "İşareti belirsiz,
+        birçok motorda net nötr" beklentisi ÇÜRÜTÜLDÜ — paketin en büyük parçası.
+      Commit'ler:
+      - `1d73725` **B1 (exact)**: TTEntry 24 -> 16 bayt (score i32->i16, depth i16->i8,
+        bound+gen tek bayta: üst 6 bit nesil / alt 2 bit Bound) + i16 `eval` alanı (ham
+        statik eval; çektekilerde `kEvalNone`=INT16_MIN). Anahtar dışı veri TAM 8 bayt
+        -> **Faz 2D lockless-XOR geometrisi oturdu**. Aynı Hash MB'sinde 2× giriş, cache
+        line'a 4 giriş. TUZAK: nesil maskesi SAYAÇTA (`new_search`'te `&0x3F`) —
+        girişte 6 bit var, sayaç 63'ü geçerse hiçbir giriş "taze" görünmez, TT sessizce
+        çöker. store'da depth 127'ye kırpılır (`go depth 200` int8'i sarardı).
+      - `57cc883` **B2 (exact)**: `static_eval` TT'den okunur (evaluate() saf -> birebir;
+        nps +%2.5 / +%2.1).
+      - `8338adc` **B3 (sezgisel)**: TT skoru razoring/RFP/futility eval'ini rafine eder
+        (sınırın izin verdiği yönde; mat skorları hariç). **Rafine değer TT'ye ASLA
+        yazılmaz** (store ham static_eval'i yazar) — yazılsaydı sonraki sonda rafineyi
+        tekrar rafine eder, hata birikirdi. Blok 1/3 improving de ham değeri isteyecek.
+      - `bf462a3` **B4 (sezgisel)**: replace kuralından "aynı pozisyon DAİMA ezer"
+        kaldırıldı; sığ/exact-olmayan giriş derin girişi ezmiyor (B5'in ön koşulu — qs
+        girişleri depth 0). `(e.key==key && bound==EXACT)` muaf.
+      - `23d28b0` **B5 (sezgisel)**: qsearch TT probe/store (depth 0; EXACT saklanmaz —
+        PV-düğüm bayrağı yok; mat saklanmaz) + tt_move sıralaması. **Güvenlik ağı:**
+        negamax `tte.depth >= depth (>=1)` ister -> qs girişi (depth 0) negamax'ı asla
+        kesemez, yalnız hamle ipucu + ham eval verir.
+
+      **Düğüm eşitliği kapısı (B1+B2, geçti):** entry 24->16 gidince aynı Hash MB'sinde
+      giriş sayısı 2× olur -> Hash=16 vs Hash=16 exact DEĞİL. Giriş sayısı eşitlenir:
+      baseline Hash=16 (16MB/24 -> 524288) vs yeni **Hash=8** (8MB/16 -> 524288).
+      startpos d13 = 627.044, Kiwipete d12 = 1.590.343 (d16/d14 de) birebir; bestmove+
+      skor+PV aynı. Ders: format değişince düğüm dedektörünü korumak için giriş sayısını
+      eşitle, MB'yi değil.
+
+      **B5 profili (ilginç):** nps DÜŞÜYOR (-%6.7 startpos / -%21.7 Kiwipete; her qs
+      düğümüne rastgele bellek erişimi) ama düğüm -%38 / -%47 -> aynı derinliğe süre
+      -%34 / -%32. Döviz kuru burada UYGULANAMAZ (yalnız EXACT nps kazançları için
+      kalibre; B5 düğüm başına yapılan işi de değiştirir — arama yerine önbellek okur).
+      +33 Elo bunu doğruladı: düğüm kalitesi kazancı nps kaybını fazlasıyla götürdü.
+
+      Testler 106 -> 115. Bilinçli ertelenen: TT prefetch (`_mm_prefetch`, exact-safe,
+      ~%1-3), PV-node bayrağı (qs'te EXACT saklamayı açar), 4-yollu bucket (Faz 2D),
+      RFP/null erken dönüşlerinde "yalnız eval" girişi saklama, tt_move'un qs SEE
+      budamasını atlaması.
 - [ ] **3. Eval stack + improving**: `stack[ply]`'ye static_eval alanı;
       `improving = static_eval > 2 ply önceki static_eval`; RFP/futility/LMP
       kapıları improving'e bağlanır (improving değilken marjlar sıkılır, LMP
@@ -410,12 +453,14 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-10): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
-(Aşama 1/1b/2) bitti. FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2) TAMAM — üç exact
-commit (`07a909a`, `652d4b9`, `d07e7f2`), SPRT +39.7 ± 15.6 Elo TAM KABUL.
-SIRADAKİ: Blok 1/2 = TT yenileme paketi. FAZ 2D tüm bloklar bitince.**
-Yeni baseline `d07e7f2`. Proje fork'landı: NNUE işi
-`../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick edilecek.
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 106
+(Aşama 1/1b/2) bitti. FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2, +39.7 Elo) + Blok 1/2
+(TT yenileme paketi) TAMAM. Blok 1/2 iki SPRT: SPRT-A (B1..B4) +12.9 ± 8.2 Elo TAM
+KABUL, SPRT-B (B5 qsearch TT) +33 ± 14.1 Elo TAM KABUL — toplam ~+46 Elo, beklentiyi
+(+10-25) aştı. YENİ BASELINE `23d28b0`.
+SIRADAKİ: Blok 1/3 = eval stack + improving. FAZ 2D tüm bloklar bitince.**
+Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
+edilecek (Blok 1/2 commit'leri `1d73725..23d28b0` henüz taşınmadı).
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 115
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
