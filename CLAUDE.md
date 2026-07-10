@@ -194,16 +194,18 @@ tek sıradan iki taş kaldırır -> pin makinesine görünmez, ayrı occupancy t
   - **arama** startpos d13 nps: 1.104M -> 1.624M -> 1.866M (+%69)
   - **arama** Kiwipete d12 nps: 1.053M -> 1.662M -> 2.363M (+%125)
 
-- [ ] **Aşama 2 (TERFİ ETTİ -> Faz 2C-devam Blok 1/1)**: tam pin-aware üretim (hedef
-      maskeleriyle doğrudan legal üretim). Kopyalar Aşama 1'de zaten kalktı; kalan
-      kazanç sessiz hamlelerin legallik testini atlamak + ASIL DEĞER yan ürünlerde:
-      ucuz `gives_check` (check-squares; negamax'ta `Board next`'i budama
-      kararlarından ÖNCE kurma israfını kaldırır — budanan hamle bile kopya+do_move+
-      is_square_attacked ödüyor), SEE'ye pin bilgisi. Üretim sırası değişir ->
-      exact DEĞİL, ayrı commit + ayrı SPRT. Eskiden "cazibesi azaldı" yazıyordu;
-      2026-07-10 revizyonunda budama-öncesi kopya israfı + yapısal sıra (son büyük
-      movegen değişikliği 2D/N4 cherry-pick zincirinden önce kapanmalı) gerekçesiyle
-      öne çekildi. Ayrıntı: aşağıda Faz 2C-devam Blok 1.
+- [x] **Aşama 2 = Faz 2C-devam Blok 1/1 (DAVRANIŞ-KORUYAN; C1 `07a909a`, C2 `652d4b9`,
+      C3 `d07e7f2`)**. SPRT (Elo ölçümü) SIRADA. Ayrıntı: aşağıda Faz 2C-devam Blok 1.
+
+      **Yol haritası varsayımı ÇÜRÜTÜLDÜ.** Burada "üretim sırası değişir -> exact
+      DEĞİL, kapı yalnız SPRT" yazıyordu; bu bir varsayımdı (Stockfish ayrı pinli/
+      pinsiz döngü kullandığı için). Sırayı korumak maliyetsiz çıktı: her taş türü
+      döngüsü aynen kalır, pinli taşın hedef maskesi `& line_bb(ksq, from)` ile
+      daraltılır (taş başına bir `test_bit`). İki seçeneğin Elo beklentisi aynı
+      (fark yalnız taş başına tahmin edilebilir bir dal); sıra korunduğunda
+      **düğüm-sayısı eşitliği dedektörü** elde kalır — bu projede kanıtlanmış bir
+      hata yakalayıcı (history-LMR'nin ilk no-op denemesini tam da bu yakaladı).
+      Ders: "Stockfish öyle yapıyor" bir gerekçe değil; kısıtı kendi kodunda ölç.
 
 **Ölçüm önce (ucuz ve kesin):** `chess perft` saf bir movegen benchmark'ıdır (arama/eval
 yok). Aşama 1 yazılıp `perft 6` süresi karşılaştırılır -> hem doğruluk (referans
@@ -234,13 +236,65 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
 
 *Blok 1 — Yapısal + hız (sıra zorunlu):*
 
-- [ ] **1. Pin-aware Aşama 2 paketi**: tam pin-aware üretim (hedef maskeleri) +
-      check-squares ile ucuz `gives_check` + negamax'ta budama kararlarının
-      `Board next` kopyasından ÖNCE alınması (şu an hamle döngüsü budanan hamle
-      için bile kopya + do_move + is_square_attacked bedeli ödüyor — gives_check
-      ancak çocuk kurulunca hesaplanabiliyor). Üretim sırası değişir -> exact
-      DEĞİL, tek SPRT. Döviz kuru kanıtlı: %15-30 nps ~ onlarca Elo. Yapısal:
-      son büyük movegen değişikliği, 2D/N4'ten önce kapanmalı.
+- [x] **1. Pin-aware Aşama 2 paketi (KOD TAMAM, DAVRANIŞ-KORUYAN; SPRT sırada).**
+      Üç commit, hepsi exact — kabul kapısı SPRT değil, **düğüm sayısı / bestmove /
+      skor / PV birebir eşitliği**. SPRT yalnız Elo'yu ÖLÇMEK için koşulacak
+      (base `127d4f0` vs new `d07e7f2`).
+      - `07a909a` **C1 — doğrudan pin-aware üretim**: `generate_legal`/`generate_noisy`
+        tek geçişli oldu; `generate_pseudo`'nun 256-elemanlı geçici `MoveList`'i +
+        hamle başına `is_legal` süzme geçişi kalktı. Hedef maskeleri (check_mask,
+        pin ışını) doğrudan üretimde. Sıra korunur. `MoveGenContext` + `make_context`
+        header'a açıldı. Çift çekte `check_mask = 0` -> şah dışı hiçbir taş üretilmez;
+        **en passant hiçbir maskeye tabi değil** (tek sıradan iki taş kaldırır, pin
+        makinesine görünmez -> tam occupancy testi, çift çekte bile denenir); pinli at
+        asla oynayamaz; şah hamlesinde şah occupancy'den çıkarılır. `generate_castling`
+        ikiye ayrıldı (`_unchecked` + sarmalayıcı). `generate_pseudo` +
+        `generate_legal_reference` korundu (diferansiyel testin oracle'ı).
+      - `652d4b9` **C2 — `CheckInfo` + kopyasız `gives_check()`**: check-squares
+        (taş türü başına "buradan çek verilir" kareleri) + keşif-çeki `blockers`
+        (sniper algoritmasının rakip şahtan çekilen aynası). Promosyon yeni taşla
+        karar verir; en passant iki kare birden boşalttığından slider'ları yeni
+        occupancy ile yeniden sorgular; **rok kasıtlı olarak copy-make referansına
+        düşürülür** (şah+kale aynı anda iki kare boşaltıp iki kare doldurur, bit
+        hilesi tuzaklı; düğüm başına en fazla iki rok hamlesi var — doğruluk >
+        mikro-hız).
+      - `d07e7f2` **C3 — search wiring**: negamax düğüm girişinde `make_context` bir
+        kez; `in_check = ctx.checkers != 0` bedavaya gelir -> düğüm başına İKİ
+        `is_square_attacked` çağrısı kalktı (`terminal_score` kaldırıldı, mat/pat
+        doğrudan `in_check`'ten). Hamle döngüsünde `Board next` artık budama
+        kapılarından SONRA kuruluyor — futility/LMP ile atılan hamle kopya + do_move
+        + is_square_attacked bedelini artık ödemiyor. `CheckInfo` **tembel** kurulur:
+        `gives_check` yalnız `i >= 1`'de sorulur (futility `moves_searched>0` ister,
+        LMP eşiği >= 4, LMR `i >= 2`), yani ilk hamlede kesme yapan düğümlerde —
+        iyi sıralamada çoğunluk — hiç ödenmez. **quiescence bilinçli olarak
+        değiştirilmedi**: stand-pat beta kesmesi yolunda `make_context`, bugünkü ucuz
+        `is_square_attacked`'den pahalı olurdu ve orada üretim hiç yapılmıyor.
+
+      Kapılar (üçü de geçti): (1) perft birebir — startpos d6 = 119.060.324,
+      Kiwipete d5 = 193.690.690; (2) diferansiyel test — perft ağacında
+      `generate_legal == generate_legal_reference` AYNI SIRADA, `generate_noisy ==`
+      süzülmüş `generate_legal` AYNI SIRADA, **ve her legal hamle için
+      `gives_check(b,m,ci) == { next=b.do_move(m); is_square_attacked(...) }`**
+      (aramanın eski hesabının tam ifadesi -> C3'ün exact olduğunun ispatı); yeni
+      kenar FEN'leri: rok çek verir (kısa/uzun), promosyon (b8=Q/R çek verir, b8=B/N
+      vermez; c8=N verir, c8=Q vermez), ep keşif çeki (exd6 e.p. aynı anda d5+e5'i
+      boşaltır, Rh5 Ka5'i görür — keşif testi tek başına yakalayamaz); ayrıca
+      `MoveGen.GivesCheckSpecialCases` (diferansiyel test "gives_check == referans"
+      der; FEN'ler gerçekten çek ÜRETMEZSE boş yere geçerdi). 105 -> 106 test.
+      (3) **düğüm eşitliği** — Release, `127d4f0`'a karşı, `ucinewgame` ile taze
+      tablolar: startpos d10 = 62.541, d13 = 627.044; Kiwipete d12 = 1.590.343;
+      bestmove + skor + PV birebir.
+
+      Ölçüm (Release, aynı oturumda `127d4f0`'a karşı):
+      - perft startpos d6: 0.915 s -> 0.536 s (130.1M -> 222.1M nps, **1.73×**)
+      - perft Kiwipete d5: 1.133 s -> 0.630 s (170.9M -> 307.6M nps, **1.79×**)
+      - **arama** startpos d13 nps: 1.894M -> 2.224M (**+%17.4**)
+      - **arama** Kiwipete d12 nps: 2.384M -> 2.714M (**+%13.8**)
+
+      Not: movegen 1.75× hızlandı ama arama yalnız ~%15 — çünkü aramada movegen
+      artık toplam sürenin küçük bir dilimi (eval + do_move + TT baskın). Döviz
+      kuruyla (`log2(1+X) × 195`) mertebe tahmini **+35..45 Elo**; mütevazı etki ->
+      SPRT çok oyun isteyebilir (LMP/razoring deseni).
 - [ ] **2. TT yenileme paketi**: TTEntry'ye static_eval alanı + qsearch TT
       probe/store (şu an quiescence TT'ye HİÇ dokunmuyor — qsearch düğümlerin
       yarıdan fazlası) + TT skorunu static_eval tahminini iyileştirmede kullanma.
@@ -349,11 +403,13 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-10): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
-(Aşama 1/1b) bitti. SIRADAKİ: FAZ 2C-devam (tek-thread güçlendirme), Blok 1/1 =
-pin-aware Aşama 2 paketi; FAZ 2D tüm bloklar bitince.** Yeni baseline `127d4f0`
+(Aşama 1/1b) bitti. FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2) KOD OLARAK TAMAM —
+üç exact commit (`07a909a`, `652d4b9`, `d07e7f2`), düğüm eşitliğiyle doğrulandı;
+**SPRT (Elo ölçümü) SIRADA** (base `127d4f0` vs new `d07e7f2`). Sonra Blok 1/2 =
+TT yenileme paketi. FAZ 2D tüm bloklar bitince.** Baseline `127d4f0`
 (pin-aware legallik + gürültülü üreteç, SPRT +126.8 Elo). Proje fork'landı: NNUE işi
-`../ChessEngineNNUE`'da; bu iki commit oraya cherry-pick edilecek.
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 105
+`../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick edilecek.
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 106
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
@@ -362,10 +418,11 @@ güçlendirme: **history malus SPRT +22.2 Elo kabul**, ardından **continuation 
 tablo kalıcılığı paketi SPRT +31.6 ± 13.8 Elo, LLR 2.96 tam kabul**, ardından
 **history-tabanlı LMR + ölçek çarpanı SPRT +13.6 ± 8.5, LLR 2.95 tam kabul (3928 oyun)**.
 **FAZ 2C-ek KAPANDI. Yeni baseline `9bdcef4`.** Countermove (regresyon) denendi, geri
-alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) Faz 2C-devam Blok 1-4
-(Aşama 2 movegen -> TT yenileme -> improving -> arama özellikleri [singular, SEE
-paketi, capture history, IIR, history budaması, null move güçlendirme] -> zaman
-yönetimi + küçükler -> Texel tuning), (2) Faz 2D Lazy SMP (tüm bloklar bitince,
+alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) Faz 2C-devam Blok 1/1
+(Aşama 2 movegen) KOD TAMAM, SPRT sırada; sonra Blok 1/2 TT yenileme -> Blok 1/3
+improving -> Blok 2 arama özellikleri [singular, SEE paketi, capture history, IIR,
+history budaması, null move güçlendirme] -> Blok 3 zaman yönetimi + küçükler ->
+Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
 NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
 (klasik + NNUE, ikisi de aktif; bkz. memory `iki-taban-karari`). Ayrıntılı adım-adım
 kayıt ve en güncel özet aşağıdaki bölümlerde + memory `proje-durumu`.
@@ -851,8 +908,9 @@ extension (Adım 8) denendi, SPRT NÖTR -> rafa kaldırıldı. Move ordering: hi
 malus SPRT +22.2 Elo KABUL; **continuation history + tablo kalıcılığı paketi SPRT
 +31.6 Elo TAM KABUL**; **history-tabanlı LMR + ölçek çarpanı SPRT +13.6 Elo TAM KABUL
 (yeni baseline 9bdcef4) -> FAZ 2C-ek KAPANDI**; countermove denendi, geri alındı.
-SIRADAKİ: Faz 2C-devam (tek-thread güçlendirme; Blok 1: Aşama 2 movegen -> TT
-yenileme -> improving) -> sonra Faz 2D (Lazy SMP, tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
+SIRADAKİ: Faz 2C-devam (tek-thread güçlendirme; Blok 1/1 Aşama 2 movegen KOD TAMAM,
+SPRT sırada -> Blok 1/2 TT yenileme -> Blok 1/3 improving) -> sonra Faz 2D (Lazy SMP,
+tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
 (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
