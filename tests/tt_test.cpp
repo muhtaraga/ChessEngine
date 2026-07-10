@@ -119,6 +119,35 @@ TEST(TT, DeeperReplacesSameKey) {
     EXPECT_EQ(e.score, 80);
 }
 
+// --- Birim: aynı pozisyonun sığ, exact-olmayan girişi derin girişi EZMEZ ---
+// (qsearch girişleri depth 0 ile saklanır; derin negamax bilgisini korumalı.)
+TEST(TT, ShallowSameKeyDoesNotReplaceDeeper) {
+    TT.clear();
+    const std::uint64_t key = 0x1122334455667788ULL;
+    TT.store(key, /*depth=*/8, /*score=*/60, Bound::LOWER, Move::make(G1, F3));
+    TT.store(key, /*depth=*/0, /*score=*/-5, Bound::UPPER, Move::make(B1, C3));
+
+    TTEntry e;
+    ASSERT_TRUE(TT.probe(key, e));
+    EXPECT_EQ(e.depth, 8);
+    EXPECT_EQ(e.score, 60);
+    EXPECT_EQ(e.bound(), Bound::LOWER);
+}
+
+// --- Birim: aynı pozisyonun EXACT değeri sığ olsa da yazılır (en iyi bilgi) ---
+TEST(TT, ExactReplacesDeeperSameKey) {
+    TT.clear();
+    const std::uint64_t key = 0x8877665544332211ULL;
+    TT.store(key, /*depth=*/8, /*score=*/60, Bound::LOWER, Move::make(G1, F3));
+    TT.store(key, /*depth=*/2, /*score=*/17, Bound::EXACT, Move::make(B1, C3));
+
+    TTEntry e;
+    ASSERT_TRUE(TT.probe(key, e));
+    EXPECT_EQ(e.depth, 2);
+    EXPECT_EQ(e.score, 17);
+    EXPECT_EQ(e.bound(), Bound::EXACT);
+}
+
 namespace {
 
 // Aynı FEN'i verilen derinlikte arar. TT'yi çağırandan yönetiyoruz.

@@ -52,11 +52,19 @@ void TranspositionTable::store(std::uint64_t key, int depth, int score,
 
     TTEntry& e = table_[key & mask_];
 
-    // Değiştirme politikası: boş yuvayı, aynı pozisyonu, eski nesilden bir girişi,
-    // ya da en az bizim kadar derin aranmışı (depth-preferred) üzerine yaz.
-    // Aksi halde (farklı pozisyon, daha sığ, aynı nesil) mevcut derin girişi koru.
-    const bool replace = e.bound() == Bound::NONE || e.key == key ||
-                         e.generation() != generation_ || depth >= e.depth;
+    // Değiştirme politikası: boş yuvayı, eski nesilden bir girişi, en az bizim
+    // kadar sığ aranmışı (depth-preferred), ya da aynı pozisyonun exact değerini
+    // üzerine yaz. Korunan tek durum: aynı nesilden DAHA DERİN aranmış, exact
+    // olmayan bir giriş.
+    //
+    // "Aynı pozisyon daima ezer" kuralı bilinçli olarak kaldırıldı: qsearch
+    // girişleri depth 0 ile saklanıyor, o kural altında bir depth-10 negamax
+    // girişini ezebilirlerdi. Derin bilgi sığ bilgiden değerlidir; aynı pozisyona
+    // ait exact değer ise her zaman en iyi bilgidir, o yüzden muaf.
+    const bool replace = e.bound() == Bound::NONE ||
+                         e.generation() != generation_ ||
+                         depth >= e.depth ||
+                         (e.key == key && bound == Bound::EXACT);
     if (!replace)
         return;
 
