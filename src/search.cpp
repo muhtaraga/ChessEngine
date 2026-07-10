@@ -413,7 +413,13 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
 
     // Futility ailesi için statik eval: çekteyken anlamsız (eval gürültülü, kaçış
     // zorunlu), yalnız çekte değilken hesaplanır. RFP + futility pruning paylaşır.
-    const int static_eval = in_check ? 0 : evaluate(b);
+    //
+    // TT'de bu pozisyonun ham eval'i varsa evaluate() çağrılmaz. Davranış-koruyan:
+    // evaluate() saf bir fonksiyondur (yalnız Board okur), giriş de aynı anahtarla
+    // doğrulanmıştır -> okunan değer hesaplanacak değerin birebir aynısı. Yalnız hız.
+    const int static_eval = in_check                            ? 0
+                          : (tt_hit && tte.eval != kEvalNone)   ? tte.eval
+                          :                                       evaluate(b);
 
     // --- Razoring ---
     // Sığ düğümde static_eval, alpha'nın kRazorMargin[depth] kadar altındaysa bu
