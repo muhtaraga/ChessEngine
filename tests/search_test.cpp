@@ -226,6 +226,29 @@ TEST(Search, RazoringKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
+// --- Eval stack + improving ---
+
+// improving sinyali budama kapılarını (RFP/futility/LMP) ayarlar ama taktik
+// hamleyi (yakalama) budamamalı: bedava vezir hâlâ Rxe5 ile alınır.
+TEST(Search, ImprovingKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 6);
+    EXPECT_EQ(r.best, Move::make(E1, E5));  // yakalama budanmaz
+    EXPECT_GT(r.score, 400);
+}
+
+// improving kaplamaları mat aramasını bozmamalı: mat penceresinde budama kapıları
+// zaten devre dışı (!is_mate_score). Arka sıra matı korunur.
+TEST(Search, ImprovingKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 5);
+    EXPECT_EQ(r.best, Move::make(A1, A8));  // arka sıra matı hâlâ bulunur
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- Continuation history ---
 
 // Continuation history yalnızca quiet hamlelerin SIRALAMASINI etkiler; hiçbir
