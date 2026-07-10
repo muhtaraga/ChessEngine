@@ -8,6 +8,15 @@ Bu bir tek seferlik kod üretimi değil, aylar sürecek iteratif bir proje. Sana
 edecek prensipler ve yol haritası aşağıda. Her oturumda bu bağlamı hatırla, ilerlemeyi
 bu fazlara göre değerlendir.
 
+**FORK (2026-07-10, `9d42bef`):** Bu repo artık **klasik taban**. NNUE işi ayrı bir
+repoda yürüyor: `../ChessEngineNNUE` (github.com/muhtaraga/ChessEngineNNUE), bu reponun
+git clone'u. İkisi de aktif. Buradaki Faz 3 (NNUE) maddeleri **orada** hayata geçiyor;
+burada kalan iş Faz 2C-hız (pin-aware movegen) + Faz 2D (Lazy SMP). SPRT'den geçen
+search/movegen commit'leri NNUE reposuna `git fetch classical && git cherry-pick <sha>`
+ile taşınır. `tools/sprt/*` yalnız BURADA değiştirilir (iki kopyanın sürüklenmesi en
+sinsi risk). **Faz 2D, NNUE tarafında N4'ten (incremental accumulator) ÖNCE cherry-pick
+edilmeli** — N4 Board/Searcher'ı derinden değiştirip merge'i zorlaştıracak.
+
 ### Genel çalışma prensipleri
 
 1. **Doğruluk her şeyden önce gelir.** Move generation'da tek bir bug tüm search'ü
