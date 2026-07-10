@@ -195,7 +195,8 @@ tek sıradan iki taş kaldırır -> pin makinesine görünmez, ayrı occupancy t
   - **arama** Kiwipete d12 nps: 1.053M -> 1.662M -> 2.363M (+%125)
 
 - [x] **Aşama 2 = Faz 2C-devam Blok 1/1 (DAVRANIŞ-KORUYAN; C1 `07a909a`, C2 `652d4b9`,
-      C3 `d07e7f2`)**. SPRT (Elo ölçümü) SIRADA. Ayrıntı: aşağıda Faz 2C-devam Blok 1.
+      C3 `d07e7f2`). SPRT +39.7 ± 15.6 Elo, LLR 2.95 TAM KABUL (1099 oyun, W-D-L
+      380-464-255, LOS %100). YENİ BASELINE `d07e7f2`.** Ayrıntı: aşağıda Blok 1.
 
       **Yol haritası varsayımı ÇÜRÜTÜLDÜ.** Burada "üretim sırası değişir -> exact
       DEĞİL, kapı yalnız SPRT" yazıyordu; bu bir varsayımdı (Stockfish ayrı pinli/
@@ -236,10 +237,11 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
 
 *Blok 1 — Yapısal + hız (sıra zorunlu):*
 
-- [x] **1. Pin-aware Aşama 2 paketi (KOD TAMAM, DAVRANIŞ-KORUYAN; SPRT sırada).**
-      Üç commit, hepsi exact — kabul kapısı SPRT değil, **düğüm sayısı / bestmove /
-      skor / PV birebir eşitliği**. SPRT yalnız Elo'yu ÖLÇMEK için koşulacak
-      (base `127d4f0` vs new `d07e7f2`).
+- [x] **1. Pin-aware Aşama 2 paketi (TAMAM, DAVRANIŞ-KORUYAN). SPRT +39.7 ± 15.6 Elo,
+      LLR 2.95 TAM KABUL (1099 oyun, W-D-L 380-464-255, LOS %100). Base `127d4f0` vs
+      new `d07e7f2`. YENİ BASELINE `d07e7f2`.**
+      Üç commit, hepsi exact — kabul kapısı SPRT DEĞİLDİ, **düğüm sayısı / bestmove /
+      skor / PV birebir eşitliği**. SPRT yalnız Elo'yu ölçtü.
       - `07a909a` **C1 — doğrudan pin-aware üretim**: `generate_legal`/`generate_noisy`
         tek geçişli oldu; `generate_pseudo`'nun 256-elemanlı geçici `MoveList`'i +
         hamle başına `is_legal` süzme geçişi kalktı. Hedef maskeleri (check_mask,
@@ -292,9 +294,14 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
       - **arama** Kiwipete d12 nps: 2.384M -> 2.714M (**+%13.8**)
 
       Not: movegen 1.75× hızlandı ama arama yalnız ~%15 — çünkü aramada movegen
-      artık toplam sürenin küçük bir dilimi (eval + do_move + TT baskın). Döviz
-      kuruyla (`log2(1+X) × 195`) mertebe tahmini **+35..45 Elo**; mütevazı etki ->
-      SPRT çok oyun isteyebilir (LMP/razoring deseni).
+      artık toplam sürenin küçük bir dilimi (eval + do_move + TT baskın).
+
+      **DÖVİZ KURU İKİNCİ KEZ DOĞRULANDI.** `log2(1+X) × 195` ile önceden **+35..45
+      Elo** tahmin edilmişti (%17.4 / %13.8 nps); gerçekleşen **+39.7 ± 15.6** —
+      bandın tam ortası. Aşama 1'de de tahmin (+100-200) tutmuştu (+126.8). Kur artık
+      kalibre bir araç: bir nps optimizasyonunun Elo'sunu KODU YAZMADAN, yalnız
+      benchmark'tan kestirebiliyoruz. Mütevazı etki -> çok oyun istedi (1099; LMP
+      +34.5 / 1413 oyun deseni).
 - [ ] **2. TT yenileme paketi**: TTEntry'ye static_eval alanı + qsearch TT
       probe/store (şu an quiescence TT'ye HİÇ dokunmuyor — qsearch düğümlerin
       yarıdan fazlası) + TT skorunu static_eval tahminini iyileştirmede kullanma.
@@ -403,11 +410,10 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-10): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
-(Aşama 1/1b) bitti. FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2) KOD OLARAK TAMAM —
-üç exact commit (`07a909a`, `652d4b9`, `d07e7f2`), düğüm eşitliğiyle doğrulandı;
-**SPRT (Elo ölçümü) SIRADA** (base `127d4f0` vs new `d07e7f2`). Sonra Blok 1/2 =
-TT yenileme paketi. FAZ 2D tüm bloklar bitince.** Baseline `127d4f0`
-(pin-aware legallik + gürültülü üreteç, SPRT +126.8 Elo). Proje fork'landı: NNUE işi
+(Aşama 1/1b/2) bitti. FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2) TAMAM — üç exact
+commit (`07a909a`, `652d4b9`, `d07e7f2`), SPRT +39.7 ± 15.6 Elo TAM KABUL.
+SIRADAKİ: Blok 1/2 = TT yenileme paketi. FAZ 2D tüm bloklar bitince.**
+Yeni baseline `d07e7f2`. Proje fork'landı: NNUE işi
 `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick edilecek.
 Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 106
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
@@ -419,10 +425,10 @@ tablo kalıcılığı paketi SPRT +31.6 ± 13.8 Elo, LLR 2.96 tam kabul**, ardı
 **history-tabanlı LMR + ölçek çarpanı SPRT +13.6 ± 8.5, LLR 2.95 tam kabul (3928 oyun)**.
 **FAZ 2C-ek KAPANDI. Yeni baseline `9bdcef4`.** Countermove (regresyon) denendi, geri
 alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) Faz 2C-devam Blok 1/1
-(Aşama 2 movegen) KOD TAMAM, SPRT sırada; sonra Blok 1/2 TT yenileme -> Blok 1/3
-improving -> Blok 2 arama özellikleri [singular, SEE paketi, capture history, IIR,
-history budaması, null move güçlendirme] -> Blok 3 zaman yönetimi + küçükler ->
-Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
+(Aşama 2 movegen) TAMAM, SPRT +39.7 -> yeni baseline `d07e7f2`; sıradaki Blok 1/2
+TT yenileme -> Blok 1/3 improving -> Blok 2 arama özellikleri [singular, SEE paketi,
+capture history, IIR, history budaması, null move güçlendirme] -> Blok 3 zaman
+yönetimi + küçükler -> Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
 NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
 (klasik + NNUE, ikisi de aktif; bkz. memory `iki-taban-karari`). Ayrıntılı adım-adım
 kayıt ve en güncel özet aşağıdaki bölümlerde + memory `proje-durumu`.
@@ -908,9 +914,9 @@ extension (Adım 8) denendi, SPRT NÖTR -> rafa kaldırıldı. Move ordering: hi
 malus SPRT +22.2 Elo KABUL; **continuation history + tablo kalıcılığı paketi SPRT
 +31.6 Elo TAM KABUL**; **history-tabanlı LMR + ölçek çarpanı SPRT +13.6 Elo TAM KABUL
 (yeni baseline 9bdcef4) -> FAZ 2C-ek KAPANDI**; countermove denendi, geri alındı.
-SIRADAKİ: Faz 2C-devam (tek-thread güçlendirme; Blok 1/1 Aşama 2 movegen KOD TAMAM,
-SPRT sırada -> Blok 1/2 TT yenileme -> Blok 1/3 improving) -> sonra Faz 2D (Lazy SMP,
-tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
+SIRADAKİ: Faz 2C-devam (tek-thread güçlendirme; Blok 1/1 Aşama 2 movegen TAMAM,
+SPRT +39.7 -> baseline `d07e7f2`; sıradaki Blok 1/2 TT yenileme -> Blok 1/3 improving)
+-> sonra Faz 2D (Lazy SMP, tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
 (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
