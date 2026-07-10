@@ -686,8 +686,11 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
 // hamleleri (yakalamalar + promosyonlar) arar; pozisyon sessizleşince statik eval
 // döner. Böylece derinlik sınırının tam ortasındaki taş alışverişleri yanlış
 // değerlendirilmez. Çekteyken stand-pat yapılmaz ve tüm legal kaçışlar aranır
-// (mat/horizon doğruluğu). İyileştirmeler (SEE ile kayıplı yakalama elemesi,
-// delta pruning) sonraya bırakıldı.
+// (mat/horizon doğruluğu). İyileştirme (delta pruning) sonraya bırakıldı.
+//
+// TT: qsearch girişleri depth 0 ile saklanır. negamax `tte.depth >= depth` (depth>=1)
+// ister, yani bir qsearch girişi negamax'ı ASLA kesemez — yalnız hamle ipucu ve ham
+// eval verir. Bu, qsearch TT'sinin güvenlik ağıdır.
 int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
     if ((nodes & 4095) == 0) {
         if (stop && stop->load(std::memory_order_relaxed))
@@ -703,27 +706,43 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
     if (ply >= MAX_PLY - 1)
         return evaluate(b);
 
+    // --- TT sondası ---
+    // depth >= 0 herhangi bir girişi kabul eder; derin bir negamax girişi qsearch'ten
+    // daha bilgilidir, sınır anlamı pencereden bağımsızdır -> kesme daha da sağlam.
+    TTEntry tte;
+    const bool tt_hit = TT.probe(b.key, tte);
+    if (tt_hit && tte.depth >= 0) {
+        const int s = score_from_tt(tte.score, ply);
+        if (tte.bound() == Bound::EXACT)                return s;
+        if (tte.bound() == Bound::LOWER && s >= beta)   return s;
+        if (tte.bound() == Bound::UPPER && s <= alpha)  return s;
+    }
+
     const bool in_check =
         is_square_attacked(b, b.king_square(b.side_to_move), ~b.side_to_move);
 
     MoveList ml;
     int      best;
+    int      raw_eval = kEvalNone;  // çekteyken statik eval yok
 
     if (in_check) {
         // Çekteyiz: stand-pat yasak, tüm kaçışları aramalıyız. Kaçış yoksa mat.
         // Kaçışlar gürültülü olmak zorunda değil -> tam legal üretim şart.
         generate_legal(b, ml);
         if (ml.size() == 0)
-            return -MATE + ply;
+            return -MATE + ply;  // mat: saklanmaz (aşağıdaki mat filtresiyle tutarlı)
         best = -INF;
     } else {
         // Stand-pat: sıradaki taraf hiçbir şey almadan mevcut skoru "cebe atabilir"
         // (sessiz pozisyonda eval alt sınır kabul edilir). Beta'yı aşıyorsa kes.
         // Hamle üretiminden ÖNCE: stand-pat listeye bakmaz, beta kesmesinde üretilen
-        // liste tamamen çöp olurdu. (Davranış aynı, yalnız hız.)
-        int stand_pat = evaluate(b);
-        if (stand_pat >= beta)
+        // liste tamamen çöp olurdu.
+        raw_eval = (tt_hit && tte.eval != kEvalNone) ? tte.eval : evaluate(b);
+        int stand_pat = raw_eval;
+        if (stand_pat >= beta) {
+            TT.store(b.key, 0, score_to_tt(stand_pat, ply), Bound::LOWER, Move(), raw_eval);
             return stand_pat;
+        }
         if (stand_pat > alpha)
             alpha = stand_pat;
         best = stand_pat;
@@ -745,7 +764,9 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
             || (is_capture(b, m) && see(b, m) >= 0))
             todo.add(m);
 
-    // MVV-LVA (+ promosyon primi) ile skorla.
+    // MVV-LVA (+ promosyon primi) ile skorla. TT hamlesi en öne (listede varsa;
+    // TT hamlesi quiet ya da SEE ile elenmişse hiç eşleşmez, zararsız).
+    const Move tt_move = tt_hit ? tte.move : Move();
     int scores[256];
     for (int i = 0; i < todo.count; ++i) {
         Move m = todo.moves[i];
@@ -756,8 +777,12 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
         int s = static_cast<int>(victim) * 16 - static_cast<int>(aggressor);
         if (m.type() == PROMOTION)
             s += 1000 + static_cast<int>(m.promotion_type());
+        if (m == tt_move)
+            s += 100000;
         scores[i] = s;
     }
+
+    Move best_move = Move();
 
     for (int i = 0; i < todo.count; ++i) {
         // Lazy selection sort: kalanların en yüksek skorlusunu öne getir.
@@ -775,14 +800,26 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
         int score = -quiescence(next, -beta, -alpha, ply + 1);
 
         if (aborted)
-            return best;
+            return best;  // yarım sonuç: TT'ye yazma
 
-        if (score > best)
-            best = score;
+        if (score > best) {
+            best      = score;
+            best_move = todo.moves[i];
+        }
         if (best > alpha)
             alpha = best;
         if (alpha >= beta)
             break;  // fail-high
+    }
+
+    // --- Sonucu TT'ye sakla (depth 0) ---
+    // EXACT saklanmaz: PV-düğüm bayrağımız yok, LOWER/UPPER her pencerede güvenli
+    // (fail-high -> gerçek >= best; aksi -> best tüm gürültülü hamlelerin maksimumu,
+    // gerçek <= best). Mat skorları saklanmaz: ply normalizasyonunun qsearch'te
+    // aynalanması bir hata sınıfı açar, kazanç küçük.
+    if (!is_mate_score(best)) {
+        const Bound bound = (best >= beta) ? Bound::LOWER : Bound::UPPER;
+        TT.store(b.key, 0, score_to_tt(best, ply), bound, best_move, raw_eval);
     }
 
     return best;

@@ -190,6 +190,38 @@ TEST(TT, ReducesNodesOnResearch) {
     EXPECT_LT(second.nodes, first.nodes);
 }
 
+// --- qsearch TT taktiği bozmamalı: dolu TT (qsearch girişleri dahil) ile de
+//     bedava vezir alınır. İkinci arama qsearch sondalarını gerçekten kullanır. ---
+TEST(TT, QsearchTTKeepsWinningCapture) {
+    const char* hanging_queen = "4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1";
+
+    TT.clear();
+    SearchResult a = search_fen(hanging_queen, 4);
+    SearchResult b = search_fen(hanging_queen, 4);  // TT dolu: qsearch girişleri de var
+
+    EXPECT_EQ(a.best, Move::make(E1, E5));
+    EXPECT_EQ(b.best, Move::make(E1, E5));
+    EXPECT_EQ(a.score, b.score);
+}
+
+// --- qsearch girişleri (depth 0) negamax'ı kesmemeli: taktik pozisyonda sonuç,
+//     TT durumundan bağımsız aynı kalmalı (qsearch düğümleri baskın FEN). ---
+TEST(TT, QsearchTTResultConsistent) {
+    const char* tactical =
+        "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1";
+
+    TT.clear();
+    SearchResult a = search_fen(tactical, 6);
+    SearchResult b = search_fen(tactical, 6);  // TT dolu
+    TT.clear();
+    SearchResult c = search_fen(tactical, 6);  // yeniden temiz
+
+    EXPECT_EQ(a.best, b.best);
+    EXPECT_EQ(a.score, b.score);
+    EXPECT_EQ(a.best, c.best);
+    EXPECT_EQ(a.score, c.score);
+}
+
 // --- Mat skoru TT üzerinden de korunur (ply düzeltmesi doğru) ---
 TEST(TT, MateScorePreservedThroughTT) {
     TT.clear();
