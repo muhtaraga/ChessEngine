@@ -250,6 +250,30 @@ TEST(Search, ContHistKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
+// --- History-tabanlı LMR ---
+
+// Birleşik history sinyali (main + continuation) indirimi ayarlar: kötü geçmişli
+// quiet daha çok indirilir. Aşırı indirim kazanan taktiği kaybettirmemeli —
+// yakalamalar zaten LMR görmez, ayrıca re-search kurtarır.
+TEST(Search, HistoryLmrKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 8);
+    EXPECT_EQ(r.best, Move::make(E1, E5));
+    EXPECT_GT(r.score, 400);
+}
+
+// History-LMR mat aramasını bozmamalı: mat hamlesi çek verdiğinden LMR gate'ine
+// hiç girmez. Arka sıra matı derin aramada korunur (over-reduction regresyon guard'ı).
+TEST(Search, HistoryLmrKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 7);
+    EXPECT_EQ(r.best, Move::make(A1, A8));
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // İki kale + şah ile bare king'e karşı zorunlu mat (baştan sona çek dizisi) makul
 // derinlikte bulunmalı — genel mat-arama regresyon güvencesi.
 TEST(Search, FindsTwoRookMate) {

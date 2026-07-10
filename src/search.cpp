@@ -56,6 +56,13 @@ constexpr int kScoreKiller1  =   800'000;  // 1. killer (bu ply'de kesme yapan q
 constexpr int kScoreKiller2  =   790'000;  // 2. killer
 constexpr int kHistoryMax    =   700'000;  // history taban tavanı (killer'ın altında)
 
+// History ödül/ceza ölçek çarpanı. Ölçüldü: ölçeksiz (bonus = depth²) tipik |history|
+// değerleri 3-100 bandındaydı, tavanın (700k) ~5000 katı altında. Bu iki soruna yol
+// açıyordu: age()'deki h/=2 tamsayı bölmesi sinyali siliyordu, ve history-tabanlı
+// LMR'nin böleni granülarite bulamıyordu. Çarpan sıralamayı değiştirmez (göreli sıra
+// aynı), tavana da çarpmaz (ölçekli maks ~10k << 700k).
+constexpr int kHistoryBonusScale = 64;
+
 // Continuation history indekslemesi: (renk, tür) çifti tek bir 0..11 taş indeksi.
 // kNoPiece = "bu ply'de gerçek hamle yok" (kök öncesi ya da null move).
 constexpr int kNoPiece = 12;
@@ -260,7 +267,12 @@ void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth,
         tb.killers[ply][1] = tb.killers[ply][0];
         tb.killers[ply][0] = m;
     }
-    const int   bonus = depth * depth;  // derin kesmeler daha değerli
+    // Derin kesmeler daha değerli. Ölçek çarpanı (kHistoryBonusScale) sıralamayı
+    // DEĞİŞTİRMEZ (göreli sıra korunur, doğrulandı: taze aramada düğüm sayısı birebir
+    // aynı); iki iş için var: (a) history-LMR'nin bölenine granülarite kazandırmak,
+    // (b) age()'deki h/=2'nin küçük tamsayıları yok etmesini önlemek — ölçeksiz
+    // tipik değerler 3-100 arasıydı, yarılama sinyali söndürmüyor siliyordu.
+    const int   bonus = depth * depth * kHistoryBonusScale;
     const Color us    = b.side_to_move;
 
     // Continuation history bağlamı: bu düğüme götüren (bir önceki) hamle.
@@ -301,6 +313,19 @@ int lmr_reduction(int depth, int move_num) {
     }();
     return table[std::min(depth, 63)][std::min(move_num, 63)];
 }
+
+// --- History-tabanlı LMR indirim ayarı ---
+// Birleşik history sinyali (main + continuation) taban indirimi ayarlar: iyi geçmişi
+// olan quiet daha az, kötü olan daha çok indirilir. Kelepçe (±kLmrStatMax ply) aşırı
+// indirimi yapısal olarak sınırlar — yalnız main history ile denenen önceki form
+// (4520bc1) bu frenden yoksundu ve malus ile çifte sayım yapıp over-reduce ediyordu.
+//
+// Bölen ÖLÇÜLEREK seçildi (kalıcı tablolarla, gerçek oyun dizisinde LMR'ye giren
+// quiet'lerin |stat| dağılımı): ortalama ~224, maks 5-10k, %35-79'u tam sıfır.
+// 512 -> |stat|>=512 olanlar (~%7-11) 1 ply, >=1024 olanlar 2 ply oynatır; sinyali
+// olmayan çoğunluk hiç etkilenmez. Bölen/kelepçe SPRT ile ayarlanabilir.
+constexpr int kLmrStatDiv = 512;
+constexpr int kLmrStatMax = 2;
 
 // --- Futility ailesi parametreleri (santipiyon) ---
 // Reverse futility (static null move): sığ düğümde static_eval, beta'yı
@@ -553,8 +578,13 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             if (depth >= 3 && i >= 2 && quiet && !in_check && !gives_check &&
                 m != tb.killers[ply][0] && m != tb.killers[ply][1]) {
                 reduction = lmr_reduction(depth, i);
+                // Sıra numarasının verdiği taban indirimi, hamlenin birleşik history
+                // sinyaliyle ayarla. Ham (kırpılmamış) toplam kullanılır: score_move'daki
+                // bant kırpması sıralama içindi, burada sinyalin tam genliği lazım.
+                const int stat = tb.history[us][m.from()][m.to()] + cont_score(b, m, ply);
+                reduction -= std::clamp(stat / kLmrStatDiv, -kLmrStatMax, kLmrStatMax);
                 if (reduction > depth - 2) reduction = depth - 2;  // reduced >= 1 ply
-                if (reduction < 0)         reduction = 0;
+                if (reduction < 0)         reduction = 0;          // negatif indirim yok
             }
 
             // Azaltılmış derinlikte null-window (scout) arama.
