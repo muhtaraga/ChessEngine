@@ -666,30 +666,37 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
         is_square_attacked(b, b.king_square(b.side_to_move), ~b.side_to_move);
 
     MoveList ml;
-    generate_legal(b, ml);
+    int      best;
 
-    int best;
     if (in_check) {
         // Çekteyiz: stand-pat yasak, tüm kaçışları aramalıyız. Kaçış yoksa mat.
+        // Kaçışlar gürültülü olmak zorunda değil -> tam legal üretim şart.
+        generate_legal(b, ml);
         if (ml.size() == 0)
             return -MATE + ply;
         best = -INF;
     } else {
         // Stand-pat: sıradaki taraf hiçbir şey almadan mevcut skoru "cebe atabilir"
         // (sessiz pozisyonda eval alt sınır kabul edilir). Beta'yı aşıyorsa kes.
+        // Hamle üretiminden ÖNCE: stand-pat listeye bakmaz, beta kesmesinde üretilen
+        // liste tamamen çöp olurdu. (Davranış aynı, yalnız hız.)
         int stand_pat = evaluate(b);
         if (stand_pat >= beta)
             return stand_pat;
         if (stand_pat > alpha)
             alpha = stand_pat;
         best = stand_pat;
+
+        // Yalnız gürültülü hamleler üretilir (yakalama + tüm promosyonlar).
+        // generate_legal ile aynı göreli sırada gelirler -> sıralama birebir korunur.
+        generate_noisy(b, ml);
     }
 
-    // Aranacak hamleler: çekteyken hepsi; değilse yakalama + promosyon. SEE
-    // budaması: çekte değilken, promosyon olmayan yakalamalardan yalnızca kayıplı
-    // OLMAYANLAR (see >= 0) aranır — statik olarak materyal kaybettiren yakalamalar
-    // (ör. savunmalı taşa kaleyle vurma) qsearch'ü şişirmeden elenir. Promosyonlar
-    // SEE'den muaf (daima aranır; nadir + genelde iyi, promosyon SEE ertelendi).
+    // Aranacak hamleler: çekteyken hepsi; değilse yakalama + promosyon (ml zaten
+    // yalnız onları içeriyor). SEE budaması: çekte değilken, promosyon olmayan
+    // yakalamalardan yalnızca kayıplı OLMAYANLAR (see >= 0) aranır — statik olarak
+    // materyal kaybettiren yakalamalar (ör. savunmalı taşa kaleyle vurma) qsearch'ü
+    // şişirmeden elenir. Promosyonlar SEE'den muaf (daima aranır).
     MoveList todo;
     for (Move m : ml)
         if (in_check

@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include "engine/bitboard.hpp"
 #include "engine/board.hpp"
 #include "engine/movegen.hpp"
 #include "engine/perft.hpp"
@@ -97,6 +98,13 @@ TEST(Perft, Position6) {
 // ray-tracing'e karşı doğrulama deseninin aynısı.)
 namespace {
 
+// Bir hamle qsearch'ün "gürültülü" tanımına giriyor mu? (yakalama — en passant
+// dahil — ya da promosyon; sessiz promosyon da dahil.)
+bool is_noisy(const Board& b, Move m) {
+    return m.type() == PROMOTION || m.type() == EN_PASSANT ||
+           test_bit(b.colors[~b.side_to_move], m.to());
+}
+
 void assert_generators_agree(Board& b, int depth) {
     MoveList fast, ref;
     generate_legal(b, fast);
@@ -106,6 +114,20 @@ void assert_generators_agree(Board& b, int depth) {
     for (int i = 0; i < fast.size(); ++i)
         ASSERT_EQ(fast[i].raw(), ref[i].raw())
             << "FEN: " << b.to_fen() << " hamle #" << i;
+
+    // generate_noisy, generate_legal'ın gürültülü alt kümesini AYNI SIRADA
+    // vermeli — qsearch'ün hamle sıralaması buna dayanıyor. (Çekteyken qsearch
+    // generate_legal kullanır, ama üreteç orada da doğru olmalı.)
+    MoveList noisy, expected;
+    generate_noisy(b, noisy);
+    for (Move m : fast)
+        if (is_noisy(b, m))
+            expected.add(m);
+
+    ASSERT_EQ(noisy.size(), expected.size()) << "noisy FEN: " << b.to_fen();
+    for (int i = 0; i < noisy.size(); ++i)
+        ASSERT_EQ(noisy[i].raw(), expected[i].raw())
+            << "noisy FEN: " << b.to_fen() << " hamle #" << i;
 
     if (depth <= 1)
         return;

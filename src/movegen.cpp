@@ -89,6 +89,39 @@ void generate_pawn_moves(const Board& b, MoveList& list, Color us) {
     }
 }
 
+// generate_pawn_moves'ın gürültülü (yakalama + promosyon) alt kümesi. Tarama
+// düzeni birebir aynı: tek itme -> (çift itme, asla gürültülü) -> vuruşlar -> ep.
+// Tek itme yalnızca promosyon sırasına varıyorsa gürültülüdür.
+void generate_pawn_noisy(const Board& b, MoveList& list, Color us) {
+    const Color    them  = ~us;
+    const Bitboard occ   = b.occupancy();
+    const Bitboard empty = ~occ;
+    const Bitboard enemy = b.colors[them];
+    Bitboard pawns       = b.pieces[PAWN] & b.colors[us];
+
+    const int push       = (us == WHITE) ? 8 : -8;
+    const int promo_rank = (us == WHITE) ? 7 : 0;
+
+    while (pawns) {
+        Square from = pop_lsb(pawns);
+
+        // Sessiz promosyon (yakalamasız 8. sıra itmesi) de gürültülü sayılır.
+        Square to1 = static_cast<Square>(static_cast<int>(from) + push);
+        if (test_bit(empty, to1) && rank_of(to1) == promo_rank)
+            add_pawn_move(list, from, to1, promo_rank, NORMAL);
+
+        Bitboard caps = pawn_attacks(us, from) & enemy;
+        while (caps) {
+            Square to = pop_lsb(caps);
+            add_pawn_move(list, from, to, promo_rank, NORMAL);
+        }
+
+        if (b.en_passant != SQ_NONE &&
+            test_bit(pawn_attacks(us, from), b.en_passant))
+            list.add(Move::make(from, b.en_passant, EN_PASSANT));
+    }
+}
+
 // step/slider taşlar için hedef bitboard'ından NORMAL hamleler ekler.
 void add_moves_from(MoveList& list, Square from, Bitboard targets) {
     while (targets) {
@@ -127,6 +160,45 @@ void generate_castling(const Board& b, MoveList& list, Color us) {
             !is_square_attacked(b, D8, them) && !is_square_attacked(b, C8, them))
             list.add(Move::make(E8, C8, CASTLING));
     }
+}
+
+// generate_pseudo'nun gürültülü alt kümesi. Hedef maskesi ~own yerine `enemy`;
+// taş tarama sırası (piyon, at, fil, kale, vezir, şah) ve her taş içindeki
+// pop_lsb düzeni birebir aynı. Rok asla yakalama değildir -> üretilmez.
+void generate_pseudo_noisy(const Board& b, MoveList& list) {
+    const Color    us    = b.side_to_move;
+    const Bitboard own   = b.colors[us];
+    const Bitboard occ   = b.occupancy();
+    const Bitboard enemy = b.colors[~us];
+
+    generate_pawn_noisy(b, list, us);
+
+    Bitboard knights = b.pieces[KNIGHT] & own;
+    while (knights) {
+        Square from = pop_lsb(knights);
+        add_moves_from(list, from, knight_attacks(from) & enemy);
+    }
+
+    Bitboard bishops = b.pieces[BISHOP] & own;
+    while (bishops) {
+        Square from = pop_lsb(bishops);
+        add_moves_from(list, from, bishop_attacks(from, occ) & enemy);
+    }
+
+    Bitboard rooks = b.pieces[ROOK] & own;
+    while (rooks) {
+        Square from = pop_lsb(rooks);
+        add_moves_from(list, from, rook_attacks(from, occ) & enemy);
+    }
+
+    Bitboard queens = b.pieces[QUEEN] & own;
+    while (queens) {
+        Square from = pop_lsb(queens);
+        add_moves_from(list, from, queen_attacks(from, occ) & enemy);
+    }
+
+    Square ksq = b.king_square(us);
+    add_moves_from(list, ksq, king_attacks(ksq) & enemy);
 }
 
 }  // namespace
@@ -306,6 +378,20 @@ void generate_legal(const Board& b, MoveList& list) {
 
     MoveList pseudo;
     generate_pseudo(b, pseudo);
+
+    const LegalityContext ctx = make_context(b, us);
+
+    for (Move m : pseudo) {
+        if (is_legal(b, m, us, ctx))
+            list.add(m);
+    }
+}
+
+void generate_noisy(const Board& b, MoveList& list) {
+    const Color us = b.side_to_move;
+
+    MoveList pseudo;
+    generate_pseudo_noisy(b, pseudo);
 
     const LegalityContext ctx = make_context(b, us);
 
