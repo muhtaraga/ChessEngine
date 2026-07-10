@@ -335,10 +335,6 @@ constexpr int kRfpMargin   = 80;
 // ulaşamıyorsa quiet hamleler aranmaz. İndeks = depth (0 zaten quiescence'a gider).
 constexpr int kFutilityMaxDepth  = 3;
 constexpr int kFutilityMargin[4] = {0, 150, 250, 400};
-// improving (pozisyon iyileşiyor) düğümlerde futility marjına eklenen bonus: iyileşen
-// dalda daha temkinli buda (quiet hamle sürprizi daha olası). İlk elle-seçim, SPRT/SPSA
-// ile ayarlanacak.
-constexpr int kFutilityImprovingBonus = 60;
 
 // --- Razoring parametreleri (santipiyon) ---
 // Sığ düğümde static_eval, alpha'yı kRazorMargin[depth] kadar aşağıdan bile
@@ -352,11 +348,14 @@ constexpr int kRazorMargin[4] = {0, 300, 500, 700};  // SPRT ile ayarlanabilir
 // hamleler statik eval'e bakılmaksızın atlanır. Eşik derinlikle kare-yasası
 // büyür (sığ derinlik = agresif budama). Bölen/max SPRT ile ayarlanabilir.
 constexpr int kLmpMaxDepth = 8;
-// improving değilken (pozisyon kötüleşiyor) eşik yarıya iner: umutsuz dalda quiet
-// hamleleri daha erken buda (Stockfish deseni).
+// improving değilken (pozisyon kötüleşiyor) eşik hafif iner: umutsuz dalda biraz
+// daha erken buda (Stockfish deseni). NOT: ilk sürüm base/2 idi; ölçüm LMP
+// budamalarının ~%71'inin yalnız bu yarılamadan geldiğini gösterdi (SPRT H0) —
+// SPRT'den geçmiş 3+d² eşiğini yarıya bölmek fazla agresifti. (3·base)/4 çok daha
+// dar bir bant: kaplamayı korur ama pertürbasyonu büyük ölçüde azaltır.
 inline int lmp_count(int depth, bool improving) {
     const int base = 3 + depth * depth;
-    return improving ? base : base / 2;
+    return improving ? base : (3 * base) / 4;
 }
 
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
@@ -554,7 +553,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     const bool can_futility =
         !in_check && ply > 0 && depth <= kFutilityMaxDepth &&
         !is_mate_score(alpha) &&
-        eval + kFutilityMargin[depth] + (improving ? kFutilityImprovingBonus : 0) <= alpha;
+        eval + kFutilityMargin[depth] <= alpha;
 
     // --- LMP (late move pruning) kapısı (node seviyesi) ---
     // Sığ, çekte-olmayan, mat-olmayan düğümde belli sayıdan sonraki quiet, çek
