@@ -11,7 +11,7 @@ bu fazlara göre değerlendir.
 **FORK (2026-07-10, `9d42bef`):** Bu repo artık **klasik taban**. NNUE işi ayrı bir
 repoda yürüyor: `../ChessEngineNNUE` (github.com/muhtaraga/ChessEngineNNUE), bu reponun
 git clone'u. İkisi de aktif. Buradaki Faz 3 (NNUE) maddeleri **orada** hayata geçiyor;
-burada kalan iş Faz 2C-hız (pin-aware movegen) + Faz 2D (Lazy SMP). SPRT'den geçen
+burada kalan iş Faz 2C-devam (tek-thread güçlendirme) + Faz 2D (Lazy SMP). SPRT'den geçen
 search/movegen commit'leri NNUE reposuna `git fetch classical && git cherry-pick <sha>`
 ile taşınır. `tools/sprt/*` yalnız BURADA değiştirilir (iki kopyanın sürüklenmesi en
 sinsi risk). **Faz 2D, NNUE tarafında N4'ten (incremental accumulator) ÖNCE cherry-pick
@@ -194,12 +194,16 @@ tek sıradan iki taş kaldırır -> pin makinesine görünmez, ayrı occupancy t
   - **arama** startpos d13 nps: 1.104M -> 1.624M -> 1.866M (+%69)
   - **arama** Kiwipete d12 nps: 1.053M -> 1.662M -> 2.363M (+%125)
 
-- [ ] **Aşama 2 (opsiyonel, cazibesi AZALDI)**: tam pin-aware üretim (hedef
-      maskeleriyle doğrudan legal üretim). Kopyalar Aşama 1'de zaten kalktı; geriye
-      kalan kazanç yalnız sessiz hamlelerin legallik testini büsbütün atlamak.
-      Üretim sırası değişir -> exact DEĞİL, ayrı commit + ayrı SPRT. Yan ürün: ucuz
-      `gives_check` (negamax'ta `Board next`'i budama kararlarından önce kurma
-      israfını kaldırır), SEE'ye pin bilgisi.
+- [ ] **Aşama 2 (TERFİ ETTİ -> Faz 2C-devam Blok 1/1)**: tam pin-aware üretim (hedef
+      maskeleriyle doğrudan legal üretim). Kopyalar Aşama 1'de zaten kalktı; kalan
+      kazanç sessiz hamlelerin legallik testini atlamak + ASIL DEĞER yan ürünlerde:
+      ucuz `gives_check` (check-squares; negamax'ta `Board next`'i budama
+      kararlarından ÖNCE kurma israfını kaldırır — budanan hamle bile kopya+do_move+
+      is_square_attacked ödüyor), SEE'ye pin bilgisi. Üretim sırası değişir ->
+      exact DEĞİL, ayrı commit + ayrı SPRT. Eskiden "cazibesi azaldı" yazıyordu;
+      2026-07-10 revizyonunda budama-öncesi kopya israfı + yapısal sıra (son büyük
+      movegen değişikliği 2D/N4 cherry-pick zincirinden önce kapanmalı) gerekçesiyle
+      öne çekildi. Ayrıntı: aşağıda Faz 2C-devam Blok 1.
 
 **Ölçüm önce (ucuz ve kesin):** `chess perft` saf bir movegen benchmark'ıdır (arama/eval
 yok). Aşama 1 yazılıp `perft 6` süresi karşılaştırılır -> hem doğruluk (referans
@@ -217,8 +221,100 @@ uzun TC'de daralır, ±41 hata payı var. Doğru okuma: "onlarca Elo mertebesi",
 NOT: Daha önce "nps mikro-optimizasyonları düşük öncelik" yazılmıştı — o çıkarım TERSTİ,
 düzeltildi. Bu iş HER İKİ TABANA da yarar (klasikte yapılır, NNUE'ya cherry-pick edilir).
 
+**Faz 2C-devam — Tek-thread güçlendirme (YENİ, 2026-07-10; Faz 2D bundan sonra)**
+
+Faz 2D'ye geçmeden önce tek thread'te kalan bütün değer toplanıyor. Kod keşfiyle
+(search/eval/tt/movegen satır satır tarandı) üç kaynak envanterlendi: ertelenmiş
+işler, motorda hiç olmayan standart teknikler, tuning fırsatları. Sıralama ilkesi:
+(1) yapısal zorunluluk önce — TT format değişikliği 2D'nin thread-safe TT'sinden
+ÖNCE bitmeli, Aşama 2 movegen değişikliği 2D + NNUE cherry-pick zincirinden önce
+kapanmalı, eval-stack sonraki kapıların ön koşulu; (2) sonra Elo beklentisi.
+Metodoloji aynı: her madde ayrı commit + ayrı SPRT; beklentiler mertebe tahmini,
+söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
+
+*Blok 1 — Yapısal + hız (sıra zorunlu):*
+
+- [ ] **1. Pin-aware Aşama 2 paketi**: tam pin-aware üretim (hedef maskeleri) +
+      check-squares ile ucuz `gives_check` + negamax'ta budama kararlarının
+      `Board next` kopyasından ÖNCE alınması (şu an hamle döngüsü budanan hamle
+      için bile kopya + do_move + is_square_attacked bedeli ödüyor — gives_check
+      ancak çocuk kurulunca hesaplanabiliyor). Üretim sırası değişir -> exact
+      DEĞİL, tek SPRT. Döviz kuru kanıtlı: %15-30 nps ~ onlarca Elo. Yapısal:
+      son büyük movegen değişikliği, 2D/N4'ten önce kapanmalı.
+- [ ] **2. TT yenileme paketi**: TTEntry'ye static_eval alanı + qsearch TT
+      probe/store (şu an quiescence TT'ye HİÇ dokunmuyor — qsearch düğümlerin
+      yarıdan fazlası) + TT skorunu static_eval tahminini iyileştirmede kullanma.
+      Beklenti +10-25. Yapısal: 2D'nin thread-safe TT'si (lockless XOR / atomik)
+      bu entry formatının üstüne kurulacak — format şimdi oturmalı.
+- [ ] **3. Eval stack + improving**: `stack[ply]`'ye static_eval alanı;
+      `improving = static_eval > 2 ply önceki static_eval`; RFP/futility/LMP
+      kapıları improving'e bağlanır (improving değilken marjlar sıkılır, LMP
+      eşiği düşürülür — Stockfish deseni). Beklenti +10-25.
+
+*Blok 2 — Arama özellikleri (Elo beklenti sırası):*
+
+- [ ] **4. Singular extension** (+ opsiyonel multicut): TT hamlesi azaltılmış
+      derinlikte, TT-skor-margin penceresinde diğer TÜM hamlelerden belirgin
+      iyiyse 1 ply uzat. Rafa kaldırılan check extension'ın "doğru" hali (yol
+      haritasının orijinal "en sona" notu); en büyük kalan arama kazancı adayı.
+      Blok 1'in TT işinden sonra doğal (TT hamlesi + depth güvenilirliği ister).
+      Beklenti +20-40.
+- [ ] **5. SEE paketi (main search)**: kayıplı yakalamalar (see<0) sıralamada
+      quiet'lerin altına ayrı banda + sığ derinlikte SEE budaması (yakalamaya
+      see < -margin×depth eşiği; quiet için see() genelleştirmesi check-extension
+      denemesinden kalan LATENT altyapı, zaten hazır). Beklenti +15-30.
+- [ ] **6. Capture history**: `capt_hist[taş][hedef][alınan tür]` — şu an history
+      yalnız quiet; MVV-LVA'yı öğrenen sinyalle güçlendirir (add_history/age
+      desenleri hazır). Beklenti +10-20.
+- [ ] **7. IIR (Internal Iterative Reduction)**: TT hamlesi olmayan yeterince
+      derin düğümde depth-1 ile ara (birkaç satır, ucuz). Beklenti +5-15.
+- [ ] **8. History-tabanlı quiet budaması**: sığ derinlikte stat'ı (main+cont)
+      çok kötü quiet'leri hiç arama — cont-hist artık oyun boyu kalıcı olduğundan
+      sinyal dolu (history-LMR bunun kanıtı). Beklenti +10-20.
+- [ ] **9. Null move güçlendirme**: `static_eval >= beta` kapısı + dinamik R
+      (`3 + depth/3 + min((eval-beta)/200, 3)` tarzı; şu an sabit 2/3) + yüksek
+      derinlikte verification search (yol haritasının orijinal zugzwang notu).
+      Beklenti +5-15.
+- [ ] **10. ProbCut** (opsiyonel): beta+margin etrafında sığ arama/qsearch
+      fail-high verirse buda. 4-9 sonrası hâlâ değer veriyorsa denenir. +5-15.
+
+*Blok 3 — Zaman yönetimi + küçükler:*
+
+- [ ] **11. Adaptif zaman yönetimi**: best-move stability — kök hamle derinlikler
+      boyunca sabitse soft limiti kıs, değişiyorsa/fail-low'da uzat. Şu an
+      soft/hard tamamen statik (t/30+inc/2, hard=3×soft). Beklenti +5-20
+      (hızlı TC'de belirgin; SPRT TC'miz hızlı -> ölçülebilir).
+- [ ] **12. Tempo bonusu**: evaluate()'e side-to-move sabiti (~+10-20cp, tek
+      satır) — şu an yok. Ucuz SPRT; bloklar arasına hızlı kazanç olarak
+      alınabilir. Beklenti +5-10.
+- [ ] **13. Fırsat işleri** (büyük işler arasında tek tek): mate distance pruning
+      (~+2, birkaç satır), delta pruning (qsearch, SEE ile — Adım 3'ten beri
+      ertelenen), countermove'un history-bonusu olarak yeniden denenmesi (taban
+      değişti), seldepth raporlama (kozmetik borç, Faz 2B maddesi), kök hamle
+      sıralamasında önceki iterasyon düğüm sayıları.
+
+*Blok 4 — Texel tuning (kullanıcı kararı 2026-07-10: dahil, en sonda):*
+
+- [ ] **14. Veri pipeline'ı**: self-play (cutechess altyapısı + `chess fen`) ->
+      quiet pozisyon süzme -> (FEN, oyun sonucu) veri seti. NNUE veri toplama
+      pipeline'ının ön ürünü — bir kez kurulur, İKİ tabana hizmet eder.
+- [ ] **15. Texel fit**: logistic regression ile eval skalerleri (material, PST,
+      pawn structure, mobility, king safety, bishop pair, rook file — ~65 anlamlı
+      skaler + PST girdileri, tümü elle seçilmiş `constexpr`; SPRT'ler yalnız
+      "terim var olmalı mı?"yı test etti). Toplu sonuç tek SPRT ile doğrulanır.
+      Beklenti +50-100 ("Eval tavan mı?" bölümünün kendi tahmini).
+- [ ] **16. (opsiyonel) Arama sabitleri mini-SPSA/elle**: aspiration delta (25),
+      RFP 80×d / d≤6, futility {150,250,400} / d≤3, LMP 3+d² / d≤8, razor
+      {300,500,700} / d≤3, LMR taban 0.75 / bölen 2.25 / kLmrStatDiv 512, history
+      bonus depth²/scale 64 — hiçbiri SPRT ile ayarlanmadı, hepsi ilk elle seçim.
+
+**Faz 2D tetikleyicisi: tüm bloklar (1-4) kapanınca** (kullanıcı kararı,
+2026-07-10). Fork kısıtı geçerli kalır: 2D commit'leri NNUE reposuna N4'ten önce
+cherry-pick edilmeli.
+
 **Faz 2D — Multi-threading (Lazy SMP)**
 
+**Tetikleyici: Faz 2C-devam'ın tüm blokları kapanınca (2026-07-10 kararı).**
 Modern motorların standart, en sade etkili paralel yaklaşımı: N thread aynı kök
 pozisyonu, paylaşılan tek bir TT üzerinden arar; TT ve küçük sıralama farklarıyla
 doğal olarak ıraksarlar, ana thread raporlar. Gereksinimler:
@@ -253,7 +349,8 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-10): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
-(Aşama 1/1b) bitti. SIRADAKİ: FAZ 2D (Lazy SMP).** Yeni baseline `127d4f0`
+(Aşama 1/1b) bitti. SIRADAKİ: FAZ 2C-devam (tek-thread güçlendirme), Blok 1/1 =
+pin-aware Aşama 2 paketi; FAZ 2D tüm bloklar bitince.** Yeni baseline `127d4f0`
 (pin-aware legallik + gürültülü üreteç, SPRT +126.8 Elo). Proje fork'landı: NNUE işi
 `../ChessEngineNNUE`'da; bu iki commit oraya cherry-pick edilecek.
 Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 105
@@ -265,8 +362,11 @@ güçlendirme: **history malus SPRT +22.2 Elo kabul**, ardından **continuation 
 tablo kalıcılığı paketi SPRT +31.6 ± 13.8 Elo, LLR 2.96 tam kabul**, ardından
 **history-tabanlı LMR + ölçek çarpanı SPRT +13.6 ± 8.5, LLR 2.95 tam kabul (3928 oyun)**.
 **FAZ 2C-ek KAPANDI. Yeni baseline `9bdcef4`.** Countermove (regresyon) denendi, geri
-alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) pin-aware legal üretim
-[Faz 2C-hız, yüksek beklenen değer], (2) Faz 2D Lazy SMP.** Proje iki repoya ayrılıyor
+alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) Faz 2C-devam Blok 1-4
+(Aşama 2 movegen -> TT yenileme -> improving -> arama özellikleri [singular, SEE
+paketi, capture history, IIR, history budaması, null move güçlendirme] -> zaman
+yönetimi + küçükler -> Texel tuning), (2) Faz 2D Lazy SMP (tüm bloklar bitince,
+NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
 (klasik + NNUE, ikisi de aktif; bkz. memory `iki-taban-karari`). Ayrıntılı adım-adım
 kayıt ve en güncel özet aşağıdaki bölümlerde + memory `proje-durumu`.
 
@@ -279,7 +379,8 @@ daha büyük olması normal. Sonuç: arama tarafı DOYMAMIŞ, oradaki yatırım 
 karşılığını veriyor. Eval ağırlıklarının hiç tune edilmemiş olması (her katsayı elle
 seçilmiş `constexpr`; SPRT'ler yalnız "terim var olmalı mı?" sorusunu cevapladı,
 "katsayısı doğru mu?" sorusunu değil) gerçek bir eksik ve ileride +50-100 Elo'luk
-kaldıraç, ama ACİL DEĞİL. Faz 3 (NNUE) eval'i zaten değiştirecek.
+kaldıraç. GÜNCELLEME (2026-07-10): artık PLANDA — Faz 2C-devam Blok 4 (Texel
+tuning); veri pipeline'ı NNUE veri toplamaya da hizmet edecek.
 
 Faz 1 (tamam):
 - Adım 1: CMake + C++20 iskeleti, bitboard `Board` (LERF, çift temsil), UTF-8
@@ -750,8 +851,8 @@ extension (Adım 8) denendi, SPRT NÖTR -> rafa kaldırıldı. Move ordering: hi
 malus SPRT +22.2 Elo KABUL; **continuation history + tablo kalıcılığı paketi SPRT
 +31.6 Elo TAM KABUL**; **history-tabanlı LMR + ölçek çarpanı SPRT +13.6 Elo TAM KABUL
 (yeni baseline 9bdcef4) -> FAZ 2C-ek KAPANDI**; countermove denendi, geri alındı.
-SIRADAKİ: pin-aware legal üretim (Faz 2C-hız) -> sonra Faz 2D (Lazy
-SMP).** Tapered eval (+42.8), pawn structure
+SIRADAKİ: Faz 2C-devam (tek-thread güçlendirme; Blok 1: Aşama 2 movegen -> TT
+yenileme -> improving) -> sonra Faz 2D (Lazy SMP, tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
 (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
