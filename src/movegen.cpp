@@ -48,6 +48,14 @@ void add_pawn_move(MoveList& list, Square from, Square to, int promo_rank,
     }
 }
 
+// step/slider taşlar için hedef bitboard'ından NORMAL hamleler ekler.
+void add_moves_from(MoveList& list, Square from, Bitboard targets) {
+    while (targets) {
+        Square to = pop_lsb(targets);
+        list.add(Move::make(from, to, NORMAL));
+    }
+}
+
 void generate_pawn_moves(const Board& b, MoveList& list, Color us) {
     const Color    them   = ~us;
     const Bitboard occ    = b.occupancy();
@@ -89,55 +97,12 @@ void generate_pawn_moves(const Board& b, MoveList& list, Color us) {
     }
 }
 
-// generate_pawn_moves'ın gürültülü (yakalama + promosyon) alt kümesi. Tarama
-// düzeni birebir aynı: tek itme -> (çift itme, asla gürültülü) -> vuruşlar -> ep.
-// Tek itme yalnızca promosyon sırasına varıyorsa gürültülüdür.
-void generate_pawn_noisy(const Board& b, MoveList& list, Color us) {
-    const Color    them  = ~us;
-    const Bitboard occ   = b.occupancy();
-    const Bitboard empty = ~occ;
-    const Bitboard enemy = b.colors[them];
-    Bitboard pawns       = b.pieces[PAWN] & b.colors[us];
-
-    const int push       = (us == WHITE) ? 8 : -8;
-    const int promo_rank = (us == WHITE) ? 7 : 0;
-
-    while (pawns) {
-        Square from = pop_lsb(pawns);
-
-        // Sessiz promosyon (yakalamasız 8. sıra itmesi) de gürültülü sayılır.
-        Square to1 = static_cast<Square>(static_cast<int>(from) + push);
-        if (test_bit(empty, to1) && rank_of(to1) == promo_rank)
-            add_pawn_move(list, from, to1, promo_rank, NORMAL);
-
-        Bitboard caps = pawn_attacks(us, from) & enemy;
-        while (caps) {
-            Square to = pop_lsb(caps);
-            add_pawn_move(list, from, to, promo_rank, NORMAL);
-        }
-
-        if (b.en_passant != SQ_NONE &&
-            test_bit(pawn_attacks(us, from), b.en_passant))
-            list.add(Move::make(from, b.en_passant, EN_PASSANT));
-    }
-}
-
-// step/slider taşlar için hedef bitboard'ından NORMAL hamleler ekler.
-void add_moves_from(MoveList& list, Square from, Bitboard targets) {
-    while (targets) {
-        Square to = pop_lsb(targets);
-        list.add(Move::make(from, to, NORMAL));
-    }
-}
-
-void generate_castling(const Board& b, MoveList& list, Color us) {
+// Rok üretimi, "şah çekte değil" ön koşulu ÇAĞIRANDA sağlanmış olarak. Legal
+// üretici bunu ctx.checkers'tan bedavaya bilir; pseudo üretici aşağıdaki
+// sarmalayıcıyla test eder.
+void generate_castling_unchecked(const Board& b, MoveList& list, Color us) {
     const Color    them = ~us;
     const Bitboard occ  = b.occupancy();
-
-    // Şah çekteyse rok yapılamaz.
-    Square ksq = b.king_square(us);
-    if (is_square_attacked(b, ksq, them))
-        return;
 
     if (us == WHITE) {
         if ((b.castling_rights & WHITE_OO) &&
@@ -162,43 +127,11 @@ void generate_castling(const Board& b, MoveList& list, Color us) {
     }
 }
 
-// generate_pseudo'nun gürültülü alt kümesi. Hedef maskesi ~own yerine `enemy`;
-// taş tarama sırası (piyon, at, fil, kale, vezir, şah) ve her taş içindeki
-// pop_lsb düzeni birebir aynı. Rok asla yakalama değildir -> üretilmez.
-void generate_pseudo_noisy(const Board& b, MoveList& list) {
-    const Color    us    = b.side_to_move;
-    const Bitboard own   = b.colors[us];
-    const Bitboard occ   = b.occupancy();
-    const Bitboard enemy = b.colors[~us];
-
-    generate_pawn_noisy(b, list, us);
-
-    Bitboard knights = b.pieces[KNIGHT] & own;
-    while (knights) {
-        Square from = pop_lsb(knights);
-        add_moves_from(list, from, knight_attacks(from) & enemy);
-    }
-
-    Bitboard bishops = b.pieces[BISHOP] & own;
-    while (bishops) {
-        Square from = pop_lsb(bishops);
-        add_moves_from(list, from, bishop_attacks(from, occ) & enemy);
-    }
-
-    Bitboard rooks = b.pieces[ROOK] & own;
-    while (rooks) {
-        Square from = pop_lsb(rooks);
-        add_moves_from(list, from, rook_attacks(from, occ) & enemy);
-    }
-
-    Bitboard queens = b.pieces[QUEEN] & own;
-    while (queens) {
-        Square from = pop_lsb(queens);
-        add_moves_from(list, from, queen_attacks(from, occ) & enemy);
-    }
-
-    Square ksq = b.king_square(us);
-    add_moves_from(list, ksq, king_attacks(ksq) & enemy);
+void generate_castling(const Board& b, MoveList& list, Color us) {
+    // Şah çekteyse rok yapılamaz.
+    if (is_square_attacked(b, b.king_square(us), ~us))
+        return;
+    generate_castling_unchecked(b, list, us);
 }
 
 }  // namespace
@@ -249,18 +182,6 @@ void generate_pseudo(const Board& b, MoveList& list) {
 
 namespace {
 
-// Bir düğümde BİR KEZ hesaplanan legallik bağlamı: şahı çeken taşlar, tek çekte
-// izin verilen hedef kareler ve kendi şahımızı bir rakip ışınına karşı kapatan
-// (pinli) taşlarımız. Bu üçlüyle her pseudo-legal hamlenin legalliği tahtayı
-// KOPYALAMADAN, sabit sayıda bit işlemiyle karara bağlanır.
-struct LegalityContext {
-    Square   ksq;
-    Bitboard checkers;    // şahımıza saldıran rakip taşlar
-    Bitboard check_mask;  // tek çekte hedef kare bu kümede olmalı (araya gir ya da al)
-    Bitboard pinned;      // şahımızla bir rakip sniper arasındaki TEK taş olan kendi taşlarımız
-    int      num_checkers;
-};
-
 // `sq` karesine saldıran `by` renginden TÜM taşlar (küme biçimi).
 Bitboard attackers_of(const Board& b, Square sq, Color by, Bitboard occ) {
     const Bitboard diag = (b.pieces[BISHOP] | b.pieces[QUEEN]) & b.colors[by];
@@ -273,52 +194,13 @@ Bitboard attackers_of(const Board& b, Square sq, Color by, Bitboard occ) {
          | (rook_attacks(sq, occ) & orth);
 }
 
-LegalityContext make_context(const Board& b, Color us) {
-    const Color    them = ~us;
-    const Bitboard occ  = b.occupancy();
-
-    LegalityContext ctx{};
-    ctx.ksq          = b.king_square(us);
-    ctx.checkers     = attackers_of(b, ctx.ksq, them, occ);
-    ctx.num_checkers = popcount(ctx.checkers);
-
-    // Tek çekte: çeken taşı al ya da (sliding ise) arasına gir. Çift çekte maske
-    // kullanılmaz (yalnız şah hamlesi legaldir). Çek yoksa maske serbest.
-    if (ctx.num_checkers == 1) {
-        Square checker = lsb(ctx.checkers);
-        ctx.check_mask = between_bb(ctx.ksq, checker) | ctx.checkers;
-    } else {
-        ctx.check_mask = ~Bitboard{0};
-    }
-
-    // Pin tespiti (sniper algoritması): şahtan BOŞ tahta ışınları çekip aynı ışın
-    // üzerindeki rakip slider'ları bul; arada tam bir taş varsa o taş pinlidir.
-    // Işınlar boş tahtada üretildiği için araya giren taşlar körleştirmez.
-    const Bitboard snipers =
-        ((rook_attacks(ctx.ksq, 0) & (b.pieces[ROOK] | b.pieces[QUEEN])) |
-         (bishop_attacks(ctx.ksq, 0) & (b.pieces[BISHOP] | b.pieces[QUEEN]))) &
-        b.colors[them];
-
-    Bitboard s = snipers;
-    while (s) {
-        Square   sniper  = pop_lsb(s);
-        Bitboard blocker = between_bb(ctx.ksq, sniper) & occ;
-        // Tam bir taş (b & b-1 == 0 -> en fazla bir bit) ve o taş bizimse pinli.
-        if (blocker && (blocker & (blocker - 1)) == 0)
-            ctx.pinned |= blocker & b.colors[us];
-    }
-
-    return ctx;
-}
-
 // En passant legalliği: tek hamlede BİR SIRADAN İKİ taş kalkar (oynayan piyon ve
-// alınan piyon), bu yüzden pin makinesine görünmez — ayrı, tam bir occupancy
-// testi şarttır. Klasik tuzak: yan yana duran şah + kale/vezir hattında ep
-// oynamak şahı açar.
-bool en_passant_is_legal(const Board& b, Move m, Color us, Square ksq) {
-    const Color  them = ~us;
-    const Square from = m.from();
-    const Square to   = m.to();
+// alınan piyon), bu yüzden pin makinesine ve check_mask'e görünmez — ayrı, tam bir
+// occupancy testi şarttır. Klasik tuzak: yan yana duran şah + kale/vezir hattında
+// ep oynamak şahı açar. Bu test tam olduğundan ep, üretimde hiçbir maskeye tabi
+// tutulmaz (çift çekte bile denenir: alınan piyon çekenlerden biri olabilir).
+bool en_passant_is_legal(const Board& b, Square from, Square to, Color us, Square ksq) {
+    const Color them = ~us;
     // Alınan piyon hedef karenin ARKASINDA durur (ep hedefi boş karedir).
     const Square captured =
         static_cast<Square>(static_cast<int>(to) + (us == WHITE ? -8 : 8));
@@ -342,63 +224,175 @@ bool en_passant_is_legal(const Board& b, Move m, Color us, Square ksq) {
     return true;
 }
 
-// Bir pseudo-legal hamlenin legalliği — tahta kopyalamadan.
-bool is_legal(const Board& b, Move m, Color us, const LegalityContext& ctx) {
-    const Square from = m.from();
-    const Square to   = m.to();
+// Pinli bir taş yalnız şah-pinner ışını üzerinde oynayabilir; pinli değilse serbest.
+Bitboard pin_mask(const MoveGenContext& ctx, Square from) {
+    return test_bit(ctx.pinned, from) ? line_bb(ctx.ksq, from) : ~Bitboard{0};
+}
 
-    if (m.type() == EN_PASSANT)
-        return en_passant_is_legal(b, m, us, ctx.ksq);
+// Piyon üretimi, doğrudan legal. Tarama düzeni generate_pawn_moves ile BİREBİR
+// aynı (tek itme -> çift itme -> vuruşlar -> ep); yalnızca hedefler ctx maskeleriyle
+// daraltılır. Noisy=true iken sessiz hamleler (promosyona varmayan itmeler) atlanır.
+template <bool Noisy>
+void generate_pawns(const Board& b, MoveList& list, Color us, const MoveGenContext& ctx) {
+    const Bitboard empty = ~b.occupancy();
+    const Bitboard enemy = b.colors[~us];
+    Bitboard pawns       = b.pieces[PAWN] & b.colors[us];
 
-    if (from == ctx.ksq) {
-        // Rok zaten generate_castling'de tam legal üretiliyor (çek, geçilen ve
-        // varış kareleri orada sınanır).
-        if (m.type() == CASTLING)
-            return true;
-        // Şah kendi eski karesinden ÇIKARILIR: aksi halde çek veren ışında geriye
-        // kaçış, şahın kendi gölgesi yüzünden güvenli görünür.
-        return !is_square_attacked(b, to, ~us, b.occupancy() ^ square_bb(ctx.ksq));
+    const int push       = (us == WHITE) ? 8 : -8;
+    const int start_rank = (us == WHITE) ? 1 : 6;
+    const int promo_rank = (us == WHITE) ? 7 : 0;
+
+    while (pawns) {
+        Square from = pop_lsb(pawns);
+        const Bitboard mask = ctx.check_mask & pin_mask(ctx, from);
+
+        // Tek ileri itme. Boşluk testi maskeden BAĞIMSIZ: to1 maskeyi geçmese bile
+        // boşsa çift itme denenebilir (araya girme çoğu zaman iki kare ileridedir).
+        Square to1 = static_cast<Square>(static_cast<int>(from) + push);
+        if (test_bit(empty, to1)) {
+            const bool promo = rank_of(to1) == promo_rank;
+            if ((!Noisy || promo) && test_bit(mask, to1))
+                add_pawn_move(list, from, to1, promo_rank, NORMAL);
+
+            if (!Noisy && rank_of(from) == start_rank) {
+                Square to2 = static_cast<Square>(static_cast<int>(from) + 2 * push);
+                if (test_bit(empty, to2) && test_bit(mask, to2))
+                    list.add(Move::make(from, to2, NORMAL));
+            }
+        }
+
+        // Vuruşlar (promosyon dahil). check_mask çeken taşı içerdiğinden "çekeni al"
+        // kendiliğinden çalışır.
+        Bitboard caps = pawn_attacks(us, from) & enemy & mask;
+        while (caps) {
+            Square to = pop_lsb(caps);
+            add_pawn_move(list, from, to, promo_rank, NORMAL);
+        }
+
+        // En passant: maskesiz, tam occupancy testiyle (yukarıdaki nota bak).
+        if (b.en_passant != SQ_NONE &&
+            test_bit(pawn_attacks(us, from), b.en_passant) &&
+            en_passant_is_legal(b, from, b.en_passant, us, ctx.ksq))
+            list.add(Move::make(from, b.en_passant, EN_PASSANT));
+    }
+}
+
+// Doğrudan legal üretim. generate_pseudo'nun tarama düzeni birebir korunur
+// (piyon -> at -> fil -> kale -> vezir -> şah -> rok, her taşta pop_lsb LSB->MSB),
+// böylece hamle sırası — dolayısıyla move ordering ve arama ağacı — değişmez.
+template <bool Noisy>
+void generate_all(const Board& b, MoveList& list, const MoveGenContext& ctx) {
+    const Color    us   = b.side_to_move;
+    const Bitboard own  = b.colors[us];
+    const Bitboard occ  = b.occupancy();
+
+    // Şah dışı taşların taban hedefi. Çift çekte check_mask == 0 -> hiçbiri üretilmez
+    // (ep hariç: o kendi tam testine tabi).
+    const Bitboard base   = Noisy ? b.colors[~us] : ~own;
+    const Bitboard target = ctx.check_mask & base;
+
+    generate_pawns<Noisy>(b, list, us, ctx);
+
+    // At: pinli at asla oynayamaz (L hamlesi şah-pinner ışını üzerinde kalamaz).
+    Bitboard knights = b.pieces[KNIGHT] & own & ~ctx.pinned;
+    while (knights) {
+        Square from = pop_lsb(knights);
+        add_moves_from(list, from, knight_attacks(from) & target);
     }
 
-    // Buradan sonrası şah dışı taşlar.
-    if (ctx.num_checkers >= 2)
-        return false;  // çift çekte yalnız şah hamlesi kurtarır
-    if (!test_bit(ctx.check_mask, to))
-        return false;  // tek çekte: ya çekeni al ya araya gir (çek yoksa maske serbest)
-    if (test_bit(ctx.pinned, from) && !test_bit(line_bb(ctx.ksq, from), to))
-        return false;  // pinli taş yalnız şah-pinner ışını üzerinde oynayabilir
+    Bitboard bishops = b.pieces[BISHOP] & own;
+    while (bishops) {
+        Square from = pop_lsb(bishops);
+        add_moves_from(list, from, bishop_attacks(from, occ) & target & pin_mask(ctx, from));
+    }
 
-    return true;
+    Bitboard rooks = b.pieces[ROOK] & own;
+    while (rooks) {
+        Square from = pop_lsb(rooks);
+        add_moves_from(list, from, rook_attacks(from, occ) & target & pin_mask(ctx, from));
+    }
+
+    Bitboard queens = b.pieces[QUEEN] & own;
+    while (queens) {
+        Square from = pop_lsb(queens);
+        add_moves_from(list, from, queen_attacks(from, occ) & target & pin_mask(ctx, from));
+    }
+
+    // Şah: check_mask UYGULANMAZ (kaçış maskeye tabi değil). Şah kendi eski
+    // karesinden ÇIKARILIR: aksi halde çek veren ışında geriye kaçış, şahın kendi
+    // gölgesi yüzünden güvenli görünür.
+    const Bitboard king_occ = occ ^ square_bb(ctx.ksq);
+    Bitboard king_targets   = king_attacks(ctx.ksq) & base;
+    while (king_targets) {
+        Square to = pop_lsb(king_targets);
+        if (!is_square_attacked(b, to, ~us, king_occ))
+            list.add(Move::make(ctx.ksq, to, NORMAL));
+    }
+
+    // Rok asla yakalama değildir -> gürültülü üretimde yok. Çekteyken de yasak.
+    if constexpr (!Noisy) {
+        if (ctx.checkers == 0)
+            generate_castling_unchecked(b, list, us);
+    }
 }
 
 }  // namespace
 
-void generate_legal(const Board& b, MoveList& list) {
-    const Color us = b.side_to_move;
+MoveGenContext make_context(const Board& b) {
+    const Color    us   = b.side_to_move;
+    const Color    them = ~us;
+    const Bitboard occ  = b.occupancy();
 
-    MoveList pseudo;
-    generate_pseudo(b, pseudo);
+    MoveGenContext ctx{};
+    ctx.ksq          = b.king_square(us);
+    ctx.checkers     = attackers_of(b, ctx.ksq, them, occ);
+    ctx.num_checkers = popcount(ctx.checkers);
 
-    const LegalityContext ctx = make_context(b, us);
-
-    for (Move m : pseudo) {
-        if (is_legal(b, m, us, ctx))
-            list.add(m);
+    // Çek yoksa maske serbest. Tek çekte: çekeni al ya da (sliding ise) arasına gir.
+    // Çift çekte maske BOŞ -> şah dışı hiçbir taş oynayamaz (yalnız şah kurtarır).
+    if (ctx.num_checkers == 0) {
+        ctx.check_mask = ~Bitboard{0};
+    } else if (ctx.num_checkers == 1) {
+        Square checker = lsb(ctx.checkers);
+        ctx.check_mask = between_bb(ctx.ksq, checker) | ctx.checkers;
+    } else {
+        ctx.check_mask = 0;
     }
+
+    // Pin tespiti (sniper algoritması): şahtan BOŞ tahta ışınları çekip aynı ışın
+    // üzerindeki rakip slider'ları bul; arada tam bir taş varsa o taş pinlidir.
+    // Işınlar boş tahtada üretildiği için araya giren taşlar körleştirmez.
+    const Bitboard snipers =
+        ((rook_attacks(ctx.ksq, 0) & (b.pieces[ROOK] | b.pieces[QUEEN])) |
+         (bishop_attacks(ctx.ksq, 0) & (b.pieces[BISHOP] | b.pieces[QUEEN]))) &
+        b.colors[them];
+
+    Bitboard s = snipers;
+    while (s) {
+        Square   sniper  = pop_lsb(s);
+        Bitboard blocker = between_bb(ctx.ksq, sniper) & occ;
+        // Tam bir taş (b & b-1 == 0 -> en fazla bir bit) ve o taş bizimse pinli.
+        if (blocker && (blocker & (blocker - 1)) == 0)
+            ctx.pinned |= blocker & b.colors[us];
+    }
+
+    return ctx;
+}
+
+void generate_legal(const Board& b, MoveList& list, const MoveGenContext& ctx) {
+    generate_all<false>(b, list, ctx);
+}
+
+void generate_legal(const Board& b, MoveList& list) {
+    generate_all<false>(b, list, make_context(b));
+}
+
+void generate_noisy(const Board& b, MoveList& list, const MoveGenContext& ctx) {
+    generate_all<true>(b, list, ctx);
 }
 
 void generate_noisy(const Board& b, MoveList& list) {
-    const Color us = b.side_to_move;
-
-    MoveList pseudo;
-    generate_pseudo_noisy(b, pseudo);
-
-    const LegalityContext ctx = make_context(b, us);
-
-    for (Move m : pseudo) {
-        if (is_legal(b, m, us, ctx))
-            list.add(m);
-    }
+    generate_all<true>(b, list, make_context(b));
 }
 
 void generate_legal_reference(const Board& b, MoveList& list) {
