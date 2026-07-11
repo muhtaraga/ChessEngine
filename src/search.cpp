@@ -363,6 +363,18 @@ constexpr int kSeeMaxDepth      = 8;
 constexpr int kSeeCaptureMargin = 20;  // yakalama eşiği: see < -kSeeCaptureMargin*depth*depth
 constexpr int kSeeQuietMargin   = 65;  // quiet eşiği:    see < -kSeeQuietMargin*depth
 
+// --- History-tabanlı quiet budaması parametreleri ---
+// Sığ, çekte-olmayan düğümde, birleşik history sinyali (main + cont) eşiğin
+// çok altında olan quiet, çek-vermeyen hamleler aranmadan budanır. LMP'nin
+// (sayı-tabanlı) ve SEE-quiet budamasının (materyal-tabanlı) içerik-tabanlı
+// tamamlayıcısı: "bu hamle bu bağlamda geçmişte hep başarısız oldu" boyutu.
+// Aynı sinyali history-LMR (kLmrStatDiv) indirim için kullanıyor; burada budama
+// eşiği. Eşik derinlikle lineer büyür (sığda agresif). Sabitler ÖLÇÜLEREK seçildi
+// (LMR'ye giren quiet'lerin |stat| dağılımı: ort ~224, maks 5-10k), SPRT/SPSA ile
+// ayarlanabilir.
+constexpr int kHistPruneMaxDepth = 4;      // yalnız depth <= 4
+constexpr int kHistPruneMargin   = 2000;   // eşik: stat < -kHistPruneMargin*depth
+
 // --- Singular extension parametreleri ---
 // TT hamlesi, azaltılmış derinlikte tt_move'u DIŞLAYAN bir doğrulama aramasında
 // diğer TÜM hamlelerden belirgin iyiyse (kanıtlanmış singular) o hattı 1 ply uzat.
@@ -596,6 +608,14 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         !in_check && ply > 0 && depth <= kSeeMaxDepth &&
         !is_mate_score(alpha) && !is_mate_score(beta);
 
+    // --- History budaması kapısı (node seviyesi) ---
+    // Sığ, çekte-olmayan, mat-olmayan düğümde birleşik history'si çok kötü quiet,
+    // çek-vermeyen hamleler döngüde budanır. is_mate_score guard'ları PV-kök geniş
+    // penceresini (beta=INF) doğal olarak dışlar (futility/LMP/SEE ile aynı desen).
+    const bool can_hist_prune =
+        !in_check && ply > 0 && depth <= kHistPruneMaxDepth &&
+        !is_mate_score(alpha) && !is_mate_score(beta);
+
     // Çek-verme bağlamı TEMBEL kurulur. gives_check yalnızca i >= 1'de sorulur
     // (futility moves_searched>0 ister, LMP eşiği >= 4, LMR i >= 2) — yani ilk
     // hamlede beta kesmesi yapan düğümlerde, ki iyi sıralamada çoğunluk onlardır,
@@ -644,6 +664,18 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // birkaç hamle daima aranır (moves_searched eşiğe ulaşana dek).
         if (can_lmp && moves_searched >= lmp_count(depth) && quiet && !gives_ck)
             continue;
+        // History budaması: birleşik sinyali (main + cont) eşiğin çok altında olan
+        // quiet, çek-vermeyen hamleyi hiç arama. moves_searched>0 (i==0/PV daima
+        // aranır) + quiet + !gives_ck (taktik/çek korunur). Ham (kırpılmamış) stat —
+        // LMR'deki (aşağıda) ile aynı hesap: score_move'un bant kırpması sıralama
+        // içindi, burada sinyalin tam genliği lazım. SEE budamasından ÖNCE: history
+        // iki dizi okuması (ucuz), SEE swap algoritması (pahalı) — kötü-history hamle
+        // SEE çağrısına hiç girmesin.
+        if (can_hist_prune && moves_searched > 0 && quiet && !gives_ck) {
+            const int stat = tb.history[us][m.from()][m.to()] + cont_score(b, m, ply);
+            if (stat < -kHistPruneMargin * depth)
+                continue;
+        }
         // SEE budaması: SEE'si çok kötü hamleyi (yakalama ya da quiet) hiç arama.
         // moves_searched>0 (ilk/PVS hamle daima aranır) + !gives_ck (çek veren taktik
         // hatlar korunur) + promosyon hariç (see() promosyonu desteklemez). Yakalama

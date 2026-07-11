@@ -228,6 +228,31 @@ TEST(Search, RazoringKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
+// --- History-tabanlı quiet budaması ---
+
+// History budaması yalnız çek vermeyen QUIET hamleleri (birleşik history'si çok
+// kötü olanları) budar; yakalamalar history sinyalinden bağımsız aranır. Bedava
+// vezir sığ derinlikte hâlâ Rxe5 ile alınmalı — kazanan taktik korunur.
+TEST(Search, HistPruningKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 4);
+    EXPECT_EQ(r.best, Move::make(E1, E5));  // yakalama budanmaz
+    EXPECT_GT(r.score, 400);
+}
+
+// History budaması mat aramasını bozmamalı: mat penceresinde devre dışı
+// (!is_mate_score guard) ve mat hamlesi çek verdiğinden budanmaz. Arka sıra matı
+// daha derin aramada da korunur (LMP/futility testleriyle aynı ruhta).
+TEST(Search, HistPruningKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 5);
+    EXPECT_EQ(r.best, Move::make(A1, A8));  // arka sıra matı hâlâ bulunur
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- Singular extension ---
 
 // Singular extension yalnız derinlik uzatır (depth >= kSingularMinDepth=8), taktiği
