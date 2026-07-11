@@ -131,6 +131,18 @@ TEST(Search, NullMoveKeepsZugzwangCorrectness) {
     EXPECT_GT(r.score, 150);    // kazanan pozisyon: skor açıkça pozitif kalmalı
 }
 
+// eval>=beta kapısı + dinamik R (null move güçlendirme) aramayı bozmamalı:
+// piyon-dışı materyalli (kale -> null aktif) bir pozisyonda bedava vezir hâlâ
+// Rxe5 ile alınmalı. Kapı yalnız budamayı isabetlendirir; taktik PVS/re-search
+// ile korunur. Gate bug'ı (aramanın yanlışlıkla kapanması) regresyon guard'ı.
+TEST(Search, NullMoveGateKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 8);          // null gate + dinamik R belirgin aktif
+    EXPECT_EQ(r.best, Move::make(E1, E5));   // bedava veziri al
+    EXPECT_GT(r.score, 400);
+}
+
 // --- LMR (Late Move Reductions) ---
 
 // LMR aktifken (derinlik 3'ten büyük, geç quiet hamleler indirilir) taktik

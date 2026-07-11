@@ -346,6 +346,18 @@ constexpr int kFutilityMargin[4] = {0, 150, 250, 400};
 constexpr int kRazorMaxDepth  = 3;
 constexpr int kRazorMargin[4] = {0, 300, 500, 700};  // SPRT ile ayarlanabilir
 
+// --- Null move pruning parametreleri ---
+// Rakibe "bedava hamle" verip azaltılmış derinlikte beta etrafında ararız. İndirim
+// R artık dinamik: taban + derinlik (depth/kNullDepthDiv) + eval'in beta'yı ne kadar
+// aştığı ((eval-beta)/kNullEvalDiv, kNullEvalMaxR ile tavanlı). Kapı `eval >= beta`
+// (eval-beta)'yı >= 0 garanti eder. Sabitler ilk elle-seçim, SPRT/SPSA ile
+// ayarlanabilir (Blok 4/16).
+constexpr int kNullMinDepth = 3;    // bu derinliğin altında null denenmez
+constexpr int kNullBaseR    = 3;    // taban indirim
+constexpr int kNullDepthDiv = 3;    // derinliğe bağlı ek indirim böleni (depth/3)
+constexpr int kNullEvalDiv  = 200;  // (eval-beta) başına ek indirim böleni
+constexpr int kNullEvalMaxR = 3;    // eval-tabanlı ek indirim tavanı
+
 // --- LMP (late move pruning / move-count) parametreleri ---
 // Sığ, çekte-olmayan düğümde, iyi sıralamada belli sayıdan sonraki quiet
 // hamleler statik eval'e bakılmaksızın atlanır. Eşik derinlikle kare-yasası
@@ -532,20 +544,25 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // demektir -> dalı buda. Koşullar (ucuzdan pahalıya, kısa devre için):
     //   - null_allowed: üst üste iki null yasak (null-child'a false geçilir).
     //   - ply > 0     : kökte asla (kök gerçek hamle üretmeli).
-    //   - depth >= 3  : çok sığında budama gürültülü.
+    //   - depth >= kNullMinDepth: çok sığında budama gürültülü.
     //   - beta mat penceresi değil (beta=INF dahil): mat aramasında null yok.
     //   - piyon-dışı materyal var: zugzwang koruması (yalnız şah+piyon'da kapalı).
-    //   - çekte değil : çekteyken pass edilemez (en son, tek is_square_attacked).
-    if (null_allowed && ply > 0 && depth >= 3 && !is_mate_score(beta) &&
-        b.has_non_pawn_material(us) && !in_check) {
-        const int R = (depth >= 6) ? 3 : 2;
+    //   - çekte değil : çekteyken pass edilemez.
+    //   - eval >= beta: statik eval zaten beta'nın altındaysa null boşuna denenir;
+    //     ayrıca dinamik R'nin (eval-beta) terimini >= 0 garanti eder.
+    if (null_allowed && ply > 0 && depth >= kNullMinDepth && !is_mate_score(beta) &&
+        b.has_non_pawn_material(us) && !in_check && eval >= beta) {
+        // Dinamik indirim: taban + derinlik + eval'in beta'yı ne kadar aştığı.
+        const int R = kNullBaseR + depth / kNullDepthDiv
+                    + std::min((eval - beta) / kNullEvalDiv, kNullEvalMaxR);
+        const int null_depth = std::max(depth - R, 1);  // en az 1 ply reduced arama
         Board next = b;
         next.make_null_move();
         // Null-child continuation history bağlamı görmemeli: bu ply'de gerçek bir
         // hamle oynanmadı, bayat bir bağlam okumasın.
         stack[ply] = StackEntry{};
         // Null-child'ın anahtarı, recursive negamax'ın kendi KeyGuard'ıyla push edilir.
-        int score = -negamax(next, depth - 1 - R, -beta, -beta + 1, ply + 1,
+        int score = -negamax(next, null_depth, -beta, -beta + 1, ply + 1,
                              /*null_allowed=*/false);
         if (aborted)
             return 0;  // süre doldu: sonuç yukarıda yok sayılır (fn başıyla tutarlı)
