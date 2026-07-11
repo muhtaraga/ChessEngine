@@ -309,15 +309,17 @@ TEST(Search, CaptureHistoryKeepsWinningCapture) {
 
 // En passant yakalamalarının capture history yolunda güvenle işlendiğini doğrular:
 // ep hedef karesi BOŞtur -> type_on(to) = PIECE_TYPE_NB (boyut-6 dizide OOB); alınan
-// tür elle PAWN'a çekilmeli. Burada beyaz şah (Kc5) d6'yı desteklediğinden exd6 e.p.
-// sonrası d6 piyonu siyah şahın yakalayamadığı destekli geçer piyon olur (net kazanç);
-// arama onu bulmalı ve capture history güncellemesi OOB yapmadan koşmalı.
+// tür elle PAWN'a çekilmeli. Burada exd6 e.p. MATERYAL kazanan bir çatal: d6 piyonu
+// c7 atını + e7 filini çatallar, Rd1 ile korunur (1.exd6 Bxd6 2.Rxd6 -> beyaz taş
+// önde). KPK beraberliği YOK — kazanç taş seviyesinde, satranç-doğru (Stockfish ile
+// doğrulandı ~+230cp). ep hamlesi PV'nin başında -> capture history ödül yolundan
+// (PAWN özel-durumu) geçer.
 TEST(Search, CaptureHistoryEnPassantSafe) {
     Board b;
-    ASSERT_TRUE(b.set_fen("4k3/8/8/2KpP3/8/8/8/8 w - d6 0 1"));
-    SearchResult r = search(b, 6);
-    EXPECT_EQ(r.best, Move::make(E5, D6, EN_PASSANT));  // ep yakalama, kazançlı
-    EXPECT_GT(r.score, 100);   // en az bir piyon önde (destekli geçer piyon)
+    ASSERT_TRUE(b.set_fen("6k1/2n1b3/8/3pP3/8/8/8/3R2K1 w - d6 0 1"));
+    SearchResult r = search(b, 12);
+    EXPECT_EQ(r.best, Move::make(E5, D6, EN_PASSANT));  // ep çatal, taş kazanır
+    EXPECT_GT(r.score, 150);   // taş seviyesinde materyal kazancı (KPK değil)
 }
 
 // Capture history mat aramasını bozmamalı: bant ayrımı mat hamlelerini aç bırakmaz.
