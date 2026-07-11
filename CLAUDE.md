@@ -350,10 +350,40 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
       ~%1-3), PV-node bayrağı (qs'te EXACT saklamayı açar), 4-yollu bucket (Faz 2D),
       RFP/null erken dönüşlerinde "yalnız eval" girişi saklama, tt_move'un qs SEE
       budamasını atlaması.
-- [ ] **3. Eval stack + improving**: `stack[ply]`'ye static_eval alanı;
-      `improving = static_eval > 2 ply önceki static_eval`; RFP/futility/LMP
-      kapıları improving'e bağlanır (improving değilken marjlar sıkılır, LMP
-      eşiği düşürülür — Stockfish deseni). Beklenti +10-25.
+- [~] **3. Eval stack + improving — DENENDİ, RAFA KALDIRILDI (SPRT ~NÖTR).**
+      Ayrı `stack_eval[MAX_PLY]` dizisi (çekteyken kEvalNone sentinel); `improving =
+      static_eval > 2 ply önceki (ayni taraf), 2 ply çekteyse 4 ply'e düşen zincir`.
+      Üç budama kapısı improving'e bağlandı (Stockfish deseni): RFP marjı
+      `kRfpMargin*(depth-improving)`, futility improving'de +60 bonus, LMP
+      non-improving'de eşik düşer.
+      - **İlk sürüm (`c73400f`): SPRT H0 (5+0.05, elo0=0/elo1=5, LLR −2.94 geçti).**
+        Net-negatif/nötr-altı.
+      - **Teşhis: kod hatası değil, kalibrasyon + PAKETLEME hatası.** Üç kaplama tek
+        SPRT'de → hangisi zararlı ayrışamıyor. Geçici enstrümantasyonla (5 pozisyon,
+        depth 12) ölçüldü: LMP non-improving eşiğini `base/2` yapmak tüm LMP
+        budamalarının ~%71'ini üretiyordu (SPRT'den geçmiş `3+d²`'yi düğümlerin
+        ~yarısında ikiye bölmek = dominant regresyon); futility +60 yalnız %7 etki
+        (saf düğüm maliyeti); RFP `depth-improving` %35.5 extra ama mutlak olarak
+        LMP'nin ~1/12'si.
+      - **Revize (`2ce0352`): futility bonusu kaldırıldı, LMP `base/2`→`(3·base)/4`,
+        RFP+altyapı korundu. SPRT: 10.000 oyun tavanına takıldı (5+0.05), Elo
+        +1.2 ± 5.3, LLR −0.876, LOS %67 — kalibrasyon zararı giderdi ama kazanç
+        açmadı (~NÖTR).**
+      - **Ders 1 (check extension emsali):** çok-budayan yığında (LMR+null+futility+
+        LMP+razoring) budama kapıları improving-farkındalığı olmadan zaten "yeterince
+        iyi"; improving sömürülebilir seçicilik eklemiyor.
+      - **Ders 2 (metodoloji):** tek SPRT'de birden çok bağımsız sezgisel kaplama
+        PAKETLENMEZ — H0'da sinyal ayrışmaz. "improving tek yol haritası maddesi"
+        gerekçesi yanıltıcıydı (madde tek, kaplamalar üç ayrı budama ayarı). Cont-hist
+        paketi emsal DEĞİL (orası tek mekanizmanın önkoşul zinciriydi).
+      - **Ders 3 (SPRT gücü):** 5+0.05 + elo0=0/elo1=5 ile <5 Elo etki temiz karara
+        varamaz (~0 daima 10k'da tavana takılır). Sub-5 aday teknikler için ya daha
+        sıkı sınır ya sabit-N gerekir.
+      - **İki commit (`c73400f`, `2ce0352`) `23d28b0`'a birebir geri alındı** (kaplamalar
+        + altyapı söküldü; `git diff 23d28b0 -- src/search.cpp tests/search_test.cpp`
+        boş → davranış-eş). Testler 115'e döndü. İLERİDE ADAY: Blok 4 Texel tuning
+        sonrası eval kalibre olunca improving sinyali daha anlamlı olabilir; yalnız
+        RFP kaplaması (en masum) tek başına da yeniden denenebilir.
 
 *Blok 2 — Arama özellikleri (Elo beklenti sırası):*
 
@@ -452,12 +482,15 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-10): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
+**Güncel durum (2026-07-11): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
 (Aşama 1/1b/2) bitti. FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2, +39.7 Elo) + Blok 1/2
 (TT yenileme paketi) TAMAM. Blok 1/2 iki SPRT: SPRT-A (B1..B4) +12.9 ± 8.2 Elo TAM
 KABUL, SPRT-B (B5 qsearch TT) +33 ± 14.1 Elo TAM KABUL — toplam ~+46 Elo, beklentiyi
 (+10-25) aştı. YENİ BASELINE `23d28b0`.
-SIRADAKİ: Blok 1/3 = eval stack + improving. FAZ 2D tüm bloklar bitince.**
+Blok 1/3 (eval stack + improving) DENENDİ, RAFA KALDIRILDI: ilk sürüm SPRT H0,
+kalibre revize ~NÖTR (+1.2 ± 5.3, 10k tavan) → `23d28b0`'a birebir geri alındı
+(bkz. Blok listesi madde 3; check extension emsali). Baseline hâlâ `23d28b0`.
+SIRADAKİ: Blok 2/4 = singular extension (+20-40 beklenti). FAZ 2D tüm bloklar bitince.**
 Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
 edilecek (Blok 1/2 commit'leri `1d73725..23d28b0` henüz taşınmadı).
 Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 115
@@ -470,8 +503,9 @@ tablo kalıcılığı paketi SPRT +31.6 ± 13.8 Elo, LLR 2.96 tam kabul**, ardı
 **history-tabanlı LMR + ölçek çarpanı SPRT +13.6 ± 8.5, LLR 2.95 tam kabul (3928 oyun)**.
 **FAZ 2C-ek KAPANDI. Yeni baseline `9bdcef4`.** Countermove (regresyon) denendi, geri
 alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) Faz 2C-devam Blok 1/1
-(Aşama 2 movegen) TAMAM, SPRT +39.7 -> yeni baseline `d07e7f2`; sıradaki Blok 1/2
-TT yenileme -> Blok 1/3 improving -> Blok 2 arama özellikleri [singular, SEE paketi,
+(Aşama 2 movegen) TAMAM, SPRT +39.7 -> `d07e7f2`; Blok 1/2 TT yenileme ~+46 ->
+`23d28b0`; Blok 1/3 improving DENENDİ/RAFA (H0 + kalibre nötr) -> baseline hâlâ
+`23d28b0`; sıradaki Blok 2 arama özellikleri [singular extension (ilk), SEE paketi,
 capture history, IIR, history budaması, null move güçlendirme] -> Blok 3 zaman
 yönetimi + küçükler -> Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
 NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
@@ -960,8 +994,9 @@ malus SPRT +22.2 Elo KABUL; **continuation history + tablo kalıcılığı paket
 +31.6 Elo TAM KABUL**; **history-tabanlı LMR + ölçek çarpanı SPRT +13.6 Elo TAM KABUL
 (yeni baseline 9bdcef4) -> FAZ 2C-ek KAPANDI**; countermove denendi, geri alındı.
 SIRADAKİ: Faz 2C-devam (tek-thread güçlendirme; Blok 1/1 Aşama 2 movegen TAMAM,
-SPRT +39.7 -> baseline `d07e7f2`; sıradaki Blok 1/2 TT yenileme -> Blok 1/3 improving)
--> sonra Faz 2D (Lazy SMP, tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
+SPRT +39.7 -> `d07e7f2`; Blok 1/2 TT yenileme ~+46 -> `23d28b0`; Blok 1/3 improving
+DENENDİ/RAFA [H0 + kalibre nötr, baseline hâlâ `23d28b0`]; sıradaki Blok 2/4 singular
+extension) -> sonra Faz 2D (Lazy SMP, tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
 (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin

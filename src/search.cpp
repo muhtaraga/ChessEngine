@@ -149,13 +149,6 @@ struct Searcher {
     };
     StackEntry stack[MAX_PLY];
 
-    // Eval yığını: stack_eval[p] = ply p'de hesaplanan ham static_eval (çekteyken
-    // kEvalNone sentinel'i). improving sinyali bunu okur. StackEntry'den AYRI tutulur:
-    // stack[ply] döngü-içi (596) ve null-move (486) yerlerinde tam-struct atamayla
-    // yeniden yazılıyor -> aynı struct'a konsaydı ezilirdi (ezilen değer ply+2'deki
-    // torunların improving hesabı için hâlâ gerekli). Ayrı dizi bu ezmeyi tümden önler.
-    int stack_eval[MAX_PLY];
-
     // Bu düğümdeki (b) quiet hamle m'in continuation history puanı. Önceki hamle
     // yoksa (kök ya da null move ardından) 0.
     int cont_score(const Board& b, Move m, int ply) const {
@@ -348,15 +341,7 @@ constexpr int kRazorMargin[4] = {0, 300, 500, 700};  // SPRT ile ayarlanabilir
 // hamleler statik eval'e bakılmaksızın atlanır. Eşik derinlikle kare-yasası
 // büyür (sığ derinlik = agresif budama). Bölen/max SPRT ile ayarlanabilir.
 constexpr int kLmpMaxDepth = 8;
-// improving değilken (pozisyon kötüleşiyor) eşik hafif iner: umutsuz dalda biraz
-// daha erken buda (Stockfish deseni). NOT: ilk sürüm base/2 idi; ölçüm LMP
-// budamalarının ~%71'inin yalnız bu yarılamadan geldiğini gösterdi (SPRT H0) —
-// SPRT'den geçmiş 3+d² eşiğini yarıya bölmek fazla agresifti. (3·base)/4 çok daha
-// dar bir bant: kaplamayı korur ama pertürbasyonu büyük ölçüde azaltır.
-inline int lmp_count(int depth, bool improving) {
-    const int base = 3 + depth * depth;
-    return improving ? base : (3 * base) / 4;
-}
+inline int lmp_count(int depth) { return 3 + depth * depth; }
 
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
                       bool null_allowed) {
@@ -436,21 +421,6 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
                           : (tt_hit && tte.eval != kEvalNone)   ? tte.eval
                           :                                       evaluate(b);
 
-    // Eval yığını + improving sinyali. static_eval'i ply-indeksli yığına yaz (çekteyken
-    // anlamsız -> kEvalNone sentinel'i, improving zinciri o ply'i atlasın). improving =
-    // "bu düğümün eval'i 2 ply önceki (aynı taraf) eval'den yüksek mi?". 2 ply önce
-    // çekteyse (kEvalNone) 4 ply öncesine düş; o da yoksa improving=false. Kötüleşen
-    // dalda budama kapıları (RFP/futility/LMP) daha agresif olur, iyileşende temkinli.
-    // Ham static_eval kullanılır, aşağıdaki rafine eval değil.
-    stack_eval[ply] = in_check ? kEvalNone : static_eval;
-    bool improving = false;
-    if (!in_check) {
-        if (ply >= 2 && stack_eval[ply - 2] != kEvalNone)
-            improving = static_eval > stack_eval[ply - 2];
-        else if (ply >= 4 && stack_eval[ply - 4] != kEvalNone)
-            improving = static_eval > stack_eval[ply - 4];
-    }
-
     // Budama kapılarının kullandığı eval: TT skoru, statik eval'den daha bilgili
     // bir tahmindir (bir aramadan gelir, statik terimlerden değil). Yalnız sınırın
     // izin verdiği YÖNDE kullanılır: LOWER gerçek değerin altına inmez (eval'i
@@ -491,11 +461,8 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // eval >= beta olduğundan geçerli fail-high). Koşullar: çekte değil,
     // kökte değil (ply>0), sığ derinlik, mat penceresi değil (beta=INF dahil).
     // TT'ye yazılmaz (null move deseni; sahte skor sızmasın).
-    // improving (pozisyon iyileşiyor) ise marj bir derinlik kadar düşer: eval zaten
-    // beta üstü + iyileşiyorsa kesme çok olası (Stockfish konvansiyonu). depth burada
-    // >= 1 olduğundan depth - improving >= 0.
     if (!in_check && ply > 0 && depth <= kRfpMaxDepth && !is_mate_score(beta) &&
-        eval - kRfpMargin * (depth - improving) >= beta)
+        eval - kRfpMargin * depth >= beta)
         return eval;
 
     // --- Null move pruning ---
@@ -549,7 +516,6 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // ulaşamıyorsa quiet hamleler (materyali pek değiştirmez) alpha'yı geçemez ->
     // döngüde çek vermeyen quiet hamleler aranmadan atlanır. alpha burada düğüm
     // giriş değerinde (döngü henüz değiştirmedi).
-    // improving ise marja bonus eklenir (daha az buda); iyileşmiyorsa taban marj.
     const bool can_futility =
         !in_check && ply > 0 && depth <= kFutilityMaxDepth &&
         !is_mate_score(alpha) &&
@@ -604,7 +570,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // Late move pruning: yeterince geç sıralanmış quiet, çek-vermeyen hamleyi
         // eval'e bakmadan atla. lmp_count(depth) >= 4 olduğundan en az PV +
         // birkaç hamle daima aranır (moves_searched eşiğe ulaşana dek).
-        if (can_lmp && moves_searched >= lmp_count(depth, improving) && quiet && !gives_ck)
+        if (can_lmp && moves_searched >= lmp_count(depth) && quiet && !gives_ck)
             continue;
         ++moves_searched;
 
