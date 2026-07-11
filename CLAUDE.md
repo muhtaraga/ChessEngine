@@ -387,12 +387,35 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
 
 *Blok 2 — Arama özellikleri (Elo beklenti sırası):*
 
-- [ ] **4. Singular extension** (+ opsiyonel multicut): TT hamlesi azaltılmış
-      derinlikte, TT-skor-margin penceresinde diğer TÜM hamlelerden belirgin
-      iyiyse 1 ply uzat. Rafa kaldırılan check extension'ın "doğru" hali (yol
-      haritasının orijinal "en sona" notu); en büyük kalan arama kazancı adayı.
-      Blok 1'in TT işinden sonra doğal (TT hamlesi + depth güvenilirliği ister).
-      Beklenti +20-40.
+- [x] **4. Singular extension — TAMAM, SPRT GEÇTİ H1 (+21.3 ± 11.1 Elo, LLR 2.94
+      TAM KABUL, 2274 oyun, 753-907-614, LOS %100). Base `23d28b0` vs new `a803a3f`.
+      YENİ BASELINE `a803a3f`.** Beklenen +20-40 bandının alt ucunda; rafa kaldırılan
+      check extension'ın "doğru hali" doğrulandı — kör "tüm çekleri uzat" NÖTR'dü,
+      "yalnız kanıtlanmış-tekil tt_move'u uzat" +21.3 verdi.
+      - **Mekanik:** tt_move'u aramadan önce, azaltılmış derinlikte (`(depth-1)/2`)
+        tt_move'u DIŞLAYAN null-window [sb-1, sb] doğrulama (`sb = ttValue -
+        kSingularMargin*depth`); hiçbir alternatif sb'ye ulaşamıyorsa (fail-low)
+        tt_move tekildir -> `extension=1`, `new_depth = depth-1+1` dört child
+        çağrısına (PVS ilk, LMR scout/re-search, PVS re-search).
+      - **`excluded` parametresi** (negamax son param, default Move()): doğrulama
+        aynı `b`'yi tt_move'suz yeniden arar. excluded iken prolog kısayolları
+        ATLANIR — repetition + 50-hamle + TT-cutoff + KeyGuard-push + TT-store.
+        KRİTİK: dış düğüm `b.key`'i yığına zaten push etti; atlanmasaydı (a)
+        `is_repetition(b)` false-positive "tekrar->0" döner, (b) aynı-key TT girdisi
+        reduced derinlikte `tte.depth>=depth` sağlayıp anında ttValue döndürür ->
+        singular ASLA ateşlemez. `std::optional<KeyGuard>` ile çift-push engellendi.
+        PV/`stack[ply]` kirlenmesi tt_move'un hemen ardından gelen gerçek aramasıyla
+        yeniden yazıldığından zararsız (analiz edildi).
+      - **Gate:** excluded yok && m == tt_move (i==0'ı sağlamlaştırır, TT collision'da
+        tt_move illegal olabilir) && ply>0 && depth>=kSingularMinDepth(8) &&
+        tte.depth>=depth-kSingularDepthMargin(3) && (LOWER || EXACT) && mat-olmayan
+        ttValue. Doğrulama null-move kapalı (`null_allowed=false`).
+      - Sabitler (min-depth 8, depth-margin 3, margin 2) ilk elle-seçim, Blok 4/16
+        tuning. 2 test (115->117): SingularKeepsWinningTactic/MateSearch. Sağlama
+        (Release, taze): startpos d13 +%79 (e2e4), Kiwipete d12 +%76 (e2a6, cp-55->
+        -12 keskinleşti) — düğüm artışı beklenen (uzatma + doğrulama maliyeti),
+        >2× patlama yok. Ertelenen: **multicut** (`sb >= beta` iken doğrulama
+        fail-high -> dalı buda; ayrı commit + SPRT), negatif/çift/üçlü extension.
 - [ ] **5. SEE paketi (main search)**: kayıplı yakalamalar (see<0) sıralamada
       quiet'lerin altına ayrı banda + sığ derinlikte SEE budaması (yakalamaya
       see < -margin×depth eşiği; quiet için see() genelleştirmesi check-extension
@@ -489,11 +512,14 @@ KABUL, SPRT-B (B5 qsearch TT) +33 ± 14.1 Elo TAM KABUL — toplam ~+46 Elo, bek
 (+10-25) aştı. YENİ BASELINE `23d28b0`.
 Blok 1/3 (eval stack + improving) DENENDİ, RAFA KALDIRILDI: ilk sürüm SPRT H0,
 kalibre revize ~NÖTR (+1.2 ± 5.3, 10k tavan) → `23d28b0`'a birebir geri alındı
-(bkz. Blok listesi madde 3; check extension emsali). Baseline hâlâ `23d28b0`.
-SIRADAKİ: Blok 2/4 = singular extension (+20-40 beklenti). FAZ 2D tüm bloklar bitince.**
+(bkz. Blok listesi madde 3; check extension emsali).
+Blok 2/4 (singular extension) TAMAM: SPRT +21.3 ± 11.1 Elo, LLR 2.94 TAM KABUL
+(2274 oyun, LOS %100). YENİ BASELINE `a803a3f`.
+SIRADAKİ: Blok 2/5 = SEE paketi (main search, +15-30 beklenti); Blok 2/4 multicut
+opsiyonel eki de masada. FAZ 2D tüm bloklar bitince.**
 Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
 edilecek (Blok 1/2 commit'leri `1d73725..23d28b0` henüz taşınmadı).
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 115
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 117
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
@@ -504,9 +530,10 @@ tablo kalıcılığı paketi SPRT +31.6 ± 13.8 Elo, LLR 2.96 tam kabul**, ardı
 **FAZ 2C-ek KAPANDI. Yeni baseline `9bdcef4`.** Countermove (regresyon) denendi, geri
 alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) Faz 2C-devam Blok 1/1
 (Aşama 2 movegen) TAMAM, SPRT +39.7 -> `d07e7f2`; Blok 1/2 TT yenileme ~+46 ->
-`23d28b0`; Blok 1/3 improving DENENDİ/RAFA (H0 + kalibre nötr) -> baseline hâlâ
-`23d28b0`; sıradaki Blok 2 arama özellikleri [singular extension (ilk), SEE paketi,
-capture history, IIR, history budaması, null move güçlendirme] -> Blok 3 zaman
+`23d28b0`; Blok 1/3 improving DENENDİ/RAFA (H0 + kalibre nötr) -> `23d28b0`; Blok 2/4
+singular extension TAMAM, SPRT +21.3 -> `a803a3f`; sıradaki Blok 2 kalan [SEE paketi,
+capture history, IIR, history budaması, null move güçlendirme] + singular multicut
+opsiyonel eki -> Blok 3 zaman
 yönetimi + küçükler -> Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
 NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
 (klasik + NNUE, ikisi de aktif; bkz. memory `iki-taban-karari`). Ayrıntılı adım-adım
@@ -995,8 +1022,9 @@ malus SPRT +22.2 Elo KABUL; **continuation history + tablo kalıcılığı paket
 (yeni baseline 9bdcef4) -> FAZ 2C-ek KAPANDI**; countermove denendi, geri alındı.
 SIRADAKİ: Faz 2C-devam (tek-thread güçlendirme; Blok 1/1 Aşama 2 movegen TAMAM,
 SPRT +39.7 -> `d07e7f2`; Blok 1/2 TT yenileme ~+46 -> `23d28b0`; Blok 1/3 improving
-DENENDİ/RAFA [H0 + kalibre nötr, baseline hâlâ `23d28b0`]; sıradaki Blok 2/4 singular
-extension) -> sonra Faz 2D (Lazy SMP, tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
+DENENDİ/RAFA [H0 + kalibre nötr, `23d28b0`]; Blok 2/4 singular extension TAMAM, SPRT
++21.3 -> baseline `a803a3f`; sıradaki Blok 2/5 SEE paketi) -> sonra Faz 2D (Lazy SMP,
+tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
 (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
 king safety erken kabul (Elo +28.6 ± 18.6, kullanıcı kararı). Böylece Faz 2B'nin
