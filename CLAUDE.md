@@ -416,10 +416,33 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
         -12 keskinleşti) — düğüm artışı beklenen (uzatma + doğrulama maliyeti),
         >2× patlama yok. Ertelenen: **multicut** (`sb >= beta` iken doğrulama
         fail-high -> dalı buda; ayrı commit + SPRT), negatif/çift/üçlü extension.
-- [ ] **5. SEE paketi (main search)**: kayıplı yakalamalar (see<0) sıralamada
-      quiet'lerin altına ayrı banda + sığ derinlikte SEE budaması (yakalamaya
-      see < -margin×depth eşiği; quiet için see() genelleştirmesi check-extension
-      denemesinden kalan LATENT altyapı, zaten hazır). Beklenti +15-30.
+- [x] **5. SEE paketi (main search) — TAMAM, İKİ COMMIT/İKİ SPRT, TOPLAM ~+56 Elo.
+      Base `a803a3f`; YENİ BASELINE `8fa2281`.** Beklenti +15-30 idi, net aşıldı. İki
+      parça bilinçle AYRI SPRT'den geçti (Blok 1/3 dersi: bağımsız sezgisel kaplamalar
+      paketlenmez; önkoşul zinciri değiller — budama sıralamayı gerektirmez).
+      - `dd9e8f3` **Commit 1 — kayıplı yakalama sıralaması**: `score_move` promosyon-olmayan
+        yakalamaları SEE işaretine ayırır; `see<0` (savunmalı taşa vurma) quiet history
+        bandının (-700k) ALTINA `kScoreBadCapture`=-1M bandına iner, `see>=0` yüksek
+        bantta kalır (her ikisi MVV-LVA sıralı). Promosyonlar SEE'den muaf. Kayıplı
+        yakalamalar yalnız yeniden SIRALANIR, asla budanmaz -> taktik kaybolmaz. Perft
+        birebir; nps ~±3% (see() ordering maliyeti ihmal edilebilir). **SPRT: +33.1 ± 14.1
+        Elo, LLR 2.96 TAM KABUL (1420 oyun, 501-553-366, LOS %100)** — "mütevazı, çok oyun
+        ister" beklentisini net aştı; tek başına paketin tahminini karşıladı.
+      - `8fa2281` **Commit 2 — sığ-derinlik SEE budaması**: negamax döngüsünde futility/LMP
+        yanına, `depth<=8` düğümde SEE'si çok kötü hamleleri eler — yakalama `see <
+        -20*depth*depth`, quiet `see < -65*depth` (see() sessiz hamleyi de değerlendirir,
+        check-extension'dan kalan latent altyapı). Güvenlik: `moves_searched>0` (ilk/PVS
+        hamle daima), `!gives_ck`, mat penceresi kapalı, `ply>0`, promosyon hariç (see()
+        promosyonu desteklemez). Perft birebir; node sanity startpos d13 921K->612K (-34%),
+        Kiwipete d12 1131K->984K (-13%), bestmove makul/skor sabit. **SPRT: +23.3 ± 11.7
+        Elo, LLR 2.94 TAM KABUL (1972 oyun, 636-832-504, LOS %100).**
+      Testler 117 -> 120: SeeOrderingKeepsWinningSacrifice (bağlı savunucuya rağmen Qxe5,
+      SEE bağı görmez see=-580 -> kötü-yakalama bandı, yine de bulunur — demote budama
+      değil), SeePruningKeepsWinningTactic (bedava vezir Rxe5 see>0 budanmaz),
+      SeePruningKeepsMateSearch (mat penceresi kapalı). Sabitler (kSeeMaxDepth 8,
+      kSeeCaptureMargin 20, kSeeQuietMargin 65, kScoreBadCapture -1M) ilk elle-seçim,
+      Blok 4/16 tuning. Ertelenen: see_ge (yalnız işaret, tam swap'tan ucuz), düğüm-başı
+      see cache'i (Commit 1 ordering + Commit 2 döngü late hamleleri iki kez see çağırır).
 - [ ] **6. Capture history**: `capt_hist[taş][hedef][alınan tür]` — şu an history
       yalnız quiet; MVV-LVA'yı öğrenen sinyalle güçlendirir (add_history/age
       desenleri hazır). Beklenti +10-20.
@@ -515,11 +538,17 @@ kalibre revize ~NÖTR (+1.2 ± 5.3, 10k tavan) → `23d28b0`'a birebir geri alı
 (bkz. Blok listesi madde 3; check extension emsali).
 Blok 2/4 (singular extension) TAMAM: SPRT +21.3 ± 11.1 Elo, LLR 2.94 TAM KABUL
 (2274 oyun, LOS %100). YENİ BASELINE `a803a3f`.
-SIRADAKİ: Blok 2/5 = SEE paketi (main search, +15-30 beklenti); Blok 2/4 multicut
+Blok 2/5 (SEE paketi, main search) TAMAM: İKİ COMMIT/İKİ SPRT, toplam ~+56 Elo.
+Commit 1 (kayıplı yakalama sıralaması, `dd9e8f3`) +33.1 ± 14.1 Elo TAM KABUL (1420
+oyun); Commit 2 (sığ-derinlik SEE budaması, `8fa2281`) +23.3 ± 11.7 Elo TAM KABUL
+(1972 oyun). Beklenti (+15-30) net aşıldı. YENİ BASELINE `8fa2281`.
+SIRADAKİ: Blok 2/6 = capture history (bu paket `capt_hist` için zemin hazırladı);
+Blok 2 kalan [IIR, history budaması, null move güçlendirme] + Blok 2/4 multicut
 opsiyonel eki de masada. FAZ 2D tüm bloklar bitince.**
 Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
-edilecek (Blok 1/2 commit'leri `1d73725..23d28b0` henüz taşınmadı).
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 117
+edilecek (Blok 1/2 commit'leri `1d73725..23d28b0`, Blok 2/4 `a803a3f`, Blok 2/5
+`dd9e8f3..8fa2281` henüz taşınmadı).
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 120
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
@@ -531,9 +560,10 @@ tablo kalıcılığı paketi SPRT +31.6 ± 13.8 Elo, LLR 2.96 tam kabul**, ardı
 alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) Faz 2C-devam Blok 1/1
 (Aşama 2 movegen) TAMAM, SPRT +39.7 -> `d07e7f2`; Blok 1/2 TT yenileme ~+46 ->
 `23d28b0`; Blok 1/3 improving DENENDİ/RAFA (H0 + kalibre nötr) -> `23d28b0`; Blok 2/4
-singular extension TAMAM, SPRT +21.3 -> `a803a3f`; sıradaki Blok 2 kalan [SEE paketi,
-capture history, IIR, history budaması, null move güçlendirme] + singular multicut
-opsiyonel eki -> Blok 3 zaman
+singular extension TAMAM, SPRT +21.3 -> `a803a3f`; Blok 2/5 SEE paketi TAMAM, iki
+commit/iki SPRT ~+56 (Commit 1 +33.1 -> `dd9e8f3`, Commit 2 +23.3 -> `8fa2281`);
+sıradaki Blok 2 kalan [capture history, IIR, history budaması, null move güçlendirme]
++ singular multicut opsiyonel eki -> Blok 3 zaman
 yönetimi + küçükler -> Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
 NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
 (klasik + NNUE, ikisi de aktif; bkz. memory `iki-taban-karari`). Ayrıntılı adım-adım
@@ -1023,7 +1053,8 @@ malus SPRT +22.2 Elo KABUL; **continuation history + tablo kalıcılığı paket
 SIRADAKİ: Faz 2C-devam (tek-thread güçlendirme; Blok 1/1 Aşama 2 movegen TAMAM,
 SPRT +39.7 -> `d07e7f2`; Blok 1/2 TT yenileme ~+46 -> `23d28b0`; Blok 1/3 improving
 DENENDİ/RAFA [H0 + kalibre nötr, `23d28b0`]; Blok 2/4 singular extension TAMAM, SPRT
-+21.3 -> baseline `a803a3f`; sıradaki Blok 2/5 SEE paketi) -> sonra Faz 2D (Lazy SMP,
++21.3 -> `a803a3f`; Blok 2/5 SEE paketi TAMAM, iki commit/iki SPRT ~+56 -> baseline
+`8fa2281`; sıradaki Blok 2/6 capture history) -> sonra Faz 2D (Lazy SMP,
 tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
 (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
