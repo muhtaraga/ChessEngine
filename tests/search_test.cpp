@@ -270,6 +270,29 @@ TEST(Search, SeeOrderingKeepsWinningSacrifice) {
     EXPECT_GT(r.score, 400);               // açık ara kazanan
 }
 
+// --- SEE paketi: sığ-derinlik SEE budaması (Commit 2) ---
+
+// SEE budaması iyi/kazançlı yakalamaları budamaz: eşik negatif, see>=0 daima geçer.
+// Bedava vezir Rxe5 (see = +900) sığ derinlikte hâlâ oynanır.
+TEST(Search, SeePruningKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 6);
+    EXPECT_EQ(r.best, Move::make(E1, E5));  // kazançlı yakalama budanmaz
+    EXPECT_GT(r.score, 400);
+}
+
+// SEE budaması mat aramasını bozmamalı: mat penceresinde (is_mate_score) kapalı.
+// Arka sıra matı hâlâ bulunur.
+TEST(Search, SeePruningKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 5);
+    EXPECT_EQ(r.best, Move::make(A1, A8));  // arka sıra matı korunur
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- Continuation history ---
 
 // Continuation history yalnızca quiet hamlelerin SIRALAMASINI etkiler; hiçbir

@@ -353,6 +353,16 @@ constexpr int kRazorMargin[4] = {0, 300, 500, 700};  // SPRT ile ayarlanabilir
 constexpr int kLmpMaxDepth = 8;
 inline int lmp_count(int depth) { return 3 + depth * depth; }
 
+// --- SEE budaması (main search) parametreleri (santipiyon) ---
+// Sığ düğümde, SEE'si çok kötü olan hamleler (hem yakalama hem quiet) aranmadan
+// budanır. Yakalama için: savunmalı taşa umutsuz vurma (see çok negatif). Quiet
+// için: taşı asan hamle (see negatif; see() sessiz hamleyi de değerlendirir).
+// Eşik derinlikle büyür -> derinde daha az agresif. Sabitler ilk elle-seçim,
+// SPRT/SPSA ile ayarlanabilir (Stockfish mertebesi).
+constexpr int kSeeMaxDepth      = 8;
+constexpr int kSeeCaptureMargin = 20;  // yakalama eşiği: see < -kSeeCaptureMargin*depth*depth
+constexpr int kSeeQuietMargin   = 65;  // quiet eşiği:    see < -kSeeQuietMargin*depth
+
 // --- Singular extension parametreleri ---
 // TT hamlesi, azaltılmış derinlikte tt_move'u DIŞLAYAN bir doğrulama aramasında
 // diğer TÜM hamlelerden belirgin iyiyse (kanıtlanmış singular) o hattı 1 ply uzat.
@@ -559,6 +569,15 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         !in_check && ply > 0 && depth <= kLmpMaxDepth &&
         !is_mate_score(alpha) && !is_mate_score(beta);
 
+    // --- SEE budaması kapısı (node seviyesi) ---
+    // Sığ, çekte-olmayan, mat-olmayan düğümde SEE'si eşiğin altında olan hamleler
+    // (yakalama + quiet) döngüde budanır. Futility/LMP (quiet-only) ile tamamlayıcı:
+    // SEE budaması yakalamaları da kapsar; Commit 1'in sıralamasıyla tamamlayıcı
+    // (o tüm derinlikte reorder eder, bu sığ derinlikte eler).
+    const bool can_see_prune =
+        !in_check && ply > 0 && depth <= kSeeMaxDepth &&
+        !is_mate_score(alpha) && !is_mate_score(beta);
+
     // Çek-verme bağlamı TEMBEL kurulur. gives_check yalnızca i >= 1'de sorulur
     // (futility moves_searched>0 ister, LMP eşiği >= 4, LMR i >= 2) — yani ilk
     // hamlede beta kesmesi yapan düğümlerde, ki iyi sıralamada çoğunluk onlardır,
@@ -607,6 +626,17 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // birkaç hamle daima aranır (moves_searched eşiğe ulaşana dek).
         if (can_lmp && moves_searched >= lmp_count(depth) && quiet && !gives_ck)
             continue;
+        // SEE budaması: SEE'si çok kötü hamleyi (yakalama ya da quiet) hiç arama.
+        // moves_searched>0 (ilk/PVS hamle daima aranır) + !gives_ck (çek veren taktik
+        // hatlar korunur) + promosyon hariç (see() promosyonu desteklemez). Yakalama
+        // için eşik depth² ile büyür (derin taktik alışverişe tolerans), quiet için
+        // lineer (asma hamlesi zaten sığda budanmalı).
+        if (can_see_prune && moves_searched > 0 && !gives_ck && m.type() != PROMOTION) {
+            const int threshold = quiet ? -kSeeQuietMargin   * depth
+                                        : -kSeeCaptureMargin * depth * depth;
+            if (see(b, m) < threshold)
+                continue;
+        }
         ++moves_searched;
 
         // Budama kararları geçildi: ancak ŞİMDİ çocuk tahtayı kur.
