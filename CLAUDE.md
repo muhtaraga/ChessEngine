@@ -489,10 +489,36 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
         düğüm ≠ Elo, döviz kuru yalnız EXACT hızlanmalara. Ertelenen: daha yüksek
         kIirMinDepth (6-8) / yüksek derinlikte reduce-by-2 (startpos +%48 fazla-sığ
         ateşlemeyi ima ediyor, tuning adayı).
-- [ ] **8. History-tabanlı quiet budaması**: sığ derinlikte stat'ı (main+cont)
-      çok kötü quiet'leri hiç arama — cont-hist artık oyun boyu kalıcı olduğundan
-      sinyal dolu (history-LMR bunun kanıtı). Beklenti +10-20.
-- [ ] **9. Null move güçlendirme**: `static_eval >= beta` kapısı + dinamik R
+- [x] **8. History-tabanlı quiet budaması — TAMAM, SPRT GEÇTİ H1 (+14.3 ± 8.7 Elo,
+      LLR 2.96 TAM KABUL, 3575 oyun, 1129-1464-982, LOS %99.9). Base `3bde658` vs
+      new `a8ac0d9`. YENİ BASELINE `a8ac0d9`.** Beklenti (+10-20) tam ortası.
+      - **Mekanik:** sığ, çekte-olmayan, mat-olmayan düğümde (`can_hist_prune`:
+        `!in_check && ply>0 && depth<=kHistPruneMaxDepth(4) && !is_mate_score(α/β)`),
+        döngüde `moves_searched>0 && quiet && !gives_ck` iken ham `stat = main +
+        cont` (history-LMR ile AYNI hesap) `< -kHistPruneMargin(2000)*depth` ise
+        `continue`. SEE budamasından ÖNCE yerleştirildi (history iki dizi okuması
+        ucuz, SEE swap algoritması pahalı -> kötü-history hamle SEE'ye hiç girmesin).
+        LMP'nin (sayı-tabanlı) + SEE-quiet budamasının (materyal-tabanlı) içerik-
+        tabanlı tamamlayıcısı: "bu hamle bu bağlamda geçmişte hep başarısız oldu".
+      - **Güvenlik (mevcut kapı deseni):** moves_searched>0 (i==0/PV daima aranır),
+        quiet (yakalama/promosyon dokunulmaz), !gives_ck (çek/taktik korunur),
+        !is_mate_score (mat penceresinde kapalı; INF>MATE_IN_MAX -> kök geniş pencere
+        doğal dışlanır).
+      - **Sabitler ÖLÇÜLEREK seçildi** (geçici enstrümantasyon, commit'te yok;
+        kLmrStatDiv emsali): eligible late-quiet dağılımında (depth≤4) mevcut gate
+        **%2.06 buduyor** (no-op DEĞİL), derinlik 1'de en kötü ~%18'i, derinlik 4'e
+        doğru ~sıfıra sönüyor -> roadmap'in "**çok kötü** quiet'leri **sığ
+        derinlikte**" tarifine tam oturuyor. Raw stat kuyruğu: stat<-1000 %23,
+        <-2000 %18, <-4000 %5, <-8000 %0.02. margin 2000 / maxdepth 4 ilk elle-seçim
+        ama artık ölçümle gerekçeli; Blok 4/16 SPSA adayı.
+      - 2 test (122->124): HistPruningKeepsWinningTactic (bedava vezir hâlâ Rxe5 —
+        yakalama quiet değil, budanmaz), HistPruningKeepsMateSearch (arka sıra matı
+        korunur). Node sanity (Release, `3bde658` base, taze tablolar): startpos d13
+        905K->796K (-%12, e2e4 aynı), Kiwipete d12 851K->823K (-%3.3, e2a6 aynı),
+        skor sabit, patlama yok. Düğüm != Elo (Blok 2/6 dersi) -> kabul kapısı SPRT.
+        Ertelenen: derinlik-kare margin (şu an lineer), ayrı/çoklu cont-hist katmanı,
+        improving-farkındalığı (Blok 1/3 rafta).
+- [ ] **9. Null move güçlendirme (SIRADAKİ)**: `static_eval >= beta` kapısı + dinamik R
       (`3 + depth/3 + min((eval-beta)/200, 3)` tarzı; şu an sabit 2/3) + yüksek
       derinlikte verification search (yol haritasının orijinal zugzwang notu).
       Beklenti +5-15.
@@ -569,7 +595,7 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-11): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
+**Güncel durum (2026-07-12): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
 (Aşama 1/1b/2) bitti. FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2, +39.7 Elo) + Blok 1/2
 (TT yenileme paketi) TAMAM. Blok 1/2 iki SPRT: SPRT-A (B1..B4) +12.9 ± 8.2 Elo TAM
 KABUL, SPRT-B (B5 qsearch TT) +33 ± 14.1 Elo TAM KABUL — toplam ~+46 Elo, beklentiyi
@@ -594,15 +620,21 @@ KABUL (3299 oyun, 1021-1399-879, LOS %99.9). Base `8fa2281` vs new `3bde658`. Be
 sonra). IIR arama davranışını TT-durumuna bağımlı kılan İLK sezgisel -> 2 TT testi
 (ResultConsistentAcrossTTState, ReducesNodesOnResearch) yeniden yazıldı. Düğüm sağlaması
 KARIŞIK (startpos d13 +%48, Kiwipete d12 -%13) ama Elo +15 -> düğüm≠Elo dersi tekrar.
-YENİ BASELINE `3bde658`.
-SIRADAKİ: Blok 2/8 = history-tabanlı quiet budaması; Blok 2 kalan [null move güçlendirme,
-ProbCut] + Blok 2/4 multicut opsiyonel eki de masada. Capture history + IIR-tuning
-(kIirMinDepth 6-8 / reduce-by-2) ileride/Texel sonrası yeniden denenebilir.
-FAZ 2D tüm bloklar bitince.**
+Baseline `3bde658` oldu.
+Blok 2/8 (history-tabanlı quiet budaması) TAMAM: SPRT +14.3 ± 8.7 Elo, LLR 2.96 TAM
+KABUL (3575 oyun, 1129-1464-982, LOS %99.9). Base `3bde658` vs new `a8ac0d9`. Beklenti
+(+10-20) tam ortası. Sığ, çekte-olmayan düğümde ham `stat = main + cont < -2000*depth`
+olan quiet, çek-vermeyen late hamleler (moves_searched>0) budanır — SEE'den önce.
+Sabitler ölçülerek seçildi (gate %2.06 buduyor, no-op değil). 2 test (122->124).
+YENİ BASELINE `a8ac0d9`.
+SIRADAKİ: Blok 2/9 = null move güçlendirme (static_eval>=beta gate + dinamik R +
+verification search); Blok 2 kalan [ProbCut] + Blok 2/4 multicut opsiyonel eki de
+masada. Capture history + IIR-tuning (kIirMinDepth 6-8 / reduce-by-2) ileride/Texel
+sonrası yeniden denenebilir. FAZ 2D tüm bloklar bitince.**
 Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
 edilecek (Blok 1/2 commit'leri `1d73725..23d28b0`, Blok 2/4 `a803a3f`, Blok 2/5
 `dd9e8f3..8fa2281` henüz taşınmadı).
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 122
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 124
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
@@ -617,8 +649,9 @@ alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) Faz 2C-devam 
 singular extension TAMAM, SPRT +21.3 -> `a803a3f`; Blok 2/5 SEE paketi TAMAM, iki
 commit/iki SPRT ~+56 (Commit 1 +33.1 -> `dd9e8f3`, Commit 2 +23.3 -> `8fa2281`);
 Blok 2/6 capture history DENENDİ/RAFA (SPRT H0 -16.2, düğüm iyi ama Elo negatif ->
-`8fa2281`); sıradaki Blok 2 kalan [IIR, history budaması, null move güçlendirme]
-+ singular multicut opsiyonel eki -> Blok 3 zaman
+`8fa2281`); Blok 2/7 IIR TAMAM, SPRT +15 -> `3bde658`; Blok 2/8 history-tabanlı quiet
+budaması TAMAM, SPRT +14.3 -> `a8ac0d9`; sıradaki Blok 2 kalan [null move güçlendirme,
+ProbCut] + singular multicut opsiyonel eki -> Blok 3 zaman
 yönetimi + küçükler -> Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
 NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
 (klasik + NNUE, ikisi de aktif; bkz. memory `iki-taban-karari`). Ayrıntılı adım-adım
@@ -1110,8 +1143,9 @@ SPRT +39.7 -> `d07e7f2`; Blok 1/2 TT yenileme ~+46 -> `23d28b0`; Blok 1/3 improv
 DENENDİ/RAFA [H0 + kalibre nötr, `23d28b0`]; Blok 2/4 singular extension TAMAM, SPRT
 +21.3 -> `a803a3f`; Blok 2/5 SEE paketi TAMAM, iki commit/iki SPRT ~+56 -> baseline
 `8fa2281`; Blok 2/6 capture history DENENDİ/RAFA [SPRT H0 -16.2, düğüm iyi/Elo negatif,
-`8fa2281`]; Blok 2/7 IIR TAMAM, SPRT +15 ± 9 -> `3bde658`; sıradaki Blok 2/8 history-tabanlı
-quiet budaması) -> sonra Faz 2D (Lazy SMP,
+`8fa2281`]; Blok 2/7 IIR TAMAM, SPRT +15 ± 9 -> `3bde658`; Blok 2/8 history-tabanlı
+quiet budaması TAMAM, SPRT +14.3 ± 8.7 -> `a8ac0d9`; sıradaki Blok 2/9 null move
+güçlendirme) -> sonra Faz 2D (Lazy SMP,
 tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
 (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
