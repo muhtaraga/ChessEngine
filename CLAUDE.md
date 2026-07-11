@@ -462,8 +462,33 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
       tasarım (capture history'yi SEE-budama marjına katmak, ya da Texel tuning [Blok 4]
       sonrası eval kalibre olunca), veya Stockfish'in tam `update_all_stats` varyantı
       (quiet-cutoff'ta da capture cezası). Testler `8fa2281`'e döndü (123 -> 120).
-- [ ] **7. IIR (Internal Iterative Reduction)**: TT hamlesi olmayan yeterince
-      derin düğümde depth-1 ile ara (birkaç satır, ucuz). Beklenti +5-15.
+- [x] **7. IIR (Internal Iterative Reduction) — TAMAM, SPRT GEÇTİ H1 (+15 ± 9 Elo,
+      LLR 2.96 TAM KABUL, 3299 oyun, 1021-1399-879, LOS %99.9). Base `8fa2281` vs new
+      `3bde658`. YENİ BASELINE `3bde658`.** Beklenti (+5-15) bandının tam üst ucu.
+      - **Mekanik:** TT hamlesi olmayan (miss ya da move'suz hit), kök-dışı (ply>0),
+        yeterince derin (`depth >= kIirMinDepth=4`) düğümde `depth -= 1`. Null-move
+        bloğundan SONRA, move döngüsünden ÖNCE -> RFP/razoring/null orijinal derinlikle
+        çalışır (tuned gate'ler korunur); azaltılmış derinlik yalnız çocuk-arama +
+        döngü-içi LMR/LMP/futility kapılarına yansır. `ply>0`: kök daima tam aranır
+        (dosyadaki tüm kapılarla tutarlı; gerçek oyunda kök zaten ID'den tt_move taşır).
+        tt_move VARKEN singular extension devreye girer -> IIR ile karşılıklı dışlayıcı.
+        Sabit `kIirMinDepth=4` ilk elle-seçim, Blok 4/16 tuning.
+      - **TT-durumu bağımlılığı (yeni sınıf):** IIR, arama davranışını TT-durumuna
+        bağımlı kılan İLK sezgisel (indirim tt_move VARLIĞINA bakar). İki TT testinin
+        "TT'den bağımsız determinizm" ön kabulünü geçersiz kıldı (IIR'li her motorda
+        böyle). `ResultConsistentAcrossTTState` taze determinizm (a==c, skor dahil) +
+        sıcak-TT bestmove kararlılığına (a.best==b.best) daraltıldı, soğuk-vs-sıcak SKOR
+        eşitliği kaldırıldı; `ReducesNodesOnResearch` depth 3'e (< kIirMinDepth, IIR
+        kapalı) indirildi (IIR aktifken soğuk TT agresif indirim aldığından "sıcak TT az
+        düğüm" premisi tersine döner). 2 yeni test (IirKeepsWinningTactic/MateSearch),
+        120 -> 122.
+      - **Düğüm sağlaması KARIŞIK ÇIKTI (kur/döviz İ TERS: heuristik):** Release,
+        `8fa2281`'e karşı — startpos d13 612K->905K (**+%48**, bestmove b1c3->e2e4),
+        Kiwipete d12 984K->851K (-%13, e2a6 aynı). "Düğüm düşer" beklentisi TUTMADI ama
+        Elo yine +15 -> Blok 2/6 dersi tekrar doğrulandı: sezgisel yeniden-şekillendirmede
+        düğüm ≠ Elo, döviz kuru yalnız EXACT hızlanmalara. Ertelenen: daha yüksek
+        kIirMinDepth (6-8) / yüksek derinlikte reduce-by-2 (startpos +%48 fazla-sığ
+        ateşlemeyi ima ediyor, tuning adayı).
 - [ ] **8. History-tabanlı quiet budaması**: sığ derinlikte stat'ı (main+cont)
       çok kötü quiet'leri hiç arama — cont-hist artık oyun boyu kalıcı olduğundan
       sinyal dolu (history-LMR bunun kanıtı). Beklenti +10-20.
@@ -562,15 +587,22 @@ Blok 2/6 (capture history) DENENDİ, RAFA KALDIRILDI: SPRT H0, -16.2 ± 11 Elo, 
 -2.95 TAM RED (2236 oyun, LOS %0.2) -> `src/search.cpp` `8fa2281`'e birebir geri
 alındı. KRİTİK DERS: düğüm sağlaması NET İYİYDİ (agregat 0.83×, Kiwipete 0.64× =
 DAHA AZ düğüm) ama Elo -16 -> sezgisel yeniden-sıralamada düğüm ≠ Elo (kur yalnız
-EXACT hızlanmalara; bkz. Blok listesi madde 6). BASELINE hâlâ `8fa2281`.
-SIRADAKİ: Blok 2/7 = IIR (Internal Iterative Reduction); Blok 2 kalan [history
-budaması, null move güçlendirme] + Blok 2/4 multicut opsiyonel eki de masada.
-Capture history ileride farklı tasarımla/Texel sonrası yeniden denenebilir.
+EXACT hızlanmalara; bkz. Blok listesi madde 6).
+Blok 2/7 (IIR — Internal Iterative Reduction) TAMAM: SPRT +15 ± 9 Elo, LLR 2.96 TAM
+KABUL (3299 oyun, 1021-1399-879, LOS %99.9). Base `8fa2281` vs new `3bde658`. Beklenti
+(+5-15) üst ucu. ply>0 + depth>=kIirMinDepth(4) + tt_move yoksa depth-1 (null-move'dan
+sonra). IIR arama davranışını TT-durumuna bağımlı kılan İLK sezgisel -> 2 TT testi
+(ResultConsistentAcrossTTState, ReducesNodesOnResearch) yeniden yazıldı. Düğüm sağlaması
+KARIŞIK (startpos d13 +%48, Kiwipete d12 -%13) ama Elo +15 -> düğüm≠Elo dersi tekrar.
+YENİ BASELINE `3bde658`.
+SIRADAKİ: Blok 2/8 = history-tabanlı quiet budaması; Blok 2 kalan [null move güçlendirme,
+ProbCut] + Blok 2/4 multicut opsiyonel eki de masada. Capture history + IIR-tuning
+(kIirMinDepth 6-8 / reduce-by-2) ileride/Texel sonrası yeniden denenebilir.
 FAZ 2D tüm bloklar bitince.**
 Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
 edilecek (Blok 1/2 commit'leri `1d73725..23d28b0`, Blok 2/4 `a803a3f`, Blok 2/5
 `dd9e8f3..8fa2281` henüz taşınmadı).
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 120
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 122
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
@@ -1078,7 +1110,8 @@ SPRT +39.7 -> `d07e7f2`; Blok 1/2 TT yenileme ~+46 -> `23d28b0`; Blok 1/3 improv
 DENENDİ/RAFA [H0 + kalibre nötr, `23d28b0`]; Blok 2/4 singular extension TAMAM, SPRT
 +21.3 -> `a803a3f`; Blok 2/5 SEE paketi TAMAM, iki commit/iki SPRT ~+56 -> baseline
 `8fa2281`; Blok 2/6 capture history DENENDİ/RAFA [SPRT H0 -16.2, düğüm iyi/Elo negatif,
-`8fa2281`]; sıradaki Blok 2/7 IIR) -> sonra Faz 2D (Lazy SMP,
+`8fa2281`]; Blok 2/7 IIR TAMAM, SPRT +15 ± 9 -> `3bde658`; sıradaki Blok 2/8 history-tabanlı
+quiet budaması) -> sonra Faz 2D (Lazy SMP,
 tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
 (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;
