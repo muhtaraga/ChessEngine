@@ -443,9 +443,25 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
       kSeeCaptureMargin 20, kSeeQuietMargin 65, kScoreBadCapture -1M) ilk elle-seçim,
       Blok 4/16 tuning. Ertelenen: see_ge (yalnız işaret, tam swap'tan ucuz), düğüm-başı
       see cache'i (Commit 1 ordering + Commit 2 döngü late hamleleri iki kez see çağırır).
-- [ ] **6. Capture history**: `capt_hist[taş][hedef][alınan tür]` — şu an history
-      yalnız quiet; MVV-LVA'yı öğrenen sinyalle güçlendirir (add_history/age
-      desenleri hazır). Beklenti +10-20.
+- [~] **6. Capture history — DENENDİ, RAFA KALDIRILDI (SPRT H0, -16.2 ± 11 Elo,
+      LLR -2.95 TAM RED, 2236 oyun, 605-922-709, LOS %0.2). Base `8fa2281`'e birebir
+      geri alındı (commit'ler `8bb5564`+2 test-düzeltme -> `src/search.cpp` yeniden
+      `8fa2281`).** `capt_hist[taş(0..11)][hedef][alınan tür]` (inline ~18KB); score_move
+      non-promo yakalama dalında materyal-ölçekli MVV + `ch/kCaptHistOrderDiv`;
+      `update_capture_stats` (quiet deseni yansıması, killer/cont yok); SEE-işaret bandı
+      korunuyordu (bant-içi sıralama). En passant PAWN özel-durumu (OOB) ele alındı.
+      **KRİTİK DERS (düğüm ≠ Elo): düğüm sağlaması NET İYİYDİ** — materyal-ölçekli MVV +
+      bölen 256 ile çeşitli açılış pozisyonlarında agregat düğüm **0.83×** (Kiwipete
+      **0.64×**, yani DAHA AZ düğüm), yine de -16 Elo. İlk kalibrasyon (ölçeksiz mvv +
+      bölen 8) düğümü 2.15× şişirmişti; onu düzeltip node-pozitif hale getirdim ama Elo
+      yine negatif. Sezgisel (davranış-değiştiren) yeniden-sıralamada **düğüm sayısı Elo
+      proxy'si DEĞİL**: kur/döviz mantığı yalnız EXACT hızlanmalara uygulanır; capture
+      history HANGİ düğümlerin arandığını değiştirir, az düğüm = daha kötü hamle kalitesi
+      olabilir (budama/sıralama iyi hatları eledi). MVV-LVA+SEE zaten çok güçlü; öğrenilmiş
+      capture sinyali marjinal ve bu tabanda net-negatif çıktı. İLERİDE ADAY: farklı
+      tasarım (capture history'yi SEE-budama marjına katmak, ya da Texel tuning [Blok 4]
+      sonrası eval kalibre olunca), veya Stockfish'in tam `update_all_stats` varyantı
+      (quiet-cutoff'ta da capture cezası). Testler `8fa2281`'e döndü (123 -> 120).
 - [ ] **7. IIR (Internal Iterative Reduction)**: TT hamlesi olmayan yeterince
       derin düğümde depth-1 ile ara (birkaç satır, ucuz). Beklenti +5-15.
 - [ ] **8. History-tabanlı quiet budaması**: sığ derinlikte stat'ı (main+cont)
@@ -542,9 +558,15 @@ Blok 2/5 (SEE paketi, main search) TAMAM: İKİ COMMIT/İKİ SPRT, toplam ~+56 E
 Commit 1 (kayıplı yakalama sıralaması, `dd9e8f3`) +33.1 ± 14.1 Elo TAM KABUL (1420
 oyun); Commit 2 (sığ-derinlik SEE budaması, `8fa2281`) +23.3 ± 11.7 Elo TAM KABUL
 (1972 oyun). Beklenti (+15-30) net aşıldı. YENİ BASELINE `8fa2281`.
-SIRADAKİ: Blok 2/6 = capture history (bu paket `capt_hist` için zemin hazırladı);
-Blok 2 kalan [IIR, history budaması, null move güçlendirme] + Blok 2/4 multicut
-opsiyonel eki de masada. FAZ 2D tüm bloklar bitince.**
+Blok 2/6 (capture history) DENENDİ, RAFA KALDIRILDI: SPRT H0, -16.2 ± 11 Elo, LLR
+-2.95 TAM RED (2236 oyun, LOS %0.2) -> `src/search.cpp` `8fa2281`'e birebir geri
+alındı. KRİTİK DERS: düğüm sağlaması NET İYİYDİ (agregat 0.83×, Kiwipete 0.64× =
+DAHA AZ düğüm) ama Elo -16 -> sezgisel yeniden-sıralamada düğüm ≠ Elo (kur yalnız
+EXACT hızlanmalara; bkz. Blok listesi madde 6). BASELINE hâlâ `8fa2281`.
+SIRADAKİ: Blok 2/7 = IIR (Internal Iterative Reduction); Blok 2 kalan [history
+budaması, null move güçlendirme] + Blok 2/4 multicut opsiyonel eki de masada.
+Capture history ileride farklı tasarımla/Texel sonrası yeniden denenebilir.
+FAZ 2D tüm bloklar bitince.**
 Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
 edilecek (Blok 1/2 commit'leri `1d73725..23d28b0`, Blok 2/4 `a803a3f`, Blok 2/5
 `dd9e8f3..8fa2281` henüz taşınmadı).
@@ -562,7 +584,8 @@ alındı. **SIRADAKİ İŞLER (fork sonrası, klasik tabanda): (1) Faz 2C-devam 
 `23d28b0`; Blok 1/3 improving DENENDİ/RAFA (H0 + kalibre nötr) -> `23d28b0`; Blok 2/4
 singular extension TAMAM, SPRT +21.3 -> `a803a3f`; Blok 2/5 SEE paketi TAMAM, iki
 commit/iki SPRT ~+56 (Commit 1 +33.1 -> `dd9e8f3`, Commit 2 +23.3 -> `8fa2281`);
-sıradaki Blok 2 kalan [capture history, IIR, history budaması, null move güçlendirme]
+Blok 2/6 capture history DENENDİ/RAFA (SPRT H0 -16.2, düğüm iyi ama Elo negatif ->
+`8fa2281`); sıradaki Blok 2 kalan [IIR, history budaması, null move güçlendirme]
 + singular multicut opsiyonel eki -> Blok 3 zaman
 yönetimi + küçükler -> Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
 NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
@@ -1054,7 +1077,8 @@ SIRADAKİ: Faz 2C-devam (tek-thread güçlendirme; Blok 1/1 Aşama 2 movegen TAM
 SPRT +39.7 -> `d07e7f2`; Blok 1/2 TT yenileme ~+46 -> `23d28b0`; Blok 1/3 improving
 DENENDİ/RAFA [H0 + kalibre nötr, `23d28b0`]; Blok 2/4 singular extension TAMAM, SPRT
 +21.3 -> `a803a3f`; Blok 2/5 SEE paketi TAMAM, iki commit/iki SPRT ~+56 -> baseline
-`8fa2281`; sıradaki Blok 2/6 capture history) -> sonra Faz 2D (Lazy SMP,
+`8fa2281`; Blok 2/6 capture history DENENDİ/RAFA [SPRT H0 -16.2, düğüm iyi/Elo negatif,
+`8fa2281`]; sıradaki Blok 2/7 IIR) -> sonra Faz 2D (Lazy SMP,
 tüm bloklar bitince).** Tapered eval (+42.8), pawn structure
 (+45.4), arama tekrar tespiti
 (+27.2), piece mobility (H1), bishop pair + rook-on-file (H1) tam SPRT'den geçti;

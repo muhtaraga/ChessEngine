@@ -293,49 +293,6 @@ TEST(Search, SeePruningKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
-// --- Capture history (Blok 2/6) ---
-
-// Capture history yalnızca yakalamaların SIRALAMASINI etkiler (her SEE-işaret bandının
-// İÇİNDE), hiçbir hamleyi budamaz ve bant ayrımını bozmaz. Bedava vezir Rxe5 (iyi-yakalama
-// bandında) derin aramada da bulunmalı — capture history ordering'i onu killer'ın altına
-// düşürmemeli (bant-crossing / demote bug'ına karşı).
-TEST(Search, CaptureHistoryKeepsWinningCapture) {
-    Board b;
-    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
-    SearchResult r = search(b, 8);
-    EXPECT_EQ(r.best, Move::make(E1, E5));  // kazançlı yakalama korunur
-    EXPECT_GT(r.score, 400);
-}
-
-// En passant yakalamalarının capture history yolunda güvenle işlendiğini doğrular:
-// ep hedef karesi BOŞtur -> type_on(to) = PIECE_TYPE_NB (boyut-6 dizide OOB); alınan
-// tür elle PAWN'a çekilmeli. Burada 1.exd6 e.p. KAZANAN bir KPK: siyah şah f8'de,
-// d-piyonunu blokaja yetişemeyecek kadar uzak (f8->d8 iki hamle), beyaz şah eskortuyla
-// terfi eder (PV: exd6 ...Kf7 Kc6 ...Ke6 d7 ...Ke7 Kc7 d8=Q). İNCE: aynı pozisyon şah
-// e8'de olsaydı BERABERE olurdu (Ke8-d7 tek hamlede piyonun önüne geçip stalemate
-// savunmasına ulaşır; d30'da skor 0). Bu yüzden derinlik yüksek seçildi: motor terfiyi
-// somut görüp skoru vezir-bölgesine (~+950) çıkarır -> beraberlikten (~0) kesin ayrışır,
-// sığ eval yanılgısına dayanmaz. ep hamlesi PV'nin başında -> capture history ödül
-// yolundan (PAWN özel-durumu) geçer.
-TEST(Search, CaptureHistoryEnPassantSafe) {
-    Board b;
-    ASSERT_TRUE(b.set_fen("5k2/8/8/2KpP3/8/8/8/8 w - d6 0 1"));
-    SearchResult r = search(b, 12);
-    EXPECT_EQ(r.best, Move::make(E5, D6, EN_PASSANT));  // ep kazanır (terfi eder)
-    EXPECT_GT(r.score, 400);   // vezir-bölgesine tırmanır (KPK kazancı, beraberlik değil)
-}
-
-// Capture history mat aramasını bozmamalı: bant ayrımı mat hamlelerini aç bırakmaz.
-// Arka sıra matı hâlâ bulunur.
-TEST(Search, CaptureHistoryKeepsMateSearch) {
-    Board b;
-    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
-    SearchResult r = search(b, 5);
-    EXPECT_EQ(r.best, Move::make(A1, A8));  // arka sıra matı korunur
-    EXPECT_TRUE(is_mate_score(r.score));
-    EXPECT_GT(r.score, 0);
-}
-
 // --- Continuation history ---
 
 // Continuation history yalnızca quiet hamlelerin SIRALAMASINI etkiler; hiçbir

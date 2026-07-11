@@ -57,21 +57,6 @@ constexpr int kScoreBadCapture = -1'000'000;  // kayıplı yakalama (see<0): qui
 // aynı), tavana da çarpmaz (ölçekli maks ~10k << 700k).
 constexpr int kHistoryBonusScale = 64;
 
-// Yakalama sıralaması: kurban terimi materyal değeriyle ölçeklenir (kCaptMvvWeight)
-// ki capture history ile karşılaştırılabilir büyüklükte olsun (Stockfish dengesi:
-// 7·PieceValue + captureHistory). MVV baskın kalır; capture history rafine eder ve
-// güçlü/doymuş bir sinyal bir yakalamayı kurban-katmanları içinde/arasında az miktar
-// kaydırabilir. Saklanan capture history ±kHistoryMax (700k); ordering'e katkı
-// kCaptHistOrderDiv ile bölünür. Büyüklükler: cap_mvv ∈ [16·100, 16·900] = [1600,
-// 14400]; ch/256 ∈ ±2734 — MVV baskın, capture history ince ayar.
-// Bant güvenliği: bant-içi ofset toplamı ∈ ~(-1.1k, +17.1k) << killer'a (200k) uzaklık.
-// ÖLÇÜLDÜ: bölen ilk denemede 8 (ölçeksiz mvv ile) düğümü ~2.15× şişirdi (capture
-// history MVV'yi eziyordu); materyal-ölçekli MVV + bölen 256 ile çeşitli açılış
-// pozisyonlarında agregat düğüm 0.83× (Kiwipete 0.64×), yani sıralama iyileşiyor.
-// İkisi de ilk elle-seçim (Blok 4/16 tuning adayı).
-constexpr int kCaptMvvWeight    = 16;
-constexpr int kCaptHistOrderDiv = 256;
-
 // Continuation history indekslemesi: (renk, tür) çifti tek bir 0..11 taş indeksi.
 // kNoPiece = "bu ply'de gerçek hamle yok" (kök öncesi ya da null move).
 constexpr int kNoPiece = 12;
@@ -109,18 +94,10 @@ struct SearchTables::Impl {
         std::array<std::array<std::array<std::array<int, SQUARE_NB>, 12>, SQUARE_NB>, 12>;
     std::unique_ptr<ContHist> cont_hist = std::make_unique<ContHist>();
 
-    // Capture history: [taş (renk+tür 0..11)][hedef kare][alınan tür]. Quiet
-    // history'nin yakalama karşılığı: MVV-LVA/SEE'nin statik sinyaline "bu taşın şu
-    // kareye şu türü alması geçmişte kesme yaptı mı" öğrenilmiş sinyalini ekler.
-    // ~18 KB -> inline (küçük; cont_hist gibi heap gerekmez). Alınan tür yalnız
-    // PAWN..QUEEN + en passant PAWN; KING asla alınmaz (boyut PIECE_TYPE_NB güvenli).
-    int capt_hist[12][SQUARE_NB][PIECE_TYPE_NB] = {};
-
     // Yeni oyun: her şey sıfır.
     void clear() {
         std::memset(killers, 0, sizeof(killers));
         std::memset(history, 0, sizeof(history));
-        std::memset(capt_hist, 0, sizeof(capt_hist));
         cont_hist->fill({});
     }
 
@@ -139,9 +116,6 @@ struct SearchTables::Impl {
             for (auto& b : a)
                 for (auto& c : b)
                     for (int& h : c) h /= 2;
-        for (auto& p : capt_hist)
-            for (auto& t : p)
-                for (int& h : t) h /= 2;
     }
 };
 
@@ -217,8 +191,6 @@ struct Searcher {
     int  score_move(const Board& b, Move m, Move tt_move, int ply) const;
     void update_quiet_stats(const Board& b, Move m, int ply, int depth,
                             const Move* quiets, int nq);
-    void update_capture_stats(const Board& b, Move m, int depth,
-                              const Move* caps, int nc);
 
     // Kökte aspiration window ile arar: bir önceki derinliğin puanı etrafında
     // dar pencere dene, fail-low/high olursa genişleterek yeniden ara.
@@ -268,15 +240,9 @@ int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
         // Promosyon-olmayan gerçek yakalama: SEE işaretiyle iki banda ayır. Kayıplı
         // yakalama (savunmalı taşa vurma, see<0) quiet history bandının ALTINA iner;
         // iyi/eşit yakalama (see>=0) mevcut yüksek bantta kalır. Her iki bant da kendi
-        // içinde materyal-ölçekli MVV + capture history ile sıralı. En passant see()
-        // içinde doğru ele alınır; victim = alınan tür (ep'te PAWN, in-bounds).
-        // ch=0 iken sıralama eski ordinal-MVV ile birebir (kurban sırası her iki
-        // ölçekte de monoton, aggressor cezası yalnız katman-içi tiebreak).
-        const int cap_mvv = kCaptMvvWeight * static_cast<int>(MaterialValue[victim])
-                            - static_cast<int>(aggressor);
-        const int ch   = tb.capt_hist[piece_index(b.side_to_move, aggressor)][m.to()][victim];
+        // içinde MVV-LVA sıralı. En passant see() içinde doğru ele alınır (var olan test).
         const int base = (see(b, m) < 0) ? kScoreBadCapture : kScoreCapture;
-        return base + cap_mvv + ch / kCaptHistOrderDiv;
+        return base + mvv_lva;
     }
 
     // Quiet hamle: önce killer, sonra history. Quiet puanı iki bağımsız sinyalin
@@ -331,27 +297,6 @@ void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth,
                 (*tb.cont_hist)[pp][pt][piece_index(us, b.type_on(q.from()))][q.to()],
                 -bonus);
     }
-}
-
-// Beta kesmesi yapan YAKALAMA hamlesini (m) ve bu düğümde m'den önce aranmış ama
-// kesme yapmayan yakalamaları (caps[0..nc)) capture history'ye işler. update_quiet_stats
-// deseninin yansıması ama killer/continuation-context YOK (capture history'nin v1'de
-// continuation varyantı yok). Aynı history gravity: m ödül (+bonus), diğerleri ceza.
-void Searcher::update_capture_stats(const Board& b, Move m, int depth,
-                                    const Move* caps, int nc) {
-    const int   bonus = depth * depth * kHistoryBonusScale;  // quiet ile aynı ölçek
-    const Color us    = b.side_to_move;
-    // b hamle-öncesi tahta (tüm caps b'den üretildi), us = mover. En passant hedefi
-    // BOŞtur -> type_on(to) = PIECE_TYPE_NB (OOB); alınan tür elle PAWN (ep tuzağı).
-    auto bump = [&](Move mv, int delta) {
-        const PieceType moving   = b.type_on(mv.from());
-        const PieceType captured = (mv.type() == EN_PASSANT) ? PAWN
-                                                             : b.type_on(mv.to());
-        add_history(tb.capt_hist[piece_index(us, moving)][mv.to()][captured], delta);
-    };
-    bump(m, bonus);                                // kesen yakalama ödül
-    for (int k = 0; k < nc; ++k)
-        if (caps[k] != m) bump(caps[k], -bonus);   // önce aranan yakalamalar ceza
 }
 
 // LMR indirim tablosu: derinlik ve hamle sırası (kaçıncı hamleyi arıyoruz)
@@ -607,11 +552,6 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     Move quiets_searched[64];
     int  nquiets = 0;
 
-    // Capture history için: bu düğümde aranmış (kesme yapmadan geçilmiş) non-promo
-    // yakalamalar. Beta kesmesinde kesen yakalama ödül, bunlar ceza alır.
-    Move captures_searched[64];
-    int  ncaptures = 0;
-
     // --- Futility pruning kapısı (node seviyesi) ---
     // Sığ, çekte-olmayan, mat-olmayan düğümde eval + margin bile alpha'ya
     // ulaşamıyorsa quiet hamleler (materyali pek değiştirmez) alpha'yı geçemez ->
@@ -704,12 +644,9 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         next.do_move(m);
 
         // History malus: aranan quiet hamleyi kaydet (kesme olursa bunlardan
-        // kesmeyi yapan ödül, kalanlar ceza alır). Non-promo yakalamalar ayrı listeye
-        // (capture history; promosyonlar SEE-muaf farklı alt-bant -> ikisine de girmez).
+        // kesmeyi yapan ödül, kalanlar ceza alır).
         if (quiet && nquiets < 64)
             quiets_searched[nquiets++] = m;
-        else if (is_capture(b, m) && m.type() != PROMOTION && ncaptures < 64)
-            captures_searched[ncaptures++] = m;
 
         // NOT: Naif/SEE-kapılı check extension (çek veren TÜM hamleleri uzat) denendi,
         // SPRT'de NÖTR -> rafa kaldırıldı; çok-budayan yığında çeklerin taktik değeri
@@ -810,13 +747,10 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         if (best > alpha)
             alpha = best;
         if (alpha >= beta) {
-            // Beta kesmesi: kesmeyi yapan hamleyi ilgili history'ye işle. Quiet ->
-            // killer + main/cont history; non-promo yakalama -> capture history.
-            // Promosyon (yakalama-promo dahil) hiçbirine girmez (mevcut davranış).
+            // Beta kesmesi: kesmeyi yapan quiet hamleyi killer + history'ye işle
+            // (yakalamalar MVV-LVA ile sıralanır, history'yi kirletmezler).
             if (!is_capture(b, m) && m.type() != PROMOTION)
                 update_quiet_stats(b, m, ply, depth, quiets_searched, nquiets);
-            else if (is_capture(b, m) && m.type() != PROMOTION)
-                update_capture_stats(b, m, depth, captures_searched, ncaptures);
             break;
         }
     }
