@@ -48,6 +48,7 @@ constexpr int kScorePromo    =   900'000;  // promosyon ek primi (yakalamaya ekl
 constexpr int kScoreKiller1  =   800'000;  // 1. killer (bu ply'de kesme yapan quiet)
 constexpr int kScoreKiller2  =   790'000;  // 2. killer
 constexpr int kHistoryMax    =   700'000;  // history taban tavanı (killer'ın altında)
+constexpr int kScoreBadCapture = -1'000'000;  // kayıplı yakalama (see<0): quiet bandının altında
 
 // History ödül/ceza ölçek çarpanı. Ölçüldü: ölçeksiz (bonus = depth²) tipik |history|
 // değerleri 3-100 bandındaydı, tavanın (700k) ~5000 katı altında. Bu iki soruna yol
@@ -230,10 +231,18 @@ int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
                             : cap                ? b.type_on(m.to())
                             :                      PAWN;  // düz promosyonda kurban yok
         PieceType aggressor = b.type_on(m.from());
-        int s = kScoreCapture + static_cast<int>(victim) * 16 - static_cast<int>(aggressor);
+        const int mvv_lva = static_cast<int>(victim) * 16 - static_cast<int>(aggressor);
         if (mt == PROMOTION)
-            s += kScorePromo + static_cast<int>(m.promotion_type());  // vezir promosyonu en güçlü
-        return s;
+            // Promosyonlar SEE'den muaf: SEE yeni taşı modellemez, promosyon zaten güçlü.
+            // (Yakalama-promosyon dahil; mevcut yüksek banttaki davranış aynen korunur.)
+            return kScoreCapture + mvv_lva + kScorePromo +
+                   static_cast<int>(m.promotion_type());  // vezir promosyonu en güçlü
+        // Promosyon-olmayan gerçek yakalama: SEE işaretiyle iki banda ayır. Kayıplı
+        // yakalama (savunmalı taşa vurma, see<0) quiet history bandının ALTINA iner;
+        // iyi/eşit yakalama (see>=0) mevcut yüksek bantta kalır. Her iki bant da kendi
+        // içinde MVV-LVA sıralı. En passant see() içinde doğru ele alınır (var olan test).
+        const int base = (see(b, m) < 0) ? kScoreBadCapture : kScoreCapture;
+        return base + mvv_lva;
     }
 
     // Quiet hamle: önce killer, sonra history. Quiet puanı iki bağımsız sinyalin

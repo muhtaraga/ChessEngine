@@ -2,9 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include "engine/attacks.hpp"
 #include "engine/board.hpp"
 #include "engine/move.hpp"
 #include "engine/search.hpp"
+#include "engine/see.hpp"
 
 using namespace engine;
 
@@ -247,6 +249,25 @@ TEST(Search, SingularKeepsMateSearch) {
     EXPECT_EQ(r.best, Move::make(A1, A8));
     EXPECT_TRUE(is_mate_score(r.score));
     EXPECT_GT(r.score, 0);
+}
+
+// --- SEE paketi: kayıplı yakalama sıralaması (Commit 1) ---
+
+// Kayıplı yakalamalar (see<0) artık quiet history bandının ALTINA sıralanıyor, ama
+// ASLA budanmıyor. Bu yüzden gerçekte kazanan bir see<0 yakalama hâlâ bulunmalı.
+// Burada Qh2xe5: e5 atı yalnız d6 piyonuyla savunulu, ama d6 Bb4 tarafından şaha
+// MUTLAK bağlı (pinned). SEE bağı görmez -> dxe5 geri-alışını sayar -> see = 320-900
+// = -580 (<0, aşağıda doğrulanır) -> kötü-yakalama bandına iner. Gerçekte d6 oynayamaz,
+// vezir atı temiz kazanır (+~1300cp). Sıralama demote'u kazananı kaybettirmemeli.
+TEST(Search, SeeOrderingKeepsWinningSacrifice) {
+    init_sliding_attacks();  // see() sliding tablolarını ister (idempotent)
+    Board b;
+    ASSERT_TRUE(b.set_fen("5k2/p6p/3p4/4n3/1B6/8/7Q/6K1 w - - 0 1"));
+    const Move win = Move::make(H2, E5);   // bağlı savunucuya rağmen atı al
+    EXPECT_LT(see(b, win), 0);             // SEE bunu kötü-yakalama sayar (bağı görmez)
+    SearchResult r = search(b, 5);
+    EXPECT_EQ(r.best, win);                // demote edildi ama hâlâ bulunur
+    EXPECT_GT(r.score, 400);               // açık ara kazanan
 }
 
 // --- Continuation history ---
