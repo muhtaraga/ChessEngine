@@ -372,6 +372,13 @@ constexpr int kSingularMinDepth    = 8;  // yalnız depth >= 8 düğümlerde
 constexpr int kSingularDepthMargin = 3;  // tte.depth >= depth-3 (girdi güvenilir olmalı)
 constexpr int kSingularMargin      = 2;  // singularBeta = ttValue - 2*depth (cp)
 
+// --- IIR (Internal Iterative Reduction) parametreleri ---
+// TT hamlesi olmayan (miss ya da move'suz hit) yeterince derin düğümde iyi bir
+// sıralama ipucu yoktur -> tam derinlik aramak pahalı. Derinliği 1 azalt; azaltılmış
+// arama ucuzdur ve bir TT hamlesi üretir, üst iterasyon onu kullanır. İlk elle-seçim,
+// SPRT/SPSA ile ayarlanabilir (Blok 4/16).
+constexpr int kIirMinDepth = 4;
+
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
                       bool null_allowed, Move excluded) {
     // Kesme kontrolü (her ~4096 düğümde bir; saat/atomik okuma nispeten pahalı).
@@ -533,6 +540,17 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         if (score >= beta)
             return beta;  // fail-high: dalı buda (fail-hard; sahte mat skoru sızmasın)
     }
+
+    // --- Internal Iterative Reduction (IIR) ---
+    // TT hamlesi yoksa sıralama ipucumuz yok; derinliği 1 azalt (bkz. kIirMinDepth notu).
+    // Kökte (ply 0) ASLA: kök daima tam aranmalı (bestmove/PV güvenilir olsun) — dosyadaki
+    // tüm budama/indirim kapılarıyla tutarlı. Gerçek oyunda kök zaten iterative deepening'den
+    // bir tt_move taşır, bu yüzden bu kısıt kayıp değil. tt_move VARKEN singular extension
+    // devreye girer -> ikisi karşılıklı dışlayıcı, etkileşim yok. Azaltılmış derinlik buradan
+    // sonra move döngüsündeki LMR/LMP/futility kapılarına da yansır (standart, istenen
+    // davranış). RFP/razoring/null yukarıda kaldığı için orijinal derinlikle çalışır.
+    if (ply > 0 && depth >= kIirMinDepth && tt_move == Move())
+        depth -= 1;
 
     // Tüm hamleleri skorla (TT hamlesi, MVV-LVA, killer, history). Her iterasyonda
     // kalanların en yükseğini öne çekiyoruz (lazy selection sort): iyi sıralamada

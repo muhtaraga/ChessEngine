@@ -162,30 +162,40 @@ const char* kMidgame =
 
 }  // namespace
 
-// --- TT sonucu değiştirmemeli: boş TT vs. doldurulmuş TT aynı skor/hamle ---
+// --- Taze arama determinizmi + TT-durumu altında bestmove kararlılığı ---
+// NOT: IIR (internal iterative reduction) indirimi TT hamlesinin VARLIĞINA bakar ->
+// arama davranışı artık meşru şekilde TT-durumuna bağımlıdır (temiz TT'de her düğüm
+// indirilir, dolu TT'de tt_move olanlar indirilmez). Bu yüzden "boş TT skoru == dolu
+// TT skoru" ARTIK GEÇERLİ BİR DEĞİŞMEZ DEĞİL (IIR'lı her motorda böyle). Test hâlâ
+// iki gerçek garantiyi doğrular: (a) taze arama determinizmi (aynı temiz TT ->
+// birebir aynı sonuç), (b) sıcak TT bestmove KARARINI değiştirmez.
 TEST(TT, ResultConsistentAcrossTTState) {
     // 1) Temiz TT ile ara.
     TT.clear();
     SearchResult a = search_fen(kMidgame, 5);
 
-    // 2) TT önceki aramadan dolu; tekrar ara -> aynı sonuç gelmeli.
-    SearchResult b = search_fen(kMidgame, 5);
-
-    EXPECT_EQ(a.best, b.best);
-    EXPECT_EQ(a.score, b.score);
-
-    // 3) TT tamamen temizlenip yeniden arandığında da aynı olmalı (determinizm).
+    // 2) Taze determinizm: TT temizlenip yeniden arandığında birebir aynı (skor dahil).
+    //    IIR temiz TT'de ateşlese de arama deterministiktir.
     TT.clear();
     SearchResult c = search_fen(kMidgame, 5);
     EXPECT_EQ(a.best, c.best);
     EXPECT_EQ(a.score, c.score);
+
+    // 3) Sıcak TT (önceki aramadan dolu) bestmove kararını değiştirmemeli. Skor
+    //    eşitliği İDDİA EDİLMEZ: IIR onu meşru şekilde TT-durumuna bağımlı kılar.
+    SearchResult b = search_fen(kMidgame, 5);
+    EXPECT_EQ(a.best, b.best);
 }
 
 // --- TT işini yapıyor: dolu TT ile yeniden arama daha az düğüm gezmeli ---
+// Derinlik kIirMinDepth ALTINDA seçildi (IIR bu derinlikte ateşlemez): IIR aktifken
+// SOĞUK TT agresif indirim aldığından "sıcak TT daha az düğüm" premisi tersine döner
+// (soğuk < sıcak). TT'nin saf hızlandırma etkisini izole etmek için IIR devre dışı
+// olduğu bir derinlikte ölçülür.
 TEST(TT, ReducesNodesOnResearch) {
     TT.clear();
-    SearchResult first  = search_fen(kMidgame, 6);
-    SearchResult second = search_fen(kMidgame, 6);  // TT şimdi dolu
+    SearchResult first  = search_fen(kMidgame, 3);  // depth < kIirMinDepth (IIR kapalı)
+    SearchResult second = search_fen(kMidgame, 3);  // TT şimdi dolu
 
     EXPECT_LT(second.nodes, first.nodes);
 }

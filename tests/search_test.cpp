@@ -251,6 +251,28 @@ TEST(Search, SingularKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
+// --- IIR (Internal Iterative Reduction) ---
+
+// IIR tt_move'suz düğümde derinliği azaltır (depth >= kIirMinDepth=4); taktiği bozmaz:
+// bedava vezir hâlâ Rxe5 ile alınır.
+TEST(Search, IirKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 6);        // IIR aktif (depth >= 4)
+    EXPECT_EQ(r.best, Move::make(E1, E5));
+    EXPECT_GT(r.score, 400);
+}
+
+// IIR mat aramasını bozmamalı: arka sıra matı azaltılmış derinlikte de bulunur.
+TEST(Search, IirKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 6);
+    EXPECT_EQ(r.best, Move::make(A1, A8));
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- SEE paketi: kayıplı yakalama sıralaması (Commit 1) ---
 
 // Kayıplı yakalamalar (see<0) artık quiet history bandının ALTINA sıralanıyor, ama
