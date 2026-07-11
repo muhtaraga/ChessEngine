@@ -226,6 +226,29 @@ TEST(Search, RazoringKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
+// --- Singular extension ---
+
+// Singular extension yalnız derinlik uzatır (depth >= kSingularMinDepth=8), taktiği
+// bozmaz: bedava vezir singular-aktif derinlikte hâlâ Rxe5 ile alınır.
+TEST(Search, SingularKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 9);        // singular aktif (depth >= 8)
+    EXPECT_EQ(r.best, Move::make(E1, E5));
+    EXPECT_GT(r.score, 400);
+}
+
+// Singular doğrulama araması (tt_move dışlanır, TT'ye yazmaz, tekrar/50-hamle atlar)
+// mat aramasını bozmamalı: arka sıra matı derin aramada da korunur.
+TEST(Search, SingularKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 9);
+    EXPECT_EQ(r.best, Move::make(A1, A8));
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- Continuation history ---
 
 // Continuation history yalnızca quiet hamlelerin SIRALAMASINI etkiler; hiçbir

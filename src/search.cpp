@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "engine/bitboard.hpp"
@@ -184,7 +185,7 @@ struct Searcher {
     }
 
     int  negamax(const Board& b, int depth, int alpha, int beta, int ply,
-                 bool null_allowed = true);
+                 bool null_allowed = true, Move excluded = Move());
     int  quiescence(const Board& b, int alpha, int beta, int ply);
     int  score_move(const Board& b, Move m, Move tt_move, int ply) const;
     void update_quiet_stats(const Board& b, Move m, int ply, int depth,
@@ -343,8 +344,17 @@ constexpr int kRazorMargin[4] = {0, 300, 500, 700};  // SPRT ile ayarlanabilir
 constexpr int kLmpMaxDepth = 8;
 inline int lmp_count(int depth) { return 3 + depth * depth; }
 
+// --- Singular extension parametreleri ---
+// TT hamlesi, azaltılmış derinlikte tt_move'u DIŞLAYAN bir doğrulama aramasında
+// diğer TÜM hamlelerden belirgin iyiyse (kanıtlanmış singular) o hattı 1 ply uzat.
+// Yalnız derin, güvenilir LOWER/EXACT girdili düğümlerde. Sabitler ilk elle-seçim,
+// SPRT/SPSA ile ayarlanabilir.
+constexpr int kSingularMinDepth    = 8;  // yalnız depth >= 8 düğümlerde
+constexpr int kSingularDepthMargin = 3;  // tte.depth >= depth-3 (girdi güvenilir olmalı)
+constexpr int kSingularMargin      = 2;  // singularBeta = ttValue - 2*depth (cp)
+
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
-                      bool null_allowed) {
+                      bool null_allowed, Move excluded) {
     // Kesme kontrolü (her ~4096 düğümde bir; saat/atomik okuma nispeten pahalı).
     // Önce dış "stop" bayrağı (zaman sınırından bağımsız), sonra deadline.
     if ((nodes & 4095) == 0) {
@@ -378,13 +388,19 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // hattını reddeder, geride olan (perpetual vb.) onu kurtarıcı olarak arar.
     // 50-hamle ile birlikte TT sondasından ÖNCE: bu beraberlikler Zobrist
     // anahtarında yok, TT kesmesi onları gözden kaçırabilirdi.
-    if (ply > 0 && is_repetition(b))
-        return 0;
+    // excluded (singular doğrulama) iken bu kısayollar ATLANIR: aynı `b`'yi tt_move'suz
+    // yeniden arıyoruz, taze düğüm değiliz. Dış düğüm b.key'i yığına zaten push etti;
+    // is_repetition(b) burada onu bulup "tekrar -> 0" false-positive dönerdi (kritik bug).
+    // 50-hamle de dış düğümce zaten geçildi.
+    if (excluded == Move()) {
+        if (ply > 0 && is_repetition(b))
+            return 0;
 
-    // 50-hamle beraberliği: TT sondasından ÖNCE. halfmove_clock Zobrist
-    // anahtarına dahil değil; TT kesmesi bu beraberliği gözden kaçırabilirdi.
-    if (b.halfmove_clock >= 100)
-        return 0;
+        // 50-hamle beraberliği: TT sondasından ÖNCE. halfmove_clock Zobrist
+        // anahtarına dahil değil; TT kesmesi bu beraberliği gözden kaçırabilirdi.
+        if (b.halfmove_clock >= 100)
+            return 0;
+    }
 
     // Horizon: statik eval yerine sessiz-arama (quiescence) — yakalama zincirleri
     // sessizleşene kadar aranır, böylece "yarım kalmış" taş alışverişleri doğru
@@ -399,8 +415,10 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     const Move tt_move = tt_hit ? tte.move : Move();
 
     // Kökte (ply == 0) kesme yapma: kök daima tam aranmalı ki bestmove ve PV
-    // güvenilir olsun. Yeterince derin bir girişte sınıra göre kes.
-    if (tt_hit && ply > 0 && tte.depth >= depth) {
+    // güvenilir olsun. Yeterince derin bir girişte sınıra göre kes. excluded iken
+    // ATLANIR: aynı key'in girdisi (LOWER, ttValue) azaltılmış doğrulama derinliğinde
+    // tte.depth >= depth sağlar ve anında ttValue döndürür -> singular asla ateşlemez.
+    if (excluded == Move() && tt_hit && ply > 0 && tte.depth >= depth) {
         int s = score_from_tt(tte.score, ply);
         if (tte.bound() == Bound::EXACT)                 return s;
         if (tte.bound() == Bound::LOWER && s >= beta)    return s;
@@ -408,8 +426,12 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     }
 
     // Bu düğümün anahtarını arama yığınına ekle (çocuklar tekrarı görebilsin);
-    // RAII ile fonksiyon çıkışında (abort dahil her yolda) çıkarılır.
-    KeyGuard key_guard(keys, b.key);
+    // RAII ile fonksiyon çıkışında (abort dahil her yolda) çıkarılır. excluded iken
+    // push etme: dış düğüm b.key'i zaten yığına koydu, çift-push çocukların tekrar
+    // taramasını bozardı.
+    std::optional<KeyGuard> key_guard;
+    if (excluded == Move())
+        key_guard.emplace(keys, b.key);
 
     // Futility ailesi için statik eval: çekteyken anlamsız (eval gürültülü, kaçış
     // zorunlu), yalnız çekte değilken hesaplanır. RFP + futility pruning paylaşır.
@@ -548,6 +570,10 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
 
         const Move m = ml.moves[i];
 
+        // Singular doğrulama araması dışlanan hamleyi (tt_move) atlar.
+        if (m == excluded)
+            continue;
+
         // quiet / gives_ck bir kez hesaplanır (futility + LMP + LMR paylaşır).
         // gives_ck artık ÇOCUK TAHTA KURULMADAN belirleniyor — bu, aşağıdaki iki
         // budamanın kopya + do_move bedelini tamamen ortadan kaldırmasını sağlıyor
@@ -583,12 +609,35 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         if (quiet && nquiets < 64)
             quiets_searched[nquiets++] = m;
 
-        // NOT: Check extension (çek veren hamleyi 1 ply uzat) hem naif hem
-        // SEE-kapılı formda denendi; ikisi de SPRT'de NÖTR kaldı (LLR ~0) ->
-        // rafa kaldırıldı. Bizim gibi çok-budayan bir motorda (LMR + null +
-        // futility + LMP + razoring) çeklerin taktik değeri zaten yakalandığından
-        // uzatma ekleyecek bir şey bulamadı. (see() sessiz-hamle genelleştirmesi
-        // ileride quiet-move SEE budaması için korundu.)
+        // NOT: Naif/SEE-kapılı check extension (çek veren TÜM hamleleri uzat) denendi,
+        // SPRT'de NÖTR -> rafa kaldırıldı; çok-budayan yığında çeklerin taktik değeri
+        // zaten yakalanıyordu. Singular extension (aşağıda) bunun "doğru hali": kör
+        // değil, yalnız kanıtlanmış-tekil tt_move'u uzatır.
+
+        // --- Singular extension ---
+        // tt_move'u aramadan önce: TT skorunun biraz altında (singularBeta), tt_move'u
+        // DIŞLAYAN, azaltılmış derinlikte null-window doğrulama. Hiçbir alternatif
+        // singularBeta'ya ulaşamıyorsa (fail-low) tt_move tekildir -> 1 ply uzat.
+        // Yalnız: excluded değil (iç içe singular yok), m == tt_move (i==0'ı sağlamlaştırır;
+        // TT collision'da tt_move illegal olabilir), derin düğüm, güvenilir LOWER/EXACT
+        // girdi, mat-olmayan ttValue.
+        int extension = 0;
+        if (excluded == Move() && tt_hit && m == tt_move && ply > 0 &&
+            depth >= kSingularMinDepth &&
+            tte.depth >= depth - kSingularDepthMargin &&
+            (tte.bound() == Bound::LOWER || tte.bound() == Bound::EXACT)) {
+            const int tt_value = score_from_tt(tte.score, ply);
+            if (!is_mate_score(tt_value)) {
+                const int singular_beta  = tt_value - kSingularMargin * depth;
+                const int singular_depth = (depth - 1) / 2;
+                // b üzerinde, tt_move DIŞLANARAK, null-window [sb-1, sb] doğrulama.
+                const int s = negamax(b, singular_depth, singular_beta - 1, singular_beta,
+                                      ply, /*null_allowed=*/false, /*excluded=*/tt_move);
+                if (!aborted && s < singular_beta)
+                    extension = 1;  // hiçbir alternatif yaklaşamadı -> tekil
+            }
+        }
+        const int new_depth = depth - 1 + extension;
 
         // Continuation history bağlamı: çocuk düğümler "bu ply'de hangi taş nereye
         // oynandı" bilgisini stack[ply]'den okur. Promosyonda hareket eden taş
@@ -604,7 +653,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // re-search nadirdir, net kazanç düğüm sayısında. (LMR'nin oturacağı çerçeve.)
         int score;
         if (i == 0) {
-            score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
+            score = -negamax(next, new_depth, -beta, -alpha, ply + 1);
         } else {
             // --- LMR (Late Move Reductions) ---
             // Geç sıralanan quiet, çek-vermeyen hamleler büyük olasılıkla alpha'yı
@@ -626,15 +675,15 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             }
 
             // Azaltılmış derinlikte null-window (scout) arama.
-            score = -negamax(next, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
+            score = -negamax(next, new_depth - reduction, -alpha - 1, -alpha, ply + 1);
             // İndirimli scout alpha'yı geçtiyse indirim yanlıştı: tam derinlikte
             // null-window ile yeniden ara (PVS re-search'ten önce).
             if (!aborted && reduction > 0 && score > alpha)
-                score = -negamax(next, depth - 1, -alpha - 1, -alpha, ply + 1);
+                score = -negamax(next, new_depth, -alpha - 1, -alpha, ply + 1);
             // PVS: null-window alpha'yı geçip beta'nın altında kaldıysa gerçek
             // değeri bulmak için tam pencereyle yeniden ara.
             if (!aborted && score > alpha && score < beta)
-                score = -negamax(next, depth - 1, -beta, -alpha, ply + 1);
+                score = -negamax(next, new_depth, -beta, -alpha, ply + 1);
         }
 
         if (aborted)
@@ -673,11 +722,15 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     // aksi              : gerçek değer (exact).
     // eval alanına HAM statik eval yazılır (çekteyken yok). Rafine edilmiş bir
     // değer yazılsaydı sonraki sonda onu tekrar rafine eder, hata birikirdi.
-    Bound bound = (best <= alpha_orig) ? Bound::UPPER
-                : (best >= beta)       ? Bound::LOWER
-                :                        Bound::EXACT;
-    TT.store(b.key, depth, score_to_tt(best, ply), bound, best_move,
-             in_check ? kEvalNone : static_eval);
+    // excluded (singular doğrulama) iken YAZMA: best, tt_move-hariç-en-iyi'dir =
+    // düğümün gerçek değeri değil; yazılsaydı TT bozulurdu.
+    if (excluded == Move()) {
+        Bound bound = (best <= alpha_orig) ? Bound::UPPER
+                    : (best >= beta)       ? Bound::LOWER
+                    :                        Bound::EXACT;
+        TT.store(b.key, depth, score_to_tt(best, ply), bound, best_move,
+                 in_check ? kEvalNone : static_eval);
+    }
 
     return best;
 }
