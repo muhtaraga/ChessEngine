@@ -664,8 +664,31 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
           Kiwipete d12 488482 (d5e6) — karışık yön, patlama yok (düğüm != Elo).
           Ertelenen: CM bonusunu LMR/history-pruning stat'ına katmak, age()'de
           temizleme varyantı.
-      Kalan (AYRI oturum + AYRI commit + AYRI SPRT):
-      **kök hamle sıralamasında önceki iterasyon düğüm sayıları**.
+      - [~] **kök hamle sıralaması (önceki iterasyon düğüm sayıları) — DENENDİ, RAFA
+        KALDIRILDI (SPRT H0 yönünde, kullanıcı erken durdurdu: -16.7 ± 22.7 Elo, LLR
+        -0.718, 480 oyun, 116-225-139, LOS %7.5). Commit `4612c5c`, revert `3ae1331`;
+        `git diff aaaec37 -- src/search.cpp tests/search_test.cpp` boş -> baseline
+        `aaaec37` DEĞİŞMEDİ, testler 138.** ID'de kök hamlelerini önceki tamamlanan
+        iterasyonun alt-ağaç düğüm sayısına göre azalan sırala (en iyi hamle tt_move
+        ile önde; rank tabanlı skor, kScoreTT altı bant). `Searcher.root_move_nodes`
+        iterasyonlar arası kalıcı (Searcher ID döngüsünde yaşar), her TAM kök aramasında
+        commit (aspiration fail-high kısmi ölçümü atlanır).
+        - **PLAN VARSAYIMI ÇÜRÜTÜLDÜ:** "kökte budama yok -> yeniden sıralama skoru/best'i
+          DEĞİŞTİRMEZ (yalnız düğüm verimi)" varsayımı YANLIŞ. Alt-ağaç TT/history/LMR
+          yol-bağımlılığı sonucu değiştiriyor (IIR/capture-history emsali; sezgisel,
+          exact değil). Ölçüldü: gate'siz startpos d13 düğüm **+%62** patladı (sığ
+          derinlikte düğüm sayıları gürültü — depth 1 hamle başına ~birkaç düğüm).
+        - **Derinlik kapısı (kullanıcı kararı):** `kRootNodeOrderMinDepth=6` eklendi ->
+          sığ gürültü elendi, startpos d13 düz (-%0.3) ama Kiwipete d12 **+%13** (karışık,
+          IIR emsali). SPRT yine de net negatif.
+        - **DERS (düğüm != Elo + geri-besleme desenkronizasyonu):** motorun mevcut kök
+          sıralaması (tt + MVV-LVA + history) zaten iyi ve TT/history durumu o sırayla
+          SENKRON. Köke node-count sırası enjekte etmek bu geri-beslemeyi bozup derin
+          ağacı verimsizleştiriyor; node-count hamle kalitesinin gürültülü vekili
+          (transpozisyon yoğunluğu/TT-hit oranını da yansıtır). Döviz kuru burada
+          UYGULANAMAZ (yalnız EXACT hızlanmalara; burada sonuç değişiyor). İLERİDE ADAY:
+          Stockfish-tarzı önceki-iterasyon SKORU'na göre kök sıralaması (node-count değil),
+          ya da yalnız zaman yönetiminde "easy move" tespiti için düğüm sayısı.
 
 *Blok 4 — Texel tuning (kullanıcı kararı 2026-07-10: dahil, en sonda):*
 
@@ -815,9 +838,18 @@ Blok 3/13 countermove yumuşak history-bonusu (retry) TAMAM: SPRT +10.4 ± 7.2 E
 2.96 TAM KABUL (4602 oyun, 1242-2256-1104, LOS %99.8). Base `94c5b95` vs new `aaaec37`.
 Eski sert-bant (-60 Elo, `875d5f5`) yerine quiet skoruna eklenip history bandına kırpılan
 yumuşak bonus; cont_hist örtüşmesine rağmen net pozitif (mütevazı -> çok oyun). YENİ
-BASELINE `aaaec37`, 138 test. SIRADAKİ: Blok 3/13 kalan (AYRI commit + AYRI SPRT): kök
-hamle sıralamasında önceki iterasyon düğüm sayıları. Blok 4 tuning için daha derin/çeşitli
-veri ya da joint arama-marj tuning (madde 16) ileride adaydır.
+BASELINE `aaaec37`, 138 test. Blok 3/13 kök hamle sıralaması (önceki iterasyon düğüm
+sayıları) DENENDİ, RAFA KALDIRILDI: SPRT H0 yönünde (kullanıcı erken durdurdu -16.7 ±
+22.7 Elo, 480 oyun, LOS %7.5), commit `4612c5c` -> revert `3ae1331` (`aaaec37`'ye birebir,
+testler 138). DERS: "kökte budama yok -> exact" varsayımı YANLIŞ (alt-ağaç TT/history
+yol-bağımlılığı sonucu değiştirir; sezgisel). Motorun tt+MVV+history kök sıralaması zaten
+TT/history ile senkron; node-count enjekte etmek geri-beslemeyi bozup verimsizleştirdi
+(gate'siz startpos +%62 düğüm; kRootNodeOrderMinDepth=6 ile düzeldi ama SPRT yine negatif).
+Node-count = gürültülü kalite vekili; döviz kuru UYGULANAMAZ (sonuç değişiyor). SIRADAKİ:
+Blok 3/13 KAPANDI (tüm kalemler tamam ya da rafta). Blok 2 opsiyonel (ProbCut, singular
+multicut), Blok 4 tuning için daha derin/çeşitli veri ya da joint arama-marj tuning
+(madde 16), ya da Faz 2D (tüm bloklar bitince) ileride adaydır. İleride kök sıralaması
+adayı: önceki-iterasyon SKORU'na göre (Stockfish-tarzı, node-count değil).
 Blok 2 kalanı opsiyonel: Blok
 2/10 ProbCut, Blok 2/4 multicut. Capture history + IIR-tuning (kIirMinDepth 6-8 /
 reduce-by-2) + null verification (düşük kNullVerifyMinDepth ya da fail-soft null) +
