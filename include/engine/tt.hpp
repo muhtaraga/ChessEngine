@@ -8,10 +8,11 @@
 // Bu sınıf bilinçli olarak "aptal"dır: ply'ye bağlı mat-skoru düzeltmesi arama
 // tarafında (search.cpp) yapılır; TT yalnızca ham değeri saklar.
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <vector>
+#include <memory>
 
 #include "engine/move.hpp"
 
@@ -33,8 +34,11 @@ constexpr std::uint8_t kGenMask = 0x3F;
 // Depth alanı int8; UCI "go depth 200" gibi uçlarda sarmaması için tavan.
 constexpr int kMaxTtDepth = 127;
 
-// Anahtar dışındaki veri TAM 8 bayt: Faz 2D'nin lockless-XOR şeması (key ^ data)
-// bu geometriye dayanacak. Alan eklerken bu bütçeyi koru.
+// TTEntry: probe()'un AÇILMIŞ (unpacked) çıktı tipi. İç depolama bundan farklı:
+// yarış-dayanıklılık için her yuva iki 64-bit atomik söz (key-word + data-word)
+// olarak tutulur (bkz. Bucket, aşağıda). Anahtar dışındaki veri TAM 8 bayt:
+// score(2)+eval(2)+move(2)+depth(1)+gen_bound(1); Faz 2D lockless-XOR şeması bu
+// data sözünü tek uint64'e paketler. Alan eklerken bu 8 baytlık bütçeyi koru.
 struct TTEntry {
     std::uint64_t key       = 0;           // tam Zobrist anahtarı (çakışma doğrulaması)
     std::int16_t  score     = 0;           // ply-düzeltmeli skor (search tarafından)
@@ -49,6 +53,22 @@ struct TTEntry {
 
 static_assert(sizeof(TTEntry) == 16,
               "TTEntry 16 bayt olmalı (anahtar dışı veri tek uint64'e sığsın)");
+
+// Lockless-XOR yuvası (Hyatt): iki 64-bit atomik söz.
+//   key  = gerçek Zobrist anahtarı XOR paketlenmiş data
+//   data = paketlenmiş anahtar-dışı veri (score|eval|move|depth|gen_bound)
+// Çok-thread'de bir söz güncel diğeri bayat okunursa (yırtık okuma) (key ^ data)
+// gerçek anahtara eşleşmez -> probe miss döner (bozuk giriş kullanılmaz). Tek
+// thread'te davranış birebir korunur (paketleme kayıpsız round-trip yapar).
+// std::atomic<uint64_t> relaxed: derleyicinin iki sözü yırtmasını/yeniden
+// sıralamasını engeller; x86-64'te hizalı 64-bit yük/saklama zaten atomiktir.
+struct alignas(16) Bucket {
+    std::atomic<std::uint64_t> key{0};
+    std::atomic<std::uint64_t> data{0};
+};
+
+static_assert(sizeof(Bucket) == 16,
+              "Bucket 16 bayt olmalı (cache line'a 4 yuva; TTEntry ile aynı bütçe)");
 
 class TranspositionTable {
 public:
@@ -77,15 +97,18 @@ public:
     void store(std::uint64_t key, int depth, int score, Bound bound, Move move,
                int eval = kEvalNone);
 
-    // Giriş sayısı (0 = tablo yok).
-    std::size_t size() const { return table_.size(); }
+    // Yuva sayısı (0 = tablo yok).
+    std::size_t size() const { return count_; }
 
 private:
     static constexpr std::size_t kDefaultSizeMb = 16;
 
-    std::vector<TTEntry> table_;
-    std::size_t          mask_       = 0;  // index maskesi (size-1); size 2'nin kuvveti
-    std::uint8_t         generation_ = 0;
+    // Atomik yuvalar kopyalanamaz -> std::vector yerine unique_ptr<Bucket[]>
+    // (make_unique dizi biçimi atomikleri sıfır başlatır; clear() döngüyle 0 yazar).
+    std::unique_ptr<Bucket[]> table_;
+    std::size_t               count_      = 0;  // yuva sayısı (2'nin kuvveti)
+    std::size_t               mask_       = 0;  // index maskesi (count-1)
+    std::uint8_t              generation_ = 0;
 };
 
 // Program genelinde tek TT örneği (arama bu örneği kullanır).

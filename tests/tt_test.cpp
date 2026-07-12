@@ -148,6 +148,31 @@ TEST(TT, ExactReplacesDeeperSameKey) {
     EXPECT_EQ(e.bound(), Bound::EXACT);
 }
 
+// --- Birim: lockless-XOR paketleme kayıpsız (işaret-uzatma + promosyon move) ---
+// İç depolama artık paketlenmiş data sözü (score|eval|move|depth|gen_bound). Asıl
+// yeni risk: negatif score/eval'in int16 işaret-uzatması ve promosyon move'unun üst
+// bitleri (raw 14-15). Hepsi tek sakla/oku ile birebir dönmeli.
+TEST(TT, LocklessRoundtripSignedAndPromo) {
+    TT.clear();
+    for (int i = 0; i < 9; ++i)
+        TT.new_search();  // nesil 9
+    const std::uint64_t key = 0x7EEDFACE0BADF00DULL;
+    Move promo = Move::make(E7, E8, PROMOTION, QUEEN);
+    TT.store(key, /*depth=*/100, /*score=*/-12345, Bound::UPPER, promo, /*eval=*/-9999);
+
+    TTEntry e;
+    ASSERT_TRUE(TT.probe(key, e));
+    EXPECT_EQ(e.key, key);
+    EXPECT_EQ(e.score, -12345);
+    EXPECT_EQ(e.eval, -9999);
+    EXPECT_EQ(e.depth, 100);
+    EXPECT_EQ(e.move, promo);
+    EXPECT_EQ(e.move.type(), PROMOTION);
+    EXPECT_EQ(e.move.promotion_type(), QUEEN);
+    EXPECT_EQ(e.bound(), Bound::UPPER);
+    EXPECT_EQ(e.generation(), 9u);
+}
+
 namespace {
 
 // Aynı FEN'i verilen derinlikte arar. TT'yi çağırandan yönetiyoruz.
