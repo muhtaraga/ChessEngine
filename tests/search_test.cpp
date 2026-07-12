@@ -359,9 +359,9 @@ TEST(Search, SeeOrderingKeepsWinningSacrifice) {
     init_sliding_attacks();  // see() sliding tablolarını ister (idempotent)
     Board b;
     ASSERT_TRUE(b.set_fen("5k2/p6p/3p4/4n3/1B6/8/7Q/6K1 w - - 0 1"));
-    const Move win = Move::make(H2, E5);   // bağlı savunucuya rağmen atı al
+    const Move win = Move::make(H2, E5);   // bağlı savunucuya rağmen atı al (d6 pinli)
     EXPECT_LT(see(b, win), 0);             // SEE bunu kötü-yakalama sayar (bağı görmez)
-    SearchResult r = search(b, 5);
+    SearchResult r = search(b, 7);
     EXPECT_EQ(r.best, win);                // demote edildi ama hâlâ bulunur
     EXPECT_GT(r.score, 400);               // açık ara kazanan
 }

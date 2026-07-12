@@ -257,8 +257,11 @@ int evaluate(const Board& b) {
     int phase = game_phase(b);
     int score = (mg * phase + eg * (MAX_PHASE - phase)) / MAX_PHASE;
 
-    // Hamle sırası olan tarafın bakış açısına çevir.
-    return (b.side_to_move == WHITE) ? score : -score;
+    // Hamle sırası olan tarafın bakış açısına çevir, sonra tempo bonusunu ekle
+    // (hamle hakkı: daima sıradaki tarafa +, faz-bağımsız). Flip'ten SONRA eklenir
+    // ki tempo da işaret değiştirmesin (flip'ten önce eklersek siyahta - olurdu).
+    int stm = (b.side_to_move == WHITE) ? score : -score;
+    return stm + TempoBonus;
 }
 
 }  // namespace engine
