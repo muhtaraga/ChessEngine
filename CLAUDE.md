@@ -518,10 +518,36 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
         skor sabit, patlama yok. Düğüm != Elo (Blok 2/6 dersi) -> kabul kapısı SPRT.
         Ertelenen: derinlik-kare margin (şu an lineer), ayrı/çoklu cont-hist katmanı,
         improving-farkındalığı (Blok 1/3 rafta).
-- [ ] **9. Null move güçlendirme (SIRADAKİ)**: `static_eval >= beta` kapısı + dinamik R
-      (`3 + depth/3 + min((eval-beta)/200, 3)` tarzı; şu an sabit 2/3) + yüksek
-      derinlikte verification search (yol haritasının orijinal zugzwang notu).
-      Beklenti +5-15.
+- [x] **9. Null move güçlendirme — KISMEN TAMAM (Commit 1 KABUL, Commit 2 RAFA).
+      İki commit/iki SPRT. YENİ BASELINE `a2a6bfa`.** Beklenti (+5-15) tek başına
+      Commit 1 ile aşıldı.
+      - `a2a6bfa` **Commit 1 — `eval>=beta` kapısı + dinamik R (KABUL). SPRT +21.9 ±
+        11.3 Elo, LLR 2.95 TAM KABUL (2032 oyun, 629-902-501, LOS %100).** Önkoşul
+        zinciri olarak tek commit (cont-hist emsali; kapı `eval>=beta` dinamik R'nin
+        `(eval-beta)` terimini >= 0 garanti eder — improving-paketleme hatası değil).
+        Gate'e `eval >= beta` (statik eval beta altındaysa null boşuna denenir); sabit
+        `(depth>=6)?3:2` yerine `R = kNullBaseR + depth/kNullDepthDiv +
+        min((eval-beta)/kNullEvalDiv, kNullEvalMaxR)`; çocuk derinliği `depth-R` (eski
+        `depth-1-R`; R artık tam indirim), `max(...,1)`. Sabitler (kNullMinDepth 3,
+        kNullBaseR 3, kNullDepthDiv 3, kNullEvalDiv 200, kNullEvalMaxR 3) ilk elle-seçim,
+        Blok 4/16 tuning. 1 test (124->125: NullMoveGateKeepsWinningTactic). Düğüm
+        sağlaması (Release, `a8ac0d9`'a karşı): startpos d13 -%16, Kiwipete d12 -%13,
+        bestmove aynı (daha agresif null).
+      - `3f0f5ac` **Commit 2 — verification search — DENENDİ, RAFA KALDIRILDI (SPRT
+        NÖTR, +1.8 ± 9.6, LLR -0.136, 2654 oyun, 709-1250-695, LOS %64.6). `src/search.cpp`
+        + test `a2a6bfa`'ya birebir geri alındı (`f3f48e6`; `git diff a2a6bfa` boş).**
+        `depth >= kNullVerifyMinDepth(12)` null fail-high'ında null'suz azaltılmış aramayla
+        teyit; teyit de >= beta ise buda, aksi halde zugzwang şüphesi -> normal ara. Aynı
+        `b`'yi aynı ply'de yeniden aradığından singular'ın `excluded` prolog-atlama yolu
+        `Move::make(B1,B1)` sentinel'iyle (from==to -> hiç üretilmez -> gerçek hamle
+        dışlamaz; nonzero -> Move()'dan farklı) yeniden kullanıldı — ek altyapı yok.
+        **DERS (check extension emsali + Blok 1/3 Ders 3):** kNullVerifyMinDepth=12
+        verification'ı yalnız derin midgame'de ateşlettiğinden hızlı TC'de nadir tetikler
+        (düğüm sağlaması: d13/d12 ~aynı, d16 aktif -%6.2); çok-budayan yığında zugzwang
+        güvenlik ağı marjinal. elo0=0/elo1=5 ile ~0 etki temiz karara varamaz (LLR sıfır
+        civarı sürünür, 10k tavanı) -> kullanıcı kararıyla durduruldu. İLERİDE ADAY:
+        düşük kNullVerifyMinDepth (8-10) ya da Texel sonrası; ayrıca fail-soft null
+        (`return score`) hâlâ denenmedi.
 - [ ] **10. ProbCut** (opsiyonel): beta+margin etrafında sığ arama/qsearch
       fail-high verirse buda. 4-9 sonrası hâlâ değer veriyorsa denenir. +5-15.
 
@@ -627,14 +653,23 @@ KABUL (3575 oyun, 1129-1464-982, LOS %99.9). Base `3bde658` vs new `a8ac0d9`. Be
 olan quiet, çek-vermeyen late hamleler (moves_searched>0) budanır — SEE'den önce.
 Sabitler ölçülerek seçildi (gate %2.06 buduyor, no-op değil). 2 test (122->124).
 YENİ BASELINE `a8ac0d9`.
-SIRADAKİ: Blok 2/9 = null move güçlendirme (static_eval>=beta gate + dinamik R +
-verification search); Blok 2 kalan [ProbCut] + Blok 2/4 multicut opsiyonel eki de
-masada. Capture history + IIR-tuning (kIirMinDepth 6-8 / reduce-by-2) ileride/Texel
-sonrası yeniden denenebilir. FAZ 2D tüm bloklar bitince.**
+Blok 2/9 (null move güçlendirme) KISMEN TAMAM: iki commit/iki SPRT. Commit 1
+(`eval>=beta` kapısı + dinamik R, `a2a6bfa`) KABUL: SPRT +21.9 ± 11.3 Elo, LLR 2.95
+TAM KABUL (2032 oyun, 629-902-501, LOS %100) — tek başına Blok 2/9 beklentisini
+(+5-15) aştı. Commit 2 (verification search, `3f0f5ac`) DENENDİ/RAFA: SPRT NÖTR
+(+1.8 ± 9.6, LLR -0.136, 2654 oyun) -> `a2a6bfa`'ya birebir geri alındı (`f3f48e6`).
+DERS: kNullVerifyMinDepth=12 hızlı TC'de nadir tetikler (check extension + Blok 1/3
+Ders 3 emsali; elo0=0/elo1=5 ile ~0 etki 10k'ya sürünür). YENİ BASELINE `a2a6bfa`.
+SIRADAKİ: Blok 2/10 = ProbCut (opsiyonel); Blok 2/4 multicut opsiyonel eki de masada.
+Capture history + IIR-tuning (kIirMinDepth 6-8 / reduce-by-2) + null verification
+(düşük kNullVerifyMinDepth ya da fail-soft null) ileride/Texel sonrası yeniden
+denenebilir. Sonra Blok 3 (zaman yönetimi) -> Blok 4 (Texel). FAZ 2D tüm bloklar
+bitince.**
 Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
-edilecek (Blok 1/2 commit'leri `1d73725..23d28b0`, Blok 2/4 `a803a3f`, Blok 2/5
-`dd9e8f3..8fa2281` henüz taşınmadı).
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 124
+edilecek (Blok 1/2 `1d73725..23d28b0`, Blok 2/4 `a803a3f`, Blok 2/5 `dd9e8f3..8fa2281`,
+Blok 2/7 `3bde658`, Blok 2/8 `a8ac0d9`, Blok 2/9 Commit 1 `a2a6bfa` henüz taşınmadı;
+Blok 2/9 Commit 2 `3f0f5ac` RAFA -> taşınmaz).
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 125
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
@@ -650,8 +685,10 @@ singular extension TAMAM, SPRT +21.3 -> `a803a3f`; Blok 2/5 SEE paketi TAMAM, ik
 commit/iki SPRT ~+56 (Commit 1 +33.1 -> `dd9e8f3`, Commit 2 +23.3 -> `8fa2281`);
 Blok 2/6 capture history DENENDİ/RAFA (SPRT H0 -16.2, düğüm iyi ama Elo negatif ->
 `8fa2281`); Blok 2/7 IIR TAMAM, SPRT +15 -> `3bde658`; Blok 2/8 history-tabanlı quiet
-budaması TAMAM, SPRT +14.3 -> `a8ac0d9`; sıradaki Blok 2 kalan [null move güçlendirme,
-ProbCut] + singular multicut opsiyonel eki -> Blok 3 zaman
+budaması TAMAM, SPRT +14.3 -> `a8ac0d9`; Blok 2/9 null move güçlendirme KISMEN TAMAM
+(Commit 1 `eval>=beta`+dinamik R KABUL SPRT +21.9 -> `a2a6bfa`; Commit 2 verification
+search DENENDİ/RAFA SPRT nötr +1.8 -> `a2a6bfa`'ya geri alındı `f3f48e6`); sıradaki
+Blok 2 kalan [ProbCut] + singular multicut opsiyonel eki -> Blok 3 zaman
 yönetimi + küçükler -> Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
 NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
 (klasik + NNUE, ikisi de aktif; bkz. memory `iki-taban-karari`). Ayrıntılı adım-adım
