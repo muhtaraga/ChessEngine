@@ -553,10 +553,33 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
 
 *Blok 3 — Zaman yönetimi + küçükler:*
 
-- [ ] **11. Adaptif zaman yönetimi**: best-move stability — kök hamle derinlikler
-      boyunca sabitse soft limiti kıs, değişiyorsa/fail-low'da uzat. Şu an
-      soft/hard tamamen statik (t/30+inc/2, hard=3×soft). Beklenti +5-20
-      (hızlı TC'de belirgin; SPRT TC'miz hızlı -> ölçülebilir).
+- [x] **11. Adaptif zaman yönetimi (best-move stability) — TAMAM, SPRT GEÇTİ H1
+      (+40.6 ± 15.8 Elo, LLR 2.96 TAM KABUL, 1022 oyun, 341-459-222, LOS %100).
+      Base `a2a6bfa` vs new `a44d6eb`. YENİ BASELINE `a44d6eb`.** Beklenti (+5-20)
+      NET AŞILDI — roadmap'in "hızlı TC'de belirgin" öngörüsü doğrulandı; hızlı
+      SPRT TC'sinde (5+0.05) zaman yönetimi büyük kaldıraç.
+      - **Mekanik:** kök best-move'un derinlikler boyunca kararlılığı
+        (`stability` = art arda değişmeden kalınan tamamlanan derinlik sayısı) soft
+        limiti ölçekler. `time_scale(stability)` monoton azalan, `[0.5, 1.5]`
+        sınırlı saf fonksiyon (`kTimeStabMax 1.5 / Step 0.13 / Cap 8 / Floor 0.5`);
+        kararsız (0) -> 1.5 (uzat), doygun (8) -> 0.5 (kıs). `search_iterative`
+        soft-break: `eff = soft * time_scale(stability)`, `hard_ms` tavanlı. Tek
+        mekanizma iki yöne de hizmet eder (kısma + uzatma).
+      - **Uygunluk kapısı (kritik doğruluk):** `SearchLimits::adaptive_time` yalnız
+        timed-game (wtime/btime) dalında (`handle_go`) true. movetime/depth/
+        infinite/default budget'ta `soft==hard` (ya da -1) olduğundan ölçekleme
+        yanlış olur -> o modlar BİREBİR dokunulmaz. Ek güvenlik: `hard_ms >
+        soft_ms` gerekir (geç oyunda `max_use` clamp'i `hard≈soft` yaparsa statiğe
+        düşer). Time forfeit riski yok: ölçek ≤1.5, `hard_ms` mutlak tavan korunur.
+      - **Kapsam:** yalnız best-move stability. Fail-low / düşen-eval uzatması
+        AYRI sinyal -> ertelendi (Blok 1/3 dersi: bağımsız sezgiselleri paketleme).
+      - Sabitler ilk elle-seçim, Blok 4/16 SPSA. 2 test (125->127):
+        `TimeScaleMonotonicAndBounded` (yön hatası = time-trouble, saf fonksiyonla
+        yakalanır), `AdaptiveTimeInertWithoutTimeLimit` (bayrak set + zaman sınırsız
+        -> arama BİREBİR aynı, TT temizlenerek düğüm dahil). Manuel UCI (soft~2000/
+        hard~6000): startpos ~6000ms (uzat), R-vs-R ~2388ms, KPvK sabit ~1212ms
+        (soft ALTI, kıs), `movetime 2000` ~2000ms (dokunulmaz). Ertelenen: fail-low
+        uzatması, düşen-eval faktörü, non-linear instability (Stockfish bestMoveChanges).
 - [ ] **12. Tempo bonusu**: evaluate()'e side-to-move sabiti (~+10-20cp, tek
       satır) — şu an yok. Ucuz SPRT; bloklar arasına hızlı kazanç olarak
       alınabilir. Beklenti +5-10.
@@ -660,16 +683,24 @@ TAM KABUL (2032 oyun, 629-902-501, LOS %100) — tek başına Blok 2/9 beklentis
 (+1.8 ± 9.6, LLR -0.136, 2654 oyun) -> `a2a6bfa`'ya birebir geri alındı (`f3f48e6`).
 DERS: kNullVerifyMinDepth=12 hızlı TC'de nadir tetikler (check extension + Blok 1/3
 Ders 3 emsali; elo0=0/elo1=5 ile ~0 etki 10k'ya sürünür). YENİ BASELINE `a2a6bfa`.
-SIRADAKİ: Blok 2/10 = ProbCut (opsiyonel); Blok 2/4 multicut opsiyonel eki de masada.
-Capture history + IIR-tuning (kIirMinDepth 6-8 / reduce-by-2) + null verification
-(düşük kNullVerifyMinDepth ya da fail-soft null) ileride/Texel sonrası yeniden
-denenebilir. Sonra Blok 3 (zaman yönetimi) -> Blok 4 (Texel). FAZ 2D tüm bloklar
-bitince.**
+Blok 3/11 (adaptif zaman yönetimi — best-move stability) TAMAM: SPRT +40.6 ± 15.8
+Elo, LLR 2.96 TAM KABUL (1022 oyun, 341-459-222, LOS %100). Base `a2a6bfa` vs new
+`a44d6eb`. Beklenti (+5-20) NET AŞILDI — hızlı SPRT TC'sinde (5+0.05) zaman yönetimi
+büyük kaldıraç ("hızlı TC'de belirgin" öngörüsü doğrulandı). Kök best-move stability
+soft limiti ölçekler (`time_scale`, [0.5,1.5]); yalnız timed-game modu (adaptive_time
+bayrağı), movetime/depth/infinite dokunulmaz. Fail-low uzatması ertelendi. 2 test
+(125->127). YENİ BASELINE `a44d6eb`.
+SIRADAKİ: Blok 3/12 (tempo bonusu, ucuz) -> Blok 3/13 (fırsat işleri: mate distance
+pruning, delta pruning, seldepth, kök hamle sıralaması); sonra Blok 4 (Texel). Blok 2
+kalanı opsiyonel: Blok 2/10 ProbCut, Blok 2/4 multicut. Capture history + IIR-tuning
+(kIirMinDepth 6-8 / reduce-by-2) + null verification (düşük kNullVerifyMinDepth ya da
+fail-soft null) + adaptif zamanın fail-low/düşen-eval uzatması ileride/Texel sonrası
+yeniden denenebilir. FAZ 2D tüm bloklar bitince.**
 Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
 edilecek (Blok 1/2 `1d73725..23d28b0`, Blok 2/4 `a803a3f`, Blok 2/5 `dd9e8f3..8fa2281`,
 Blok 2/7 `3bde658`, Blok 2/8 `a8ac0d9`, Blok 2/9 Commit 1 `a2a6bfa` henüz taşınmadı;
-Blok 2/9 Commit 2 `3f0f5ac` RAFA -> taşınmaz).
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 125
+Blok 2/9 Commit 2 `3f0f5ac` RAFA -> taşınmaz; Blok 3/11 `a44d6eb` henüz taşınmadı).
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 127
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
