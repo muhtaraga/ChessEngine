@@ -137,7 +137,7 @@ int run_datagen(int argc, char** argv) {
 int run_tune(int argc, char** argv) {
     using namespace engine;
     if (argc < 4) {
-        std::cerr << "Kullanim: chess tune <data.txt> <out-params.txt> [epochs] [lr]\n";
+        std::cerr << "Kullanim: chess tune <data.txt> <out-params.txt> [epochs] [lr] [reg]\n";
         return 1;
     }
     std::string data_path = argv[2];
@@ -147,6 +147,7 @@ int run_tune(int argc, char** argv) {
     cfg.verbose = true;
     if (argc >= 5) cfg.epochs = std::stoi(argv[4]);
     if (argc >= 6) cfg.lr     = std::stod(argv[5]);
+    if (argc >= 7) cfg.reg    = std::stod(argv[6]);  // varsayılana weight decay (0=yok)
 
     std::cerr << "Veri yukleniyor: " << data_path << '\n';
     TexelData data;

@@ -40,6 +40,15 @@ struct TuneConfig {
     double k       = 0.0;    // <=0 -> otomatik kalibre
     int    epochs  = 3000;   // gradyan inişi iterasyonu
     double lr      = 2.0;    // Adam öğrenme oranı
+    // Varsayılana doğru decoupled weight decay (AdamW): tune edilen parametreleri
+    // elle-seçilmiş varsayılana çeker -> aşırı-uyumu ve büyük ölçek kaymalarını
+    // önler (ilk tune-tümü geçişi -110 Elo regresyon verdi: eval şişti, dondurulmuş
+    // cp arama marjlarını bozdu). 0 -> regularizasyon yok.
+    double reg     = 0.0;
+    // Materyali dondur: klasik değerlerde (100/320/330/500/900) SABİT tut. Materyal
+    // eval magnitüdünü domine ettiğinden bu, eval ölçeğini çıpalar -> dondurulmuş
+    // arama marjları geçerli kalır. true -> yalnız PST + pozisyonel tune edilir.
+    bool   freeze_material = true;
     bool   verbose = false;  // ilerlemeyi stderr'e bas
 };
 

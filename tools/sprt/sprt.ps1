@@ -30,7 +30,9 @@ param(
     [double]$Beta        = 0.05,                     # tip-II hata
     [int]   $Hash        = 0,                         # motor basina TT (MB); 0 = ayarlama
     [string]$Cutechess   = "",                       # cutechess-cli yolu (bos = ara)
-    [string]$Book        = ""                        # acilis kitabi (bos = varsayilan)
+    [string]$Book        = "",                        # acilis kitabi (bos = varsayilan)
+    [string]$NewEvalFile = "",                        # yeni motora option.EvalFile (Texel tuning)
+    [string]$BaseEvalFile = ""                        # baz motora option.EvalFile (genelde bos)
 )
 
 $ErrorActionPreference = "Stop"
@@ -74,11 +76,19 @@ Write-Output ""
 # -each altina konan ayarlar iki motora da esit uygulanir; Hash>0 ise ayni TT boyutu.
 $eachArgs = @("tc=$Tc", "timemargin=200")
 if ($Hash -gt 0) { $eachArgs += "option.Hash=$Hash" }
-$ccArgs = @(
-    "-engine", "name=$New",  "cmd=$newExe",  "proto=uci",
-    "-engine", "name=$Base", "cmd=$baseExe", "proto=uci",
-    "-each"
-) + $eachArgs + @(
+
+# Motor basina EvalFile (Texel tuning): yalniz ilgili motora option.EvalFile eklenir.
+# Yol mutlaklastirilir (cutechess calisma dizini farkli olabilir).
+$newEngine  = @("-engine", "name=$New",  "cmd=$newExe",  "proto=uci")
+if (-not [string]::IsNullOrWhiteSpace($NewEvalFile)) {
+    $newEngine += "option.EvalFile=" + (Resolve-Path $NewEvalFile).Path
+}
+$baseEngine = @("-engine", "name=$Base", "cmd=$baseExe", "proto=uci")
+if (-not [string]::IsNullOrWhiteSpace($BaseEvalFile)) {
+    $baseEngine += "option.EvalFile=" + (Resolve-Path $BaseEvalFile).Path
+}
+
+$ccArgs = $newEngine + $baseEngine + @("-each") + $eachArgs + @(
     "-openings", "file=$Book", "format=epd", "order=random",
     "-repeat", "-games", "2", "-rounds", "$Rounds",
     "-sprt", "elo0=$Elo0", "elo1=$Elo1", "alpha=$Alpha", "beta=$Beta",

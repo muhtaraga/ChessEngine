@@ -197,11 +197,10 @@ TuneResult run_texel_tune(const TexelData& d, const TuneConfig& cfg) {
     const double ln10 = std::log(10.0);
     const double gscale = 2.0 * ln10 * k / 400.0 / static_cast<double>(n ? n : 1);
 
-    // Piyon materyalini 100'e SABİTLE (anchor): eval'in santipiyon ölçeği korunsun.
-    // Aksi halde K sabitken optimizer tüm eval'i üniform büyütebilir (gauge freedom)
-    // -> mutlak cp büyür -> aramanın DONDURULMUŞ, cp-kalibre marjları (RFP 80*depth,
-    // futility, razor, null gate) yanlış ölçekte kalır. material.0 = flat indeks 0.
-    const int kPawnMaterialIdx = 0;
+    // İlk tune edilen düz indeks: materyal dondurulduysa [0, PIECE_TYPE_NB) atlanır
+    // (klasik materyal = ölçek çıpası); değilse yalnız piyon materyali (indeks 0)
+    // sabit tutulur (yine ölçek çıpası).
+    const int kTuneLo = cfg.freeze_material ? PIECE_TYPE_NB : 1;
 
     int ep = 0;
     for (; ep < cfg.epochs; ++ep) {
@@ -213,16 +212,19 @@ TuneResult run_texel_tune(const TexelData& d, const TuneConfig& cfg) {
             double factor = (s - d.result[i]) * s * (1.0 - s);  // dMSE/de (ölçek gscale'de)
             for (const Feat& f : feats[i]) grad[f.idx] += factor * f.g;
         }
-        // Adam güncellemesi.
+        // Adam güncellemesi + decoupled weight decay (AdamW: varsayılana çek).
         double bc1 = 1.0 - std::pow(b1, ep + 1);
         double bc2 = 1.0 - std::pow(b2, ep + 1);
-        for (int idx = 0; idx < F; ++idx) {
-            if (idx == kPawnMaterialIdx) continue;  // piyon materyali sabit (ölçek çıpası)
+        for (int idx = kTuneLo; idx < F; ++idx) {
             double g = grad[idx] * gscale;
             m[idx] = b1 * m[idx] + (1 - b1) * g;
             v[idx] = b2 * v[idx] + (1 - b2) * g * g;
             double mh = m[idx] / bc1, vh = v[idx] / bc2;
             w[idx] -= cfg.lr * mh / (std::sqrt(vh) + eps);
+            // Decoupled weight decay: varsayılandan (w0) sapmayı orantılı kıs. Adam'ın
+            // per-parametre normalizasyonundan BAĞIMSIZ -> reg gücü doğrudan yorumlanır.
+            if (cfg.reg > 0.0)
+                w[idx] -= cfg.lr * cfg.reg * (w[idx] - w0[idx]);
         }
         if (cfg.verbose && (ep % 200 == 0))
             std::cerr << "  epoch " << ep << "  MSE=" << model_mse() << '\n';
