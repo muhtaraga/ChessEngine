@@ -863,9 +863,17 @@ kronolojik sırayla, ÇAKIŞMASIZ cherry-pick edildi (14 commit) ve doğrulandı
 test, düğüm-eşitliği (startpos d13 668137 / Kiwipete d12 715497 klasik HEAD ile birebir).
 NNUE origin/main = `51ce064`. Revert edilen deneyler (Blok 1/3, 2/6, 2/9-C2, 3/12) ve
 "Yol haritası" commit'leri (NNUE kendi CLAUDE.md'sini taşır) taşınmadı. Fork kısıtı:
-Faz 2D commit'leri N4'ten önce cherry-pick edilmeli. **YENİ CHERRY-PICK BORCU: Blok
-3/13 countermove `aaaec37` (2026-07-12'den sonra kabul edildi) henüz NNUE reposuna
-taşınmadı.**
+Faz 2D commit'leri N4'ten önce cherry-pick edilmeli.
+**CHERRY-PICK BORCU TAM KAPANDI (2026-07-13): Blok 3/13 delta pruning `94c5b95` +
+countermove `aaaec37` NNUE'ya cherry-pick edildi (çakışmasız) -> NNUE origin/main =
+`fc3b082`, 133 test.** DİKKAT: 2026-07-12 "borç kapandı" notu delta pruning'i (`94c5b95`,
+o an henüz kabul edilmemişti) ATLAMIŞTI — CLAUDE.md yalnız `aaaec37`'yi borç işaretledi,
+delta gözden kaçtı. Bu oturumda ikisi de taşındı (delta önce cherry-pick edildi ama
+NNUE'ya countermove'dan SONRA uygulandı; ikisi bağımsız bölge [qsearch vs move ordering]
+olduğundan sıra final kodu etkilemez, klasik `aaaec37` ile eşdeğer). Düğüm-eşitliği artık
+klasik ile UYGULANAMAZ (NNUE eval ıraksadı: startpos d13 klasik cp22/780013 vs NNUE
+cp25/523133) -> doğrulama kapısı 133/133 test + çakışmasız cherry-pick. Kök hamle sıralaması
+(`4612c5c`, revert) NNUE'ya taşınmadı (net-sıfır deney).
 Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 138
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
