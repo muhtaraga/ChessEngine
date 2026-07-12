@@ -262,8 +262,22 @@ function Handle-Run($body) {
     $baseLabel = Get-SafeLabel $baseRef
     $newLabel  = if ([string]::IsNullOrWhiteSpace($newRef)) { "working" } else { Get-SafeLabel $newRef }
 
+    # Thread sayilari (Lazy SMP olcekleme). Guard'dan ONCE lazim.
+    $newThreads  = if ($null -ne $cfg.newThreads)  { [int]$cfg.newThreads }  else { 0 }
+    $baseThreads = if ($null -ne $cfg.baseThreads) { [int]$cfg.baseThreads } else { 0 }
+
     if ($baseLabel -eq $newLabel) {
-        return @{ code = 400; obj = @{ ok = $false; error = "Base ve New ayni surumu gosteriyor ($baseLabel); farkli secin." } }
+        # Ayni surum + FARKLI thread = mesru Lazy SMP olcekleme testi (ayni kod, thread
+        # farki). Etiketleri thread sayisiyla ayristir -> iki ozdes binary, farkli motor
+        # ismi (cutechess isim cakismaz). Aksi halde (thread de ayni) gercekten anlamsiz.
+        $ntEff = if ($newThreads  -gt 0) { $newThreads }  else { 1 }
+        $btEff = if ($baseThreads -gt 0) { $baseThreads } else { 1 }
+        if ($ntEff -ne $btEff) {
+            $newLabel  = "$newLabel-${ntEff}t"
+            $baseLabel = "$baseLabel-${btEff}t"
+        } else {
+            return @{ code = 400; obj = @{ ok = $false; error = "Base ve New ayni surumu ($baseLabel) VE ayni thread'i gosteriyor; farkli surum ya da farkli thread secin." } }
+        }
     }
 
     # cutechess yolu (override -> config -> otomatik)
@@ -279,8 +293,6 @@ function Handle-Run($body) {
     $beta        = if ($null -ne $cfg.beta) { [double]$cfg.beta } else { 0.05 }
     $rounds      = if ($cfg.rounds) { [int]$cfg.rounds } else { 5000 }
     $hash        = if ($null -ne $cfg.hash) { [int]$cfg.hash } else { 16 }
-    $newThreads  = if ($null -ne $cfg.newThreads)  { [int]$cfg.newThreads }  else { 0 }
-    $baseThreads = if ($null -ne $cfg.baseThreads) { [int]$cfg.baseThreads } else { 0 }
     $force       = [bool]$cfg.forceRebuild
 
     # Log'u sifirla
