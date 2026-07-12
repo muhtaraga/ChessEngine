@@ -16,6 +16,8 @@
 // (pawn structure, king safety, mobility) diğer terimler bu çerçeveye eklenecek.
 
 #include <array>
+#include <string>
+#include <vector>
 
 #include "engine/types.hpp"
 
@@ -331,6 +333,23 @@ EvalParams make_default_eval_params();
 // ya da parametre dosyası bunu değiştirebilir. evaluate() + terim fonksiyonları okur.
 extern EvalParams g_eval;
 
+// --- Düz (flat) parametre haritası: kaydet/yükle VE tuner için tek doğruluk kaynağı ---
+// Her tunable skaler için bir işaretçi (p içine) + eşleşen isim, SABİT sırada döner.
+// Sıra: material, pst_mg, pst_eg, pawn, mobility, bishop_pair, rook_file, sonra
+// (dondurulmuş) king safety: shield, attack_weight, safety_table. King safety
+// bloğu KASITLA en sonda -> tuner yalnız [0, eval_frozen_start()) aralığını tune eder.
+std::vector<int*>               flat_param_pointers(EvalParams& p);
+const std::vector<std::string>& flat_param_names();
+// King safety (dondurulmuş) parametrelerinin başladığı düz indeks. Tuner bu indeksin
+// altındaki parametreleri tune eder, üstündekilere (king safety) dokunmaz.
+int                             eval_frozen_start();
+
+// EvalParams'ı düz metin dosyaya kaydeder / dosyadan yükler. Format: satır başına
+// "<flat-isim> <değer>". Yükleme isimle eşler (sıra bağımsız, eksik alan varsayılan
+// kalır). Başarılıysa true.
+bool save_eval_params(const EvalParams& p, const std::string& path);
+bool load_eval_params(EvalParams& p, const std::string& path);
+
 // Pozisyonun oyun fazı [0, MAX_PHASE]: MAX_PHASE = tam kadro (orta oyun ucu),
 // 0 = yalnız şah+piyon (oyun sonu ucu).
 int game_phase(const Board& b);
@@ -353,6 +372,11 @@ void rook_on_file(const Board& b, int& mg, int& eg);
 // King safety katkısı (piyon kalkanı + şah bölgesi saldırıları), BEYAZ − SİYAH.
 // eg her zaman 0 (yalnız orta oyun terimi); mg negatif = beyaz şahı daha güvensiz.
 void king_safety(const Board& b, int& mg, int& eg);
+
+// evaluate()'in ara toplamları: BEYAZ bakışıyla orta oyun (mg) ve oyun sonu (eg)
+// akümülatörleri, taper ve side-to-move flip'inden ÖNCE. Tuner bunu kullanır
+// (taper katsayısı game_phase'den gelir; parametreler bu toplamlarda doğrusaldır).
+void eval_accumulate(const Board& b, int& mg_white, int& eg_white);
 
 // Hamle sırası olan tarafın bakışından statik değerlendirme (santipiyon).
 int evaluate(const Board& b);

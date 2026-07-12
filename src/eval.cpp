@@ -226,7 +226,7 @@ void king_safety(const Board& b, int& mg, int& eg) {
     }
 }
 
-int evaluate(const Board& b) {
+void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     // Orta oyun ve oyun sonu puanları ayrı biriktirilir (beyaz bakışıyla).
     int mg = 0;
     int eg = 0;
@@ -281,6 +281,14 @@ int evaluate(const Board& b) {
     king_safety(b, kmg, keg);
     mg += kmg;
     eg += keg;
+
+    mg_white = mg;
+    eg_white = eg;
+}
+
+int evaluate(const Board& b) {
+    int mg = 0, eg = 0;
+    eval_accumulate(b, mg, eg);
 
     // Faza göre interpolasyon: tam kadroda (phase=MAX) tamamen mg, oyun sonunda
     // (phase=0) tamamen eg. Materyal her iki uçta eşit olduğundan interpolasyondan

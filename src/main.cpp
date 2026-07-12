@@ -3,6 +3,7 @@
 //   chess perft <depth> [fen] -> perft divide (kök hamle başına düğüm) + toplam
 //   chess fen [uci-moves...]  -> hamleleri oynayıp sonuç FEN'ini basar
 //   chess datagen <games> <out.txt> [seed] [depth] -> Texel/NNUE veri seti üretir
+//   chess tune <data.txt> <out-params.txt> [epochs] [lr] -> Texel tuning
 //   chess demo                -> boş tahta + başlangıç pozisyonunu basar
 
 #include <chrono>
@@ -14,8 +15,10 @@
 #include "engine/attacks.hpp"
 #include "engine/board.hpp"
 #include "engine/datagen.hpp"
+#include "engine/eval.hpp"
 #include "engine/movegen.hpp"
 #include "engine/perft.hpp"
+#include "engine/tuner.hpp"
 #include "engine/uci.hpp"
 
 #ifdef _WIN32
@@ -128,6 +131,42 @@ int run_datagen(int argc, char** argv) {
     return 0;
 }
 
+// chess tune <data.txt> <out-params.txt> [epochs] [lr] -> Texel tuning: veri
+// setine (FEN + oyun sonucu) karşı eval ağırlıklarını optimize eder, sonucu
+// parametre dosyasına yazar. King safety dondurulur. Ayrıntı: tuner.hpp.
+int run_tune(int argc, char** argv) {
+    using namespace engine;
+    if (argc < 4) {
+        std::cerr << "Kullanim: chess tune <data.txt> <out-params.txt> [epochs] [lr]\n";
+        return 1;
+    }
+    std::string data_path = argv[2];
+    std::string out_path  = argv[3];
+
+    TuneConfig cfg;
+    cfg.verbose = true;
+    if (argc >= 5) cfg.epochs = std::stoi(argv[4]);
+    if (argc >= 6) cfg.lr     = std::stod(argv[5]);
+
+    std::cerr << "Veri yukleniyor: " << data_path << '\n';
+    TexelData data;
+    if (!load_texel_data(data_path, data)) {
+        std::cerr << "Veri yuklenemedi (bos ya da acilamadi): " << data_path << '\n';
+        return 1;
+    }
+    std::cerr << "Pozisyon: " << data.pos.size() << "  ozellik cikariliyor + tune...\n";
+
+    TuneResult r = run_texel_tune(data, cfg);
+
+    if (!save_eval_params(g_eval, out_path)) {
+        std::cerr << "Parametre dosyasi yazilamadi: " << out_path << '\n';
+        return 1;
+    }
+    std::cerr << "TAMAM: K=" << r.k << "  MSE " << r.mse_start << " -> " << r.mse_end
+              << "  (" << r.epochs << " epoch)  -> " << out_path << '\n';
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -148,6 +187,9 @@ int main(int argc, char** argv) {
 
     if (mode == "datagen")
         return run_datagen(argc, argv);
+
+    if (mode == "tune")
+        return run_tune(argc, argv);
 
     if (mode == "demo") {
         engine::Board board;

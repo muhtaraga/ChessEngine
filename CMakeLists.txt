@@ -21,9 +21,11 @@ add_library(engine STATIC
     src/zobrist.cpp
     src/tt.cpp
     src/eval.cpp
+    src/eval_params.cpp
     src/see.cpp
     src/search.cpp
     src/datagen.cpp
+    src/tuner.cpp
     src/uci.cpp
 )
 target_include_directories(engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
