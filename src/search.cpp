@@ -132,6 +132,7 @@ struct Searcher {
     explicit Searcher(SearchTables::Impl& t) : tb(t) {}
 
     std::uint64_t     nodes = 0;
+    int               seldepth = 0;  // ulaşılan en derin ply (qsearch/extension dahil)
     bool              aborted = false;
     bool              use_deadline = false;
     Clock::time_point deadline;
@@ -417,6 +418,7 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         return 0;
 
     ++nodes;
+    if (ply > seldepth) seldepth = ply;  // seldepth raporlama (arama davranışını etkilemez)
     pv_len[ply] = ply;  // bu ply için PV başlangıçta boş
 
     // Legallik bağlamı düğüm başına BİR KEZ. Üretim onun maskeleriyle doğrudan legal
@@ -861,6 +863,7 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
         return 0;
 
     ++nodes;
+    if (ply > seldepth) seldepth = ply;  // seldepth raporlama (arama davranışını etkilemez)
 
     if (ply >= MAX_PLY - 1)
         return evaluate(b);
@@ -1056,8 +1059,9 @@ SearchResult search(const Board& b, int depth, std::int64_t max_time_ms,
     int score = s.negamax(b, depth, -INF, INF, 0);
 
     SearchResult res;
-    res.nodes   = s.nodes;
-    res.aborted = s.aborted;
+    res.nodes    = s.nodes;
+    res.seldepth = s.seldepth;
+    res.aborted  = s.aborted;
     if (!s.aborted) {
         res.score = score;
         for (int j = 0; j < s.pv_len[0]; ++j)
@@ -1101,6 +1105,7 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
     for (int depth = 1; depth <= lim.max_depth; ++depth) {
         s.root_best_move  = Move();
         s.root_best_score = -INF;
+        s.seldepth        = 0;  // her iterasyonun selektif erişimini ayrı raporla
 
         // Derinlik 1 daima kesintisiz koşsun ki en az bir legal hamle garanti
         // olsun (aksi halde çok kısa bütçede ya da hemen gelen "stop"ta bestmove
@@ -1128,16 +1133,18 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
                 best.score = s.root_best_score;
                 best.pv.assign(1, s.root_best_move);
             }
-            best.nodes   = s.nodes;
-            best.aborted = true;
+            best.nodes    = s.nodes;
+            best.seldepth = s.seldepth;
+            best.aborted  = true;
             break;
         }
 
         // Derinlik tamamlandı: sonucu güncelle.
-        prev_score   = score;
-        best.score   = score;
-        best.nodes   = s.nodes;
-        best.aborted = false;
+        prev_score    = score;
+        best.score    = score;
+        best.nodes    = s.nodes;
+        best.seldepth = s.seldepth;
+        best.aborted  = false;
         best.pv.clear();
         for (int j = 0; j < s.pv_len[0]; ++j)
             best.pv.push_back(s.pv_table[0][j]);

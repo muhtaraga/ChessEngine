@@ -265,6 +265,7 @@ void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
             std::lock_guard<std::mutex> lk(g_io_mtx);
             auto el = elapsed_ms();
             out << "info depth " << d
+                << " seldepth " << r.seldepth
                 << " score " << score_string(r.score)
                 << " nodes " << r.nodes
                 << " time "  << el

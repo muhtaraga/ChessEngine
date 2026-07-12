@@ -24,6 +24,17 @@ TEST(Search, MateInOne) {
     EXPECT_EQ(r.pv[0], Move::make(A1, A8));
 }
 
+// Seldepth: quiescence + extension'larla ulaşılan en derin ply nominal derinliği
+// aşmalı (yakalama zincirleri, singular uzatma vb.). Kozmetik alan, aramayı
+// değiştirmez; yalnız >= depth invaryantı doğrulanır.
+TEST(Search, SeldepthAtLeastDepth) {
+    Board b;
+    ASSERT_TRUE(b.set_fen(
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"));  // Kiwipete
+    SearchResult r = search(b, 6);
+    EXPECT_GE(r.seldepth, 6);  // qsearch nominal derinliğin ötesine iner
+}
+
 // Pat: sıradaki tarafın legal hamlesi yok ve çekte değil -> puan 0.
 TEST(Search, StalemateIsZero) {
     Board b;

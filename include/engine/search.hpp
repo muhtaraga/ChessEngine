@@ -54,6 +54,7 @@ struct SearchResult {
     Move              best;      // bulunan en iyi hamle (terminalde geçersiz)
     int               score = 0; // hamle sırası olan tarafın bakışıyla (santipiyon)
     std::uint64_t     nodes = 0; // ziyaret edilen düğüm sayısı
+    int               seldepth = 0; // ulaşılan en derin ply (qsearch/extension dahil)
     std::vector<Move> pv;        // baş varyant (principal variation)
     bool              aborted = false;  // süre dolduğu için yarıda kesildi mi
 };
