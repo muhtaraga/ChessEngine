@@ -1,15 +1,19 @@
 // chess: UCI motoru + yardımcı modlar.
 //   chess                     -> UCI komut döngüsü (GUI'ler için varsayılan)
 //   chess perft <depth> [fen] -> perft divide (kök hamle başına düğüm) + toplam
+//   chess fen [uci-moves...]  -> hamleleri oynayıp sonuç FEN'ini basar
+//   chess datagen <games> <out.txt> [seed] [depth] -> Texel/NNUE veri seti üretir
 //   chess demo                -> boş tahta + başlangıç pozisyonunu basar
 
 #include <chrono>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <string>
 
 #include "engine/attacks.hpp"
 #include "engine/board.hpp"
+#include "engine/datagen.hpp"
 #include "engine/movegen.hpp"
 #include "engine/perft.hpp"
 #include "engine/uci.hpp"
@@ -96,6 +100,34 @@ int run_fen(int argc, char** argv) {
     return 0;
 }
 
+// chess datagen <games> <out.txt> [seed] [depth] -> self-play ile Texel tuning
+// (ve ileride NNUE) veri seti üretir. Çıktı: satır başına "<FEN> <result>",
+// result oyun sonucu (beyaz bakışı: 0.0/0.5/1.0). Ayrıntı: datagen.hpp.
+int run_datagen(int argc, char** argv) {
+    using namespace engine;
+    if (argc < 4) {
+        std::cerr << "Kullanim: chess datagen <games> <out.txt> [seed] [depth]\n";
+        return 1;
+    }
+
+    DatagenConfig cfg;
+    cfg.games = std::stoi(argv[2]);
+    std::string out_path = argv[3];
+    if (argc >= 5) cfg.seed  = std::stoull(argv[4]);
+    if (argc >= 6) cfg.depth = std::stoi(argv[5]);
+
+    std::ofstream out(out_path);
+    if (!out) {
+        std::cerr << "Cikti dosyasi acilamadi: " << out_path << '\n';
+        return 1;
+    }
+
+    std::uint64_t n = generate_training_data(cfg, out);
+    std::cerr << "Uretilen pozisyon: " << n << " (" << cfg.games << " oyun, derinlik "
+              << cfg.depth << ", tohum " << cfg.seed << ")\n";
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -113,6 +145,9 @@ int main(int argc, char** argv) {
 
     if (mode == "fen")
         return run_fen(argc, argv);
+
+    if (mode == "datagen")
+        return run_datagen(argc, argv);
 
     if (mode == "demo") {
         engine::Board board;
