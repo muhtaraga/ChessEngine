@@ -376,6 +376,12 @@ constexpr int kSeeMaxDepth      = 8;
 constexpr int kSeeCaptureMargin = 20;  // yakalama eşiği: see < -kSeeCaptureMargin*depth*depth
 constexpr int kSeeQuietMargin   = 65;  // quiet eşiği:    see < -kSeeQuietMargin*depth
 
+// --- Delta pruning (quiescence) parametresi (santipiyon) ---
+// qsearch'te, çekte değilken, bir yakalama en iyi ihtimalle bile (stand_pat +
+// alınan taşın materyal değeri + marj) alpha'yı geçemiyorsa aranmadan atlanır.
+// Marj (~bir piyondan biraz fazla) pozisyonel salınımı örter. SPRT/SPSA adayı.
+constexpr int kDeltaMargin = 200;
+
 // --- History-tabanlı quiet budaması parametreleri ---
 // Sığ, çekte-olmayan düğümde, birleşik history sinyali (main + cont) eşiğin
 // çok altında olan quiet, çek-vermeyen hamleler aranmadan budanır. LMP'nin
@@ -970,6 +976,22 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
         if (best_j != i) {
             std::swap(todo.moves[i], todo.moves[best_j]);
             std::swap(scores[i],     scores[best_j]);
+        }
+
+        // --- Delta pruning ---
+        // Çekte değilken, promosyon olmayan yakalamalar: en iyi ihtimalle bile
+        // (stand_pat + alınan taşın değeri + marj) çalışan alpha'yı geçemiyorsa,
+        // bu yakalama umutsuzdur -> aranmadan atlanır. raw_eval bu dalda stand_pat
+        // değerini tutar (çekteyken kEvalNone -> gate zaten !in_check ile kapalı).
+        // Promosyon muaf (vezir ekler, materyal sıçraması delta mantığına aykırı;
+        // SEE muafiyetiyle aynı). MVV-LVA sıralaması büyük kurbanları öne alır ama
+        // tt_move primi sırayı bozabildiğinden güvenli `continue` (break değil).
+        if (!in_check && todo.moves[i].type() != PROMOTION) {
+            const Move      m      = todo.moves[i];
+            const PieceType victim = (m.type() == EN_PASSANT) ? PAWN
+                                                              : b.type_on(m.to());
+            if (raw_eval + MaterialValue[victim] + kDeltaMargin <= alpha)
+                continue;
         }
 
         Board next = b;

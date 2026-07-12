@@ -470,6 +470,30 @@ TEST(Search, MateDistancePruningKeepsMate) {
     EXPECT_GT(r.score, 0);
 }
 
+// --- Delta pruning (quiescence) ---
+
+// Delta pruning kazançlı yakalamayı budamaz: bedava vezir Rxe5 için üst sınır
+// (stand_pat + 900 + marj) alpha'yı fazlasıyla aşar -> aranır. Umutsuz yakalama
+// budaması iyi taktiği kaybettirmemeli.
+TEST(Search, DeltaPruningKeepsWinningCapture) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchResult r = search(b, 6);
+    EXPECT_EQ(r.best, Move::make(E1, E5));  // kazançlı yakalama budanmaz
+    EXPECT_GT(r.score, 400);
+}
+
+// Delta pruning mat aramasını bozmamalı: çekteyken qsearch'in delta dalı hiç
+// çalışmaz (stand-pat yok, tüm kaçışlar aranır). Arka sıra matı korunur.
+TEST(Search, DeltaPruningKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 5);
+    EXPECT_EQ(r.best, Move::make(A1, A8));  // arka sıra matı korunur
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- Tekrar (repetition) tespiti ---
 
 // Zorunlu tekrar KAYBEDEN tarafı kurtarır (ayırt edici mekanizma testi).
