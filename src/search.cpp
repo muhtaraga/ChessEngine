@@ -182,13 +182,6 @@ struct Searcher {
     Move root_best_move  = Move();
     int  root_best_score = -INF;
 
-    // Kök hamle sıralaması: bir önceki TAM tamamlanan kök aramasında her kök
-    // hamlesinin alt-ağacının tükettiği düğüm sayısı. Sonraki iterasyonda kök
-    // hamleleri buna göre sıralanır (en iyi hamle TT ile zaten önde; kalanlar en
-    // büyük alt-ağaçtan küçüğe). Searcher tüm ID döngüsünde yaşadığından iterasyonlar
-    // arası korunur; her tam kök aramasında üzerine yazılır.
-    std::vector<std::pair<Move, std::uint64_t>> root_move_nodes;
-
     // Pozisyon geçmişi (Zobrist anahtarları): tekrar (repetition) tespiti için.
     // Arama başında oyun geçmişiyle (kök hariç atalar) tohumlanır; negamax her
     // düğümde kendi anahtarını push/pop eder. is_repetition ataları tarar.
@@ -442,15 +435,6 @@ constexpr int kSingularMargin      = 2;  // singularBeta = ttValue - 2*depth (cp
 // SPRT/SPSA ile ayarlanabilir (Blok 4/16).
 constexpr int kIirMinDepth = 4;
 
-// --- Kök hamle sıralaması (önceki iterasyon düğüm sayıları) parametresi ---
-// Kök hamlelerini önceki iterasyonun alt-ağaç düğüm sayısına göre yalnız bu derinlikten
-// itibaren sırala. Sığ derinliklerde (depth 1-2) düğüm sayıları çok küçük ve neredeyse
-// eşittir (her hamle ~birkaç düğüm) -> sıralama gürültü olur, baseline'ın history
-// sıralamasından kötü olabilir. Bu eşik gürültülü sığ sıralamayı devre dışı bırakır;
-// sayılar (depth-1 aramasından gelir) anlamlı büyüklüğe ulaşınca devreye girer.
-// İlk elle-seçim, SPRT/SPSA ile ayarlanabilir (Blok 4/16).
-constexpr int kRootNodeOrderMinDepth = 6;
-
 int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
                       bool null_allowed, Move excluded) {
     // Kesme kontrolü (her ~4096 düğümde bir; saat/atomik okuma nispeten pahalı).
@@ -652,48 +636,10 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     for (int i = 0; i < ml.count; ++i)
         scores[i] = score_move(b, ml.moves[i], tt_move, ply);
 
-    // --- Kök hamle sıralaması: önceki iterasyon düğüm sayıları ---
-    // Kökte hiçbir budama kapısı ateşlemez (hepsi ply>0 korumalı) -> tüm kök
-    // hamleleri tam aranır. Bu yüzden kök hamlelerini yeniden sıralamak tamamlanan
-    // bir derinlikte dönen skoru/best move'u DEĞİŞTİRMEZ (alpha-beta tam kök
-    // aramasında minimax değerini sıra bağımsız döndürür), yalnız alt-ağaç
-    // alpha-beta verimini artırır. En iyi hamle (tt_move) score_move'dan kScoreTT
-    // aldığından önde kalır; kalanları önceki tamamlanan iterasyonun alt-ağaç düğüm
-    // sayısına göre azalan sırala (en zor çürütülen = muhtemel ikinci-en-iyi erken
-    // aranır -> alpha hızlı yükselir). Rank tabanlı: düğüm sayıları milyarlarca
-    // olabilir (int'e sığmaz), yalnız göreli sıra gerekiyor. Sığ derinliklerde
-    // (depth < kRootNodeOrderMinDepth) düğüm sayıları gürültü olduğundan uygulanmaz.
-    if (ply == 0 && depth >= kRootNodeOrderMinDepth && !root_move_nodes.empty()) {
-        std::array<std::uint64_t, 256> prev_nodes{};
-        for (int i = 0; i < ml.count; ++i)
-            for (const auto& rn : root_move_nodes)
-                if (rn.first == ml.moves[i]) { prev_nodes[i] = rn.second; break; }
-
-        // Non-tt hamle indekslerini önceki düğüm sayısına göre azalan sırala.
-        int order[256];
-        int nc = 0;
-        for (int i = 0; i < ml.count; ++i)
-            if (ml.moves[i] != tt_move) order[nc++] = i;
-        std::stable_sort(order, order + nc, [&](int a, int c) {
-            return prev_nodes[a] > prev_nodes[c];
-        });
-        // kScoreTT-1'den başlayıp azalan skorlar: tt_move'un (kScoreTT) hemen altı,
-        // yakalama bandının (kScoreCapture=1M) üstü -> kökte node-count sinyali
-        // MVV-LVA/history'nin yerini alır (kök-özel; ply>0 dokunulmaz).
-        for (int r = 0; r < nc; ++r)
-            scores[order[r]] = (kScoreTT - 1) - r;
-    }
-
     const int alpha_orig = alpha;
     int  best      = -INF;
     Move best_move = Move();
     int  moves_searched = 0;  // futility: en az bir hamle tam arandı mı
-
-    // Kök (ply 0) düğüm sayısı ölçümü: bu iterasyonda her kök hamlesinin alt-ağaç
-    // düğüm maliyeti. Yalnız TAM kök araması (beta kesmesiyle kırılmadıysa) sonunda
-    // root_move_nodes'a taşınır. root_cutoff, kısmi (fail-high) ölçümü ayırt eder.
-    std::vector<std::pair<Move, std::uint64_t>> root_scratch;
-    bool root_cutoff = false;
 
     // History malus için: bu düğümde aranmış (kesme yapmadan geçilmiş) quiet
     // hamleler. Beta kesmesinde kesen hamle ödül, bunlar ceza alır. 64 tavan
@@ -808,11 +754,6 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         }
         ++moves_searched;
 
-        // Kök düğüm ölçümü: bu hamlenin aramasından (do_move + PVS + re-search'ler)
-        // hemen önce sayacı yakala. Kökte singular ateşlemez (ply>0 ister), bütün
-        // maliyet aşağıdaki PVS bloğunda.
-        const std::uint64_t node_before = (ply == 0) ? nodes : 0;
-
         // Budama kararları geçildi: ancak ŞİMDİ çocuk tahtayı kur.
         Board next = b;
         next.do_move(m);
@@ -902,10 +843,6 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         if (aborted)
             return best;  // süre doldu: yarım sonucu bırak (çağıran yok sayar)
 
-        // Kök hamlesinin alt-ağaç düğüm maliyetini kaydet (sonraki iterasyon sırası).
-        if (ply == 0)
-            root_scratch.emplace_back(m, nodes - node_before);
-
         if (score > best) {
             best      = score;
             best_move = m;
@@ -929,17 +866,9 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
             // (yakalamalar MVV-LVA ile sıralanır, history'yi kirletmezler).
             if (!is_capture(b, m) && m.type() != PROMOTION)
                 update_quiet_stats(b, m, ply, depth, quiets_searched, nquiets);
-            root_cutoff = true;  // kök: kısmi ölçüm (bazı hamleler aranmadı) -> commit etme
             break;
         }
     }
-
-    // Kök düğüm sayılarını commit et: yalnız TAM kök araması (beta kesmesiyle
-    // kırılmadı -> tüm hamleler ölçüldü). Aspiration fail-high kısmi ölçümü atlar;
-    // sonraki tam çağrı (in-window ya da fail-low) üzerine yazar (son tam arama
-    // kazanır). Abort'ta zaten döngü içinde return edilir, buraya ulaşılmaz.
-    if (ply == 0 && !root_cutoff)
-        root_move_nodes = std::move(root_scratch);
 
     // --- Sonucu TT'ye sakla ---
     // best <= alpha_orig: hiçbir hamle alpha'yı geçmedi -> üst sınır (fail-low).
