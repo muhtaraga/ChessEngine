@@ -51,11 +51,6 @@ inline constexpr int PhaseWeight[PIECE_TYPE_NB] = {
 // 4 kale*2 + 2 vezir*4 = 4 + 4 + 8 + 8 = 24.
 inline constexpr int MAX_PHASE = 24;
 
-// Tempo bonusu (santipiyon): hamle sırası olan taraf hamle hakkından ötürü küçük
-// bir avantaj görür. Flat (faz-bağımsız), renk-simetrik (daima sıradaki tarafa +).
-// İlk elle-seçim, Blok 4/16 SPSA ile ayarlanabilir.
-inline constexpr int TempoBonus = 15;
-
 // --- Pawn structure ağırlıkları (santipiyon, MG/EG ayrı; tapered) ---
 // Değerler standart/güvenli aralıkta; net Elo katkısı SPRT ile doğrulanır,
 // tek tek ince ayar sonraki iş. Cezalar negatif, bonuslar pozitif.

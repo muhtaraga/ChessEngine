@@ -7,21 +7,11 @@
 
 using namespace engine;
 
-// Başlangıç pozisyonu simetriktir -> pozisyonel katkı 0, geriye yalnız tempo kalır.
-TEST(Eval, StartposIsTempo) {
+// Başlangıç pozisyonu simetriktir -> değerlendirme 0.
+TEST(Eval, StartposIsZero) {
     Board b;
     b.set_startpos();
-    EXPECT_EQ(evaluate(b), TempoBonus);
-}
-
-// Tempo bonusu hamle sırası olan tarafa daima pozitif ve renk-simetrik: çıplak
-// şahlarda (PST aynalı -> pozisyonel katkı 0) evaluate her iki sırada da == TempoBonus.
-TEST(Eval, TempoFavorsSideToMove) {
-    Board b;
-    ASSERT_TRUE(b.set_fen("4k3/8/8/8/8/8/8/4K3 w - - 0 1"));
-    EXPECT_EQ(evaluate(b), TempoBonus);  // beyaz sırada
-    b.side_to_move = BLACK;
-    EXPECT_EQ(evaluate(b), TempoBonus);  // siyah sırada (yine sıradaki tarafa +)
+    EXPECT_EQ(evaluate(b), 0);
 }
 
 // Fazladan bir beyaz vezir: beyaz sırasında büyük pozitif, siyah sırasında
@@ -134,7 +124,7 @@ TEST(Eval, PawnStructureSymmetry) {
     pawn_structure(b, mg, eg);
     EXPECT_EQ(mg, 0);
     EXPECT_EQ(eg, 0);
-    EXPECT_EQ(evaluate(b), TempoBonus);  // pozisyonel katkı 0 -> yalnız tempo
+    EXPECT_EQ(evaluate(b), 0);
 }
 
 // --- Mobility testleri ---
@@ -160,7 +150,7 @@ TEST(Eval, MobilitySymmetry) {
     mobility(b, mg, eg);
     EXPECT_EQ(mg, 0);
     EXPECT_EQ(eg, 0);
-    EXPECT_EQ(evaluate(b), TempoBonus);  // pozisyonel katkı 0 -> yalnız tempo
+    EXPECT_EQ(evaluate(b), 0);
 }
 
 // --- Bishop pair + rook on open/semi-open file testleri ---
@@ -209,7 +199,7 @@ TEST(Eval, BishopRookSymmetry) {
     EXPECT_EQ(beg, 0);
     EXPECT_EQ(rmg, 0);
     EXPECT_EQ(reg, 0);
-    EXPECT_EQ(evaluate(b), TempoBonus);  // pozisyonel katkı 0 -> yalnız tempo
+    EXPECT_EQ(evaluate(b), 0);
 }
 
 // --- King safety testleri (king_safety yardımcısıyla, PST/materyal gürültüsü yok) ---
@@ -249,5 +239,5 @@ TEST(Eval, KingSafetySymmetry) {
     king_safety(b, mg, eg);
     EXPECT_EQ(mg, 0);
     EXPECT_EQ(eg, 0);
-    EXPECT_EQ(evaluate(b), TempoBonus);  // pozisyonel katkı 0 -> yalnız tempo
+    EXPECT_EQ(evaluate(b), 0);
 }
