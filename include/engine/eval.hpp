@@ -291,6 +291,46 @@ inline constexpr auto FileMask         = detail::make_file_masks();
 inline constexpr auto AdjacentFileMask = detail::make_adjacent_file_masks();
 inline constexpr auto PassedMask       = detail::make_passed_masks();
 
+// --- Tunable eval parametreleri (Blok 4: Texel tuning) ---
+// Yukarıdaki elle-seçilmiş constexpr sabitler artık yalnız VARSAYILAN kaynağı;
+// evaluate() ve terim fonksiyonları çalışma-zamanı MUTABLE `g_eval`'den okur, böylece
+// tuner ağırlıkları arama/eval'i yeniden derlemeden değiştirebilir. Varsayılan hâlde
+// g_eval bu sabitlerle birebir aynıdır -> davranış-koruyan (exact) refactor.
+//
+// KAPSAM: king safety alanları (shield/attack/safety_table) struct'a alındı ama ilk
+// Texel geçişinde DONDURULUR (doğrusal olmayan SafetyTable ayrı ele alınacak).
+// game_phase ağırlıkları (PhaseWeight/MAX_PHASE) yapısal -> tunable değil, constexpr.
+// SEE + delta pruning eval'den bağımsız kendi `MaterialValue`'sunu (dondurulmuş)
+// kullanmaya devam eder; buradaki `material` yalnız evaluate() içindir.
+struct EvalParams {
+    int material[PIECE_TYPE_NB];                 // taş materyal değeri (evaluate için)
+    int pst_mg[PIECE_TYPE_NB][SQUARE_NB];        // orta oyun PST (LERF, beyaz bakışı)
+    int pst_eg[PIECE_TYPE_NB][SQUARE_NB];        // oyun sonu PST (MG'den bağımsız)
+
+    int isolated_mg, isolated_eg;                // izole piyon cezası
+    int doubled_mg,  doubled_eg;                 // çift piyon cezası
+    int passed_mg[8], passed_eg[8];              // geçer piyon bonusu (rank index)
+
+    int mobility_mg[PIECE_TYPE_NB], mobility_eg[PIECE_TYPE_NB];  // mobility ağırlığı
+
+    int bishop_pair_mg, bishop_pair_eg;          // fil çifti bonusu
+    int rook_open_mg,  rook_open_eg;             // kale açık sütun
+    int rook_semi_mg,  rook_semi_eg;             // kale yarı-açık sütun
+
+    // King safety (yalnız MG; ilk geçişte dondurulur).
+    int shield_missing;                          // eksik kalkan sütunu başına ceza
+    int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
+    int safety_table[100];                       // attack units -> danger (doğrusal değil)
+};
+
+// Elle-seçilmiş varsayılan ağırlıklarla dolu EvalParams üretir (yukarıdaki
+// constexpr sabitlerden + PstMg/PstEg tablolarından kopyalar).
+EvalParams make_default_eval_params();
+
+// Global, çalışma-zamanı eval parametreleri. Varsayılanla başlar; tuner (chess tune)
+// ya da parametre dosyası bunu değiştirebilir. evaluate() + terim fonksiyonları okur.
+extern EvalParams g_eval;
+
 // Pozisyonun oyun fazı [0, MAX_PHASE]: MAX_PHASE = tam kadro (orta oyun ucu),
 // 0 = yalnız şah+piyon (oyun sonu ucu).
 int game_phase(const Board& b);

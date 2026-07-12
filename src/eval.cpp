@@ -8,6 +8,37 @@
 
 namespace engine {
 
+EvalParams make_default_eval_params() {
+    EvalParams p{};
+    for (int pt = 0; pt < PIECE_TYPE_NB; ++pt) {
+        p.material[pt]     = MaterialValue[pt];
+        p.mobility_mg[pt]  = MobilityMg[pt];
+        p.mobility_eg[pt]  = MobilityEg[pt];
+        p.king_attack_weight[pt] = KingAttackWeight[pt];
+        for (int sq = 0; sq < SQUARE_NB; ++sq) {
+            p.pst_mg[pt][sq] = PstMg[pt][sq];
+            p.pst_eg[pt][sq] = PstEg[pt][sq];
+        }
+    }
+    p.isolated_mg = IsolatedPenaltyMg; p.isolated_eg = IsolatedPenaltyEg;
+    p.doubled_mg  = DoubledPenaltyMg;  p.doubled_eg  = DoubledPenaltyEg;
+    for (int i = 0; i < 8; ++i) {
+        p.passed_mg[i] = PassedBonusMg[i];
+        p.passed_eg[i] = PassedBonusEg[i];
+    }
+    p.bishop_pair_mg = BishopPairMg; p.bishop_pair_eg = BishopPairEg;
+    p.rook_open_mg   = RookOpenMg;   p.rook_open_eg   = RookOpenEg;
+    p.rook_semi_mg   = RookSemiMg;   p.rook_semi_eg   = RookSemiEg;
+    p.shield_missing = ShieldMissingPenalty;
+    for (int i = 0; i < 100; ++i)
+        p.safety_table[i] = SafetyTable[i];
+    return p;
+}
+
+// Global tunable eval parametreleri; varsayılan (elle-seçilmiş) ağırlıklarla başlar.
+// Kaynaklar constexpr olduğundan statik-init sırası sorunu yok.
+EvalParams g_eval = make_default_eval_params();
+
 int game_phase(const Board& b) {
     int phase = 0;
     for (int pt = 0; pt < PIECE_TYPE_NB; ++pt)
@@ -28,13 +59,13 @@ void pawn_structure(const Board& b, int& mg, int& eg) {
     for (int f = 0; f < 8; ++f) {
         int wc = popcount(wp & FileMask[f]);
         if (wc > 1) {
-            mg += (wc - 1) * DoubledPenaltyMg;
-            eg += (wc - 1) * DoubledPenaltyEg;
+            mg += (wc - 1) * g_eval.doubled_mg;
+            eg += (wc - 1) * g_eval.doubled_eg;
         }
         int bc = popcount(bp & FileMask[f]);
         if (bc > 1) {  // siyahın cezası beyaz bakışına + olarak yansır
-            mg -= (bc - 1) * DoubledPenaltyMg;
-            eg -= (bc - 1) * DoubledPenaltyEg;
+            mg -= (bc - 1) * g_eval.doubled_mg;
+            eg -= (bc - 1) * g_eval.doubled_eg;
         }
     }
 
@@ -43,13 +74,13 @@ void pawn_structure(const Board& b, int& mg, int& eg) {
     while (w) {
         Square sq = pop_lsb(w);
         if ((wp & AdjacentFileMask[file_of(sq)]) == 0) {  // izole
-            mg += IsolatedPenaltyMg;
-            eg += IsolatedPenaltyEg;
+            mg += g_eval.isolated_mg;
+            eg += g_eval.isolated_eg;
         }
         if ((bp & PassedMask[WHITE][sq]) == 0) {  // geçer (önünde rakip piyon yok)
             int r = rank_of(sq);
-            mg += PassedBonusMg[r];
-            eg += PassedBonusEg[r];
+            mg += g_eval.passed_mg[r];
+            eg += g_eval.passed_eg[r];
         }
     }
 
@@ -57,13 +88,13 @@ void pawn_structure(const Board& b, int& mg, int& eg) {
     while (bb) {
         Square sq = pop_lsb(bb);
         if ((bp & AdjacentFileMask[file_of(sq)]) == 0) {  // siyah izole -> beyaz +
-            mg -= IsolatedPenaltyMg;
-            eg -= IsolatedPenaltyEg;
+            mg -= g_eval.isolated_mg;
+            eg -= g_eval.isolated_eg;
         }
         if ((wp & PassedMask[BLACK][sq]) == 0) {  // siyah geçer -> beyaz −
             int r = 7 - rank_of(sq);  // siyah için sıra aynalanır
-            mg -= PassedBonusMg[r];
-            eg -= PassedBonusEg[r];
+            mg -= g_eval.passed_mg[r];
+            eg -= g_eval.passed_eg[r];
         }
     }
 }
@@ -82,8 +113,8 @@ void mobility(const Board& b, int& mg, int& eg) {
 
         auto add = [&](PieceType pt, Bitboard attacks) {
             int m = popcount(attacks & ~own);  // dost taşla dolu kareler hariç
-            mg += sign * m * MobilityMg[pt];
-            eg += sign * m * MobilityEg[pt];
+            mg += sign * m * g_eval.mobility_mg[pt];
+            eg += sign * m * g_eval.mobility_eg[pt];
         };
 
         Bitboard knights = b.pieces[KNIGHT] & own;
@@ -105,8 +136,8 @@ void bishop_pair(const Board& b, int& mg, int& eg) {
     eg = 0;
     // İki (veya daha fazla) fili olan tarafa bonus. Basit ≥2 sayımı standart;
     // zıt-kare kontrolü (nadir aynı-renk çift promosyon) bilinçli ertelendi.
-    if (popcount(b.pieces[BISHOP] & b.colors[WHITE]) >= 2) { mg += BishopPairMg; eg += BishopPairEg; }
-    if (popcount(b.pieces[BISHOP] & b.colors[BLACK]) >= 2) { mg -= BishopPairMg; eg -= BishopPairEg; }
+    if (popcount(b.pieces[BISHOP] & b.colors[WHITE]) >= 2) { mg += g_eval.bishop_pair_mg; eg += g_eval.bishop_pair_eg; }
+    if (popcount(b.pieces[BISHOP] & b.colors[BLACK]) >= 2) { mg -= g_eval.bishop_pair_mg; eg -= g_eval.bishop_pair_eg; }
 }
 
 void rook_on_file(const Board& b, int& mg, int& eg) {
@@ -125,11 +156,11 @@ void rook_on_file(const Board& b, int& mg, int& eg) {
             Bitboard f = FileMask[file_of(s)];
             if ((own_pawns & f) == 0) {  // dost piyon yok
                 if ((enemy_pawns & f) == 0) {  // hiç piyon yok -> açık sütun
-                    mg += sign * RookOpenMg;
-                    eg += sign * RookOpenEg;
+                    mg += sign * g_eval.rook_open_mg;
+                    eg += sign * g_eval.rook_open_eg;
                 } else {  // yalnız rakip piyon -> yarı-açık sütun
-                    mg += sign * RookSemiMg;
-                    eg += sign * RookSemiEg;
+                    mg += sign * g_eval.rook_semi_mg;
+                    eg += sign * g_eval.rook_semi_eg;
                 }
             }
         }
@@ -163,7 +194,7 @@ void king_safety(const Board& b, int& mg, int& eg) {
                 front |= Bitboard{1} << (r * 8 + f);
             }
             if ((own_pawns & front) == 0)  // bu sütunda kalkan piyonu yok
-                danger += ShieldMissingPenalty;
+                danger += g_eval.shield_missing;
         }
 
         // --- Şah bölgesi (king ring) saldırıları: rakip taşların bölgede vurduğu
@@ -173,7 +204,7 @@ void king_safety(const Board& b, int& mg, int& eg) {
         int            units     = 0;
 
         auto accumulate = [&](PieceType pt, Bitboard attacks) {
-            units += KingAttackWeight[pt] * popcount(attacks & zone);
+            units += g_eval.king_attack_weight[pt] * popcount(attacks & zone);
         };
 
         Bitboard knights = b.pieces[KNIGHT] & enemy;
@@ -189,7 +220,7 @@ void king_safety(const Board& b, int& mg, int& eg) {
         while (queens) { Square s = pop_lsb(queens); accumulate(QUEEN, queen_attacks(s, occ)); }
 
         if (units > 99) units = 99;  // tablo indeksini kırp
-        danger += SafetyTable[units];
+        danger += g_eval.safety_table[units];
 
         mg += -sign * danger;  // tehlike, o rengin skorunu düşürür
     }
@@ -201,22 +232,22 @@ int evaluate(const Board& b) {
     int eg = 0;
 
     for (int pt = 0; pt < PIECE_TYPE_NB; ++pt) {
-        int material = MaterialValue[pt];  // faz-bağımsız (MG = EG)
+        int material = g_eval.material[pt];  // faz-bağımsız (MG = EG)
 
         // Beyaz taşlar: +materyal +PST
         Bitboard wbb = b.pieces[pt] & b.colors[WHITE];
         while (wbb) {
             Square sq = pop_lsb(wbb);
-            mg += material + PstMg[pt][sq];
-            eg += material + PstEg[pt][sq];
+            mg += material + g_eval.pst_mg[pt][sq];
+            eg += material + g_eval.pst_eg[pt][sq];
         }
 
         // Siyah taşlar: -materyal -PST (dikey ayna: sq ^ 56)
         Bitboard bbb = b.pieces[pt] & b.colors[BLACK];
         while (bbb) {
             Square sq = static_cast<Square>(static_cast<int>(pop_lsb(bbb)) ^ 56);
-            mg -= material + PstMg[pt][sq];
-            eg -= material + PstEg[pt][sq];
+            mg -= material + g_eval.pst_mg[pt][sq];
+            eg -= material + g_eval.pst_eg[pt][sq];
         }
     }
 
