@@ -755,10 +755,12 @@ doğal olarak ıraksarlar, ana thread raporlar. Gereksinimler:
       düğüm/skor iddialı testler tek-thread; yeni SMP testi (uci) yalnız legallik+mat.
 - [x] **SPRT altyapısı hazır** (`e810a9a`): tools/sprt per-engine `-NewThreads`/
       `-BaseThreads` (option.Threads) + oversubscription uyarısı + GUI alanları.
-- [ ] **SCALING SPRT (Elo kapısı, SIRADAKİ — kullanıcı koşar)**: 1-thread base vs
-      2-thread new, aynı kod, sınırlı concurrency. H1 kabul -> SMP Elo veriyor mu?
-      (nps ölçeklemesi ≠ Elo; ölçülür, varsayılmaz.) Elle duman: startpos movetime 3000
-      -> 1 thread d15, 4 thread d16 (daha derin, farklı bestmove, çökme yok).
+- [x] **SCALING SPRT — GEÇTİ H1 (2 thread vs 1 thread, aynı kod)**: Elo **+88.7 ±
+      24.5**, LOS %100, LLR 2.95 TAM KABUL (424 oyun, W-D-L 168-194-62). SMP gerçekten
+      Elo veriyor (nps ölçeklemesi ≠ Elo idi; ölçüldü, doğrulandı). **FAZ 2D TAMAM.**
+      Opsiyonel ileri: 2→4 thread ölçeklemesi (daha fazla Elo veriyor mu?). Kalan
+      thread-safe TT rafinesi (prefetch, 4-yollu bucket) ve Lazy SMP iyileştirmeleri
+      (depth-skipping ile daha iyi ıraksama) ileride aday.
 
 ### Faz 3 — NNUE'ya Geçiş
 
@@ -778,16 +780,18 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-13): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) TAMAM. FAZ 2D
-(Lazy SMP) KOD TAMAM, SCALING SPRT BEKLİYOR. Üç commit (hepsi main): `19d4a04`
-thread-safe TT (lockless XOR, tek-thread EXACT), `a967672` SMP orchestrator +
-per-thread tablolar + Threads option (threads=1 EXACT), `e810a9a` tools/sprt Threads
-desteği. 141 test. threads=1 düğüm eşitliği baseline `aaaec37` ile birebir (startpos
-d13 780013, Kiwipete d12 488482) -> davranış-koruyan, motor gücü değişmedi. SIRADAKİ
-tek iş: **scaling SPRT (1 vs 2 thread, aynı kod, Elo kapısı — kullanıcı GUI'den koşar)**;
-H1 kabul ederse SMP Elo veriyor demektir. Elle duman testi: 4 thread startpos'ta 1
-thread'ten daha derine iniyor (d16 vs d15), çökme yok, mat/legallik korunuyor. Thread-safe
-TT + orchestrator NNUE'ya N4'ten ÖNCE cherry-pick edilmeli (fork kısıtı). Önceki EN GÜNCEL
+**Güncel durum (2026-07-13): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
+Klasik motorun tamamı bitti — sıradaki büyük iş NNUE (ayrı repo, Faz 3).** FAZ 2D
+(Lazy SMP) dört commit (hepsi main): `19d4a04` thread-safe TT (lockless XOR, tek-thread
+EXACT), `a967672` SMP orchestrator + per-thread tablolar + Threads option (threads=1
+EXACT), `e810a9a` tools/sprt Threads desteği, `36cb6d5`+GUI guard düzeltmesi. 141 test.
+threads=1 düğüm eşitliği baseline `aaaec37` ile birebir (startpos d13 780013, Kiwipete
+d12 488482) -> davranış-koruyan. **SCALING SPRT GEÇTİ: 2 thread vs 1 thread (aynı kod)
+Elo +88.7 ± 24.5, LOS %100, LLR 2.95 TAM KABUL (424 oyun, 168-194-62) -> Lazy SMP
+gerçekten Elo veriyor.** Fork kısıtı: thread-safe TT + orchestrator (`19d4a04`+`a967672`)
+NNUE'ya N4'ten (incremental accumulator) ÖNCE cherry-pick edilmeli (`search.cpp`
+değişmediği için TT commit'i çakışmasız). Opsiyonel ileri: 2→4 thread ölçekleme, TT
+prefetch/4-yollu bucket, depth-skipping ile daha iyi ıraksama. Önceki EN GÜNCEL
 (Faz 2C-devam sonu): Blok 3/13 countermove yumuşak history-bonusu (retry)
 TAMAM, SPRT +10.4 ± 7.2 Elo TAM KABUL (4602 oyun) -> BASELINE `aaaec37`, 138 test.
 FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2, +39.7 Elo) + Blok 1/2
