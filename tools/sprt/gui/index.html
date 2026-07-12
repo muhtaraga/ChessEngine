@@ -164,6 +164,19 @@
       </label>
     </div>
 
+    <div class="row">
+      <label class="field">
+        <span>New thread (Lazy SMP; 0/1 = tek thread)</span>
+        <input type="number" id="newThreads" value="0" min="0" max="64">
+      </label>
+      <label class="field">
+        <span>Base thread (0/1 = tek thread)</span>
+        <input type="number" id="baseThreads" value="0" min="0" max="64">
+      </label>
+    </div>
+    <div class="hint">Lazy SMP ölçekleme testi: aynı commit'i iki tarafa seç, thread'leri farklı ver
+      (ör. New=2, Base=1). Elo &gt; 0 ise çoklu thread gerçekten güç veriyor.</div>
+
     <div class="check">
       <input type="checkbox" id="forceRebuild">
       <label for="forceRebuild">Var olan derlemeyi kullanma, yeniden derle</label>
@@ -268,6 +281,8 @@ async function init() {
   if (cfg.beta != null) $('beta').value = cfg.beta;
   if (cfg.hash != null) $('hash').value = cfg.hash;
   if (cfg.rounds != null) $('rounds').value = cfg.rounds;
+  if (cfg.newThreads != null) $('newThreads').value = cfg.newThreads;
+  if (cfg.baseThreads != null) $('baseThreads').value = cfg.baseThreads;
 
   await loadCommits(cfg);
 
@@ -296,11 +311,21 @@ async function loadCommits(cfg) {
 
 function checkConc() {
   const v = parseInt($('concurrency').value || '0', 10);
+  const nt = Math.max(parseInt($('newThreads').value || '0', 10), 1);
+  const bt = Math.max(parseInt($('baseThreads').value || '0', 10), 1);
+  const maxT = Math.max(nt, bt);
   const w = $('concWarn');
-  if (v > physicalCores) {
+  // Lazy SMP: bir oyunda tek taraf arar -> oyun başı tepe yük ~= max(new,base) thread.
+  // concurrency * bu, fiziksel çekirdeği aşarsa thread'ler çekirdek paylaşır (Elo yanıltır).
+  const load = v * maxT;
+  if (load > physicalCores) {
     w.style.display = 'block';
-    w.textContent = `Uyarı: ${physicalCores} fiziksel çekirdeğin üstünde. ` +
-      `SPRT zamanlama gürültüsü artabilir (motorlar zaman kaybedebilir). Öneri: ≤ ${physicalCores}.`;
+    const sug = Math.max(1, Math.floor(physicalCores / maxT));
+    w.textContent = maxT > 1
+      ? `Uyarı: concurrency×max_thread (${v}×${maxT}=${load}) > ${physicalCores} fiziksel çekirdek. ` +
+        `Thread'ler çekirdek paylaşır, Elo yanıltıcı olabilir. Öneri: concurrency ≤ ${sug}.`
+      : `Uyarı: ${physicalCores} fiziksel çekirdeğin üstünde. ` +
+        `SPRT zamanlama gürültüsü artabilir (motorlar zaman kaybedebilir). Öneri: ≤ ${physicalCores}.`;
   } else { w.style.display = 'none'; }
 }
 
@@ -310,6 +335,8 @@ document.querySelectorAll('.presets button[data-tc]').forEach(btn =>
 document.querySelectorAll('.presets button[data-elo]').forEach(btn =>
   btn.onclick = () => { const [a, b] = btn.dataset.elo.split(','); $('elo0').value = a; $('elo1').value = b; });
 $('concurrency').oninput = checkConc;
+$('newThreads').oninput = checkConc;
+$('baseThreads').oninput = checkConc;
 
 $('startBtn').onclick = async () => {
   const cfg = {
@@ -321,6 +348,8 @@ $('startBtn').onclick = async () => {
     alpha: parseFloat($('alpha').value), beta: parseFloat($('beta').value),
     rounds: parseInt($('rounds').value, 10),
     hash: parseInt($('hash').value, 10),
+    newThreads: parseInt($('newThreads').value, 10) || 0,
+    baseThreads: parseInt($('baseThreads').value, 10) || 0,
     forceRebuild: $('forceRebuild').checked
   };
   $('startBtn').disabled = true;

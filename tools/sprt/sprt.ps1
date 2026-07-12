@@ -17,6 +17,14 @@
 # Kullanim (proje kokunden):
 #   powershell -File tools\sprt\sprt.ps1 -New new -Base base
 #   powershell -File tools\sprt\sprt.ps1 -New new -Base base -Tc "5+0.05" -Elo0 0 -Elo1 5
+#
+# Lazy SMP olcekleme testi (ayni kod, farkli thread; new 2 thread vs base 1 thread):
+#   # ayni commit'i iki etiketle derle (motor isimleri farkli olmali):
+#   powershell -File tools\sprt\build-version.ps1 -Ref HEAD -Label smp1
+#   powershell -File tools\sprt\build-version.ps1 -Ref HEAD -Label smp2
+#   powershell -File tools\sprt\sprt.ps1 -New smp2 -Base smp1 -NewThreads 2 -BaseThreads 1 -Concurrency 6
+#   (Iki binary AYNI koddur; fark yalniz thread sayisi. Elo>0 ise SMP gercekten guc
+#    veriyor. concurrency*max_thread <= fiziksel cekirdek olsun -> script uyarir.)
 
 param(
     [Parameter(Mandatory=$true)][string]$New,      # yeni surum etiketi
@@ -32,7 +40,9 @@ param(
     [string]$Cutechess   = "",                       # cutechess-cli yolu (bos = ara)
     [string]$Book        = "",                        # acilis kitabi (bos = varsayilan)
     [string]$NewEvalFile = "",                        # yeni motora option.EvalFile (Texel tuning)
-    [string]$BaseEvalFile = ""                        # baz motora option.EvalFile (genelde bos)
+    [string]$BaseEvalFile = "",                       # baz motora option.EvalFile (genelde bos)
+    [int]   $NewThreads  = 0,                          # yeni motora option.Threads (Lazy SMP); 0 = ayarlama (=1)
+    [int]   $BaseThreads = 0                           # baz motora option.Threads; 0 = ayarlama (=1)
 )
 
 $ErrorActionPreference = "Stop"
@@ -83,9 +93,28 @@ $newEngine  = @("-engine", "name=$New",  "cmd=$newExe",  "proto=uci")
 if (-not [string]::IsNullOrWhiteSpace($NewEvalFile)) {
     $newEngine += "option.EvalFile=" + (Resolve-Path $NewEvalFile).Path
 }
+if ($NewThreads -gt 0)  { $newEngine  += "option.Threads=$NewThreads" }
 $baseEngine = @("-engine", "name=$Base", "cmd=$baseExe", "proto=uci")
 if (-not [string]::IsNullOrWhiteSpace($BaseEvalFile)) {
     $baseEngine += "option.EvalFile=" + (Resolve-Path $BaseEvalFile).Path
+}
+if ($BaseThreads -gt 0) { $baseEngine += "option.Threads=$BaseThreads" }
+
+# Lazy SMP olcekleme testi: motorlar farkli thread sayisiyla kosuyorsa (orn. base=1
+# vs new=2) CPU'yu asiri-abone etme uyarisi. Bir oyunda ayni anda tek taraf arar,
+# yani oyun basi tepe yuk ~= max(new,base) thread; concurrency * bu <= fiziksel
+# cekirdek olmali ki thread'ler gercekten ayri cekirdekte kossun (yoksa Elo yaniltir).
+$maxThreads = [Math]::Max([Math]::Max($NewThreads,1), [Math]::Max($BaseThreads,1))
+if ($maxThreads -gt 1) {
+    $physCores = try {
+        (Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum
+    } catch { [int]$env:NUMBER_OF_PROCESSORS }
+    $load = $Concurrency * $maxThreads
+    Write-Output "SMP olcekleme: new=$([Math]::Max($NewThreads,1))t base=$([Math]::Max($BaseThreads,1))t  concurrency=$Concurrency  tepe-yuk~$load vs fiziksel cekirdek=$physCores"
+    if ($load -gt $physCores) {
+        Write-Output "UYARI: concurrency*max_thread ($load) > fiziksel cekirdek ($physCores) -> thread'ler cekirdek paylasir, Elo yaniltici olabilir. -Concurrency dusurun (oneri: <= $([Math]::Floor($physCores / $maxThreads)))."
+    }
+    Write-Output ""
 }
 
 $ccArgs = $newEngine + $baseEngine + @("-each") + $eachArgs + @(

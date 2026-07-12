@@ -18,6 +18,8 @@ param(
     [double]$Beta        = 0.05,
     [int]   $Rounds      = 5000,
     [int]   $Hash        = 16,
+    [int]   $NewThreads  = 0,                           # Lazy SMP olcekleme: yeni motor thread (0=ayarlama)
+    [int]   $BaseThreads = 0,                           # baz motor thread (0=ayarlama)
     [switch]$ForceRebuild,
     [string]$Cutechess   = "",
     [Parameter(Mandatory=$true)][string]$LogFile      # tum ciktinin yazilacagi dosya
@@ -111,6 +113,8 @@ try {
         "-Alpha", "$Alpha", "-Beta", "$Beta",
         "-Rounds", "$Rounds", "-Hash", "$Hash"
     )
+    if ($NewThreads  -gt 0) { $sprtArgs += @("-NewThreads",  "$NewThreads") }
+    if ($BaseThreads -gt 0) { $sprtArgs += @("-BaseThreads", "$BaseThreads") }
     if (-not [string]::IsNullOrWhiteSpace($Cutechess)) { $sprtArgs += @("-Cutechess", $Cutechess) }
     $code = Invoke-Logged $sprtScript $sprtArgs
     if ($code -ne 0) {

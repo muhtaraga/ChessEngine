@@ -279,6 +279,8 @@ function Handle-Run($body) {
     $beta        = if ($null -ne $cfg.beta) { [double]$cfg.beta } else { 0.05 }
     $rounds      = if ($cfg.rounds) { [int]$cfg.rounds } else { 5000 }
     $hash        = if ($null -ne $cfg.hash) { [int]$cfg.hash } else { 16 }
+    $newThreads  = if ($null -ne $cfg.newThreads)  { [int]$cfg.newThreads }  else { 0 }
+    $baseThreads = if ($null -ne $cfg.baseThreads) { [int]$cfg.baseThreads } else { 0 }
     $force       = [bool]$cfg.forceRebuild
 
     # Log'u sifirla
@@ -297,6 +299,8 @@ function Handle-Run($body) {
     )
     if (-not [string]::IsNullOrWhiteSpace($newRef))  { $plArgs += @("-NewRef", $newRef) }
     if (-not [string]::IsNullOrWhiteSpace($ccPath))  { $plArgs += @("-Cutechess", $ccPath) }
+    if ($newThreads  -gt 0) { $plArgs += @("-NewThreads",  "$newThreads") }
+    if ($baseThreads -gt 0) { $plArgs += @("-BaseThreads", "$baseThreads") }
     if ($force) { $plArgs += "-ForceRebuild" }
 
     # PS 5.1'de Start-Process -ArgumentList bir DIZIYI bosluklarla birlestirir ve
