@@ -580,9 +580,21 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
         hard~6000): startpos ~6000ms (uzat), R-vs-R ~2388ms, KPvK sabit ~1212ms
         (soft ALTI, kıs), `movetime 2000` ~2000ms (dokunulmaz). Ertelenen: fail-low
         uzatması, düşen-eval faktörü, non-linear instability (Stockfish bestMoveChanges).
-- [ ] **12. Tempo bonusu**: evaluate()'e side-to-move sabiti (~+10-20cp, tek
-      satır) — şu an yok. Ucuz SPRT; bloklar arasına hızlı kazanç olarak
-      alınabilir. Beklenti +5-10.
+- [~] **12. Tempo bonusu — DENENDİ, RAFA KALDIRILDI (SPRT H0). `evaluate()`'e
+      `TempoBonus=15` (stm-relative, flip'ten sonra) eklendi (`71127ce`); SPRT
+      -18.6 ± 13 Elo, LLR -2.41 (H0 yönünde, LOS %0.2, 1399 oyun) -> kullanıcı
+      kararıyla durduruldu, `a44d6eb`'ye birebir geri alındı (revert `149cc92`;
+      `git diff a44d6eb -- src include tests` boş). Testler 128->127.**
+      **DERS (improving/capture-history emsali): tempo `evaluate()` içinde olunca
+      yalnız yaprak değeri değil, budama kapılarının besleme kaynağı `static_eval`'i
+      de +15 kaydırır.** RFP (`static_eval - 80·depth >= beta` -> `return static_eval`)
+      sığ her sessiz düğümde ateşler VE şişirilmiş skoru döndürür -> over-prune +
+      şişik fail-high; null gate (`eval>=beta`) da agresifleşir. Bu marjlar
+      (RFP 80·d, futility, razor, null) hepsi elle seçilmiş, tempo'suz kalibre ->
+      uniform +15 dengeyi bozdu. Kod hatası DEĞİL (testler simetrik pozisyonda tam
+      +15 doğruladı); saf kalibrasyon. İLERİDE ADAY: (a) Blok 4 Texel sonrası marjlar
+      tempo ile birlikte kalibre olunca, (b) cerrahi varyant — tempo yalnız yaprak/
+      qsearch stand-pat dönüşüne, budama kapıları tempo'suz `static_eval` üzerinde.
 - [ ] **13. Fırsat işleri** (büyük işler arasında tek tek): mate distance pruning
       (~+2, birkaç satır), delta pruning (qsearch, SEE ile — Adım 3'ten beri
       ertelenen), countermove'un history-bonusu olarak yeniden denenmesi (taban
@@ -690,12 +702,19 @@ büyük kaldıraç ("hızlı TC'de belirgin" öngörüsü doğrulandı). Kök be
 soft limiti ölçekler (`time_scale`, [0.5,1.5]); yalnız timed-game modu (adaptive_time
 bayrağı), movetime/depth/infinite dokunulmaz. Fail-low uzatması ertelendi. 2 test
 (125->127). YENİ BASELINE `a44d6eb`.
-SIRADAKİ: Blok 3/12 (tempo bonusu, ucuz) -> Blok 3/13 (fırsat işleri: mate distance
-pruning, delta pruning, seldepth, kök hamle sıralaması); sonra Blok 4 (Texel). Blok 2
-kalanı opsiyonel: Blok 2/10 ProbCut, Blok 2/4 multicut. Capture history + IIR-tuning
-(kIirMinDepth 6-8 / reduce-by-2) + null verification (düşük kNullVerifyMinDepth ya da
-fail-soft null) + adaptif zamanın fail-low/düşen-eval uzatması ileride/Texel sonrası
-yeniden denenebilir. FAZ 2D tüm bloklar bitince.**
+Blok 3/12 (tempo bonusu) DENENDİ, RAFA KALDIRILDI: `TempoBonus=15` (`71127ce`) SPRT
+H0 (-18.6 ± 13 Elo, LLR -2.41, LOS %0.2, 1399 oyun) -> `a44d6eb`'ye birebir geri
+alındı (revert `149cc92`). DERS: tempo `evaluate()` içinde olunca budama kapılarının
+`static_eval`'ini de kaydırır -> RFP (`return static_eval`) over-prune + şişik
+fail-high; elle-kalibre marjlar tempo'suz ayarlandığından denge bozuldu (improving/
+capture-history emsali). İleride Blok 4 Texel sonrası ya da cerrahi varyant (tempo
+yalnız yaprak/qsearch, budama tempo'suz).
+SIRADAKİ: Blok 3/13 (fırsat işleri: mate distance pruning, delta pruning, seldepth,
+kök hamle sıralaması); sonra Blok 4 (Texel). Blok 2 kalanı opsiyonel: Blok 2/10
+ProbCut, Blok 2/4 multicut. Capture history + IIR-tuning (kIirMinDepth 6-8 /
+reduce-by-2) + null verification (düşük kNullVerifyMinDepth ya da fail-soft null) +
+tempo (Texel sonrası/cerrahi) + adaptif zamanın fail-low uzatması ileride yeniden
+denenebilir. FAZ 2D tüm bloklar bitince.**
 Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
 edilecek (Blok 1/2 `1d73725..23d28b0`, Blok 2/4 `a803a3f`, Blok 2/5 `dd9e8f3..8fa2281`,
 Blok 2/7 `3bde658`, Blok 2/8 `a8ac0d9`, Blok 2/9 Commit 1 `a2a6bfa` henüz taşınmadı;
