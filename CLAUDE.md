@@ -734,16 +734,31 @@ Modern motorların standart, en sade etkili paralel yaklaşımı: N thread aynı
 pozisyonu, paylaşılan tek bir TT üzerinden arar; TT ve küçük sıralama farklarıyla
 doğal olarak ıraksarlar, ana thread raporlar. Gereksinimler:
 
-- [ ] **Thread-safe TT**: ya lockless XOR-key hilesi (bozuk okumayı yakalar) ya da
-      per-entry atomik. Yarış koşullarına dayanıklı yapı.
-- [ ] **Thread pool + per-thread Searcher durumu** (killer/history/stack/node
-      sayacı thread'e özel; TT paylaşılır).
-- [ ] **`Threads` UCI option** (spin, min 1, max donanım). Şu an bilinçli ertelenmiş
-      durumda — burada hayata geçer.
-- [ ] **Determinizm kaybı** kabul edilir: çok-thread arama tekrarlanabilir değildir,
-      bu yüzden düğüm sayısı iddiası olan testler tek-thread koşar.
-- [ ] **SPRT ile ölçekleme doğrulama**: 1→2→4→8 thread gerçekten Elo veriyor mu?
-      (nps ölçeklemesi ≠ Elo ölçeklemesi; ölçülür, varsayılmaz.)
+- [x] **Thread-safe TT (lockless XOR)** — TAMAM, tek-thread EXACT, commit `19d4a04`.
+      Her yuva iki 64-bit atomik söz (`Bucket`): key = gerçek anahtar XOR paketlenmiş
+      data, data = score|eval|move|depth|gen_bound (8 bayt, B1'de hazırlanan geometri).
+      Yırtık okuma (k^d)!=key -> miss. İç depolama `unique_ptr<Bucket[]>` (atomik
+      kopyalanamaz), public `TTEntry` probe çıktısı sabit -> `search.cpp` HİÇ değişmedi.
+      Kapı EXACT (SPRT değil): 141 test + düğüm eşitliği (startpos d13 780013, Kiwipete
+      d12 488482, `aaaec37` ile birebir).
+- [x] **Thread pool + per-thread Searcher + orchestrator** — TAMAM, threads=1 EXACT,
+      commit `a967672`. ID döngüsü `run_id_loop`'a çıkarıldı (is_main bayrağı: yalnız
+      ana thread info raporlar). Yeni `search_iterative` overload'u (`vector<
+      SearchTables*>`): her thread kendi tablosu + Searcher; ana thread çağıran
+      thread'te, yardımcılar `std::thread`'de. Durma: ana bitince `smp_stop` -> yardımcı
+      abort; yardımcılar deadline'a da uyar. Toplam düğüm join sonrası (yarışsız).
+      threads<=1 -> tek-thread yola delege (birebir).
+- [x] **`Threads` UCI option** (spin, min 1, max `hardware_concurrency`) — TAMAM
+      (`a967672`). `g_thread_tables` havuzu (thread başına SearchTables, oyun boyu yaşar,
+      ucinewgame'de hepsi clear). handle_setoption parse+clamp+havuz büyüt.
+- [x] **Determinizm kaybı** kabul edildi: çok-thread arama tekrarlanabilir değil ->
+      düğüm/skor iddialı testler tek-thread; yeni SMP testi (uci) yalnız legallik+mat.
+- [x] **SPRT altyapısı hazır** (`e810a9a`): tools/sprt per-engine `-NewThreads`/
+      `-BaseThreads` (option.Threads) + oversubscription uyarısı + GUI alanları.
+- [ ] **SCALING SPRT (Elo kapısı, SIRADAKİ — kullanıcı koşar)**: 1-thread base vs
+      2-thread new, aynı kod, sınırlı concurrency. H1 kabul -> SMP Elo veriyor mu?
+      (nps ölçeklemesi ≠ Elo; ölçülür, varsayılmaz.) Elle duman: startpos movetime 3000
+      -> 1 thread d15, 4 thread d16 (daha derin, farklı bestmove, çökme yok).
 
 ### Faz 3 — NNUE'ya Geçiş
 
@@ -763,9 +778,18 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-12): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
-(Aşama 1/1b/2) bitti. EN GÜNCEL: Blok 3/13 countermove yumuşak history-bonusu (retry)
-TAMAM, SPRT +10.4 ± 7.2 Elo TAM KABUL (4602 oyun) -> YENİ BASELINE `aaaec37`, 138 test.
+**Güncel durum (2026-07-13): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) TAMAM. FAZ 2D
+(Lazy SMP) KOD TAMAM, SCALING SPRT BEKLİYOR. Üç commit (hepsi main): `19d4a04`
+thread-safe TT (lockless XOR, tek-thread EXACT), `a967672` SMP orchestrator +
+per-thread tablolar + Threads option (threads=1 EXACT), `e810a9a` tools/sprt Threads
+desteği. 141 test. threads=1 düğüm eşitliği baseline `aaaec37` ile birebir (startpos
+d13 780013, Kiwipete d12 488482) -> davranış-koruyan, motor gücü değişmedi. SIRADAKİ
+tek iş: **scaling SPRT (1 vs 2 thread, aynı kod, Elo kapısı — kullanıcı GUI'den koşar)**;
+H1 kabul ederse SMP Elo veriyor demektir. Elle duman testi: 4 thread startpos'ta 1
+thread'ten daha derine iniyor (d16 vs d15), çökme yok, mat/legallik korunuyor. Thread-safe
+TT + orchestrator NNUE'ya N4'ten ÖNCE cherry-pick edilmeli (fork kısıtı). Önceki EN GÜNCEL
+(Faz 2C-devam sonu): Blok 3/13 countermove yumuşak history-bonusu (retry)
+TAMAM, SPRT +10.4 ± 7.2 Elo TAM KABUL (4602 oyun) -> BASELINE `aaaec37`, 138 test.
 FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2, +39.7 Elo) + Blok 1/2
 (TT yenileme paketi) TAMAM. Blok 1/2 iki SPRT: SPRT-A (B1..B4) +12.9 ± 8.2 Elo TAM
 KABUL, SPRT-B (B5 qsearch TT) +33 ± 14.1 Elo TAM KABUL — toplam ~+46 Elo, beklentiyi
