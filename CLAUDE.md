@@ -638,8 +638,33 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
           TT): startpos d13 668137->617518 (-%7.6), Kiwipete d12 715497->612182
           (-%14.4), bestmove makul (Kiwipete e2a6 aynı). Sağlama, kapı DEĞİL.
           kDeltaMargin=200 ilk elle-seçim, Blok 4/16 SPSA adayı.
-      Kalan (her biri AYRI oturum + AYRI commit + AYRI SPRT):
-      **countermove'un history-bonusu** olarak yeniden denenmesi (taban değişti),
+      - [x] **countermove yumuşak history-bonusu (retry) — TAMAM, SPRT GEÇTİ H1
+        (+10.4 ± 7.2 Elo, LLR 2.96 TAM KABUL, 4602 oyun, 1242-2256-1104, LOS %99.8).
+        Base `94c5b95` vs new `aaaec37`. YENİ BASELINE `aaaec37`.** Eski sert-bant
+        denemesi (`875d5f5`) -60 Elo regresyon vermişti; bu kez ayrı bant DEĞİL,
+        quiet skoruna eklenip history bandına kırpılan yumuşak additive bonus ->
+        ayrık-bant mimarisi korunur, LMP'nin iyi hamleleri budaması sorunu yok.
+        cont_hist örtüşmesine rağmen (aynı [önceki taş][önceki hedef] indeksleme)
+        net pozitif — mütevazı ama kesin, çok oyun istedi (delta pruning deseni).
+        - **Mekanik:** `kCountermoveBonus=8192`; `countermove[12][SQUARE_NB]`
+          (tek-slot recency, cont_hist gibi context-indexed -> aramalar arası
+          kalıcı, age()'de temizlenmez, bayat/illegal slot yalnız üretilmiş legal
+          hamlelerle karşılaştırıldığından zararsız). update_quiet_stats beta
+          kesmesinde `countermove[pp][pt]=m`; score_move quiet dalında bu hamleye
+          bonus (killer kontrolü önce return ettiğinden yalnız killer-olmayan
+          quiet'lere). Yalnız move ordering; LMR/history-pruning ham stat'ı
+          (history+cont) değişmedi (etki izole).
+        - Sabit ÖLÇÜLEREK gerekçelendirildi (geçici enstrümantasyon, commit'te yok;
+          hist-pruning-margin emsali): bonus quiet-skorlamaların ~%0.5-0.6'sında
+          ateşliyor -> node başına en fazla bir eşleşme (bağlam başına tek CM) =>
+          ~%10-18 düğümde CM-hit; no-op da dominant da değil. Bonus (8192) ölçekli
+          history maks'ının (~5-10k) hemen üstünde -> CM güçlü quiet gibi sıralanır,
+          killer altı. 2 test (CountermoveKeeps WinningTactic/MateSearch). Düğüm
+          sağlaması (kapı DEĞİL, Release taze tablo): startpos d13 780013 (b1c3),
+          Kiwipete d12 488482 (d5e6) — karışık yön, patlama yok (düğüm != Elo).
+          Ertelenen: CM bonusunu LMR/history-pruning stat'ına katmak, age()'de
+          temizleme varyantı.
+      Kalan (AYRI oturum + AYRI commit + AYRI SPRT):
       **kök hamle sıralamasında önceki iterasyon düğüm sayıları**.
 
 *Blok 4 — Texel tuning (kullanıcı kararı 2026-07-10: dahil, en sonda):*
@@ -716,7 +741,9 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-12): FAZ 1 + FAZ 2A + FAZ 2B TAMAM, FAZ 2C + 2C-ek + 2C-hız
-(Aşama 1/1b/2) bitti. FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2, +39.7 Elo) + Blok 1/2
+(Aşama 1/1b/2) bitti. EN GÜNCEL: Blok 3/13 countermove yumuşak history-bonusu (retry)
+TAMAM, SPRT +10.4 ± 7.2 Elo TAM KABUL (4602 oyun) -> YENİ BASELINE `aaaec37`, 138 test.
+FAZ 2C-devam Blok 1/1 (pin-aware Aşama 2, +39.7 Elo) + Blok 1/2
 (TT yenileme paketi) TAMAM. Blok 1/2 iki SPRT: SPRT-A (B1..B4) +12.9 ± 8.2 Elo TAM
 KABUL, SPRT-B (B5 qsearch TT) +33 ± 14.1 Elo TAM KABUL — toplam ~+46 Elo, beklentiyi
 (+10-25) aştı. YENİ BASELINE `23d28b0`.
@@ -784,9 +811,13 @@ BLOK 4 (Texel) ALTYAPI TAMAM ama İLK TUNING ~NÖTR (2026-07-12): 14 datagen `5e
 tuner-sertleştirme `1343b74`. İki SPRT: tune-tümü **-110 Elo REGRESYON** (eval ölçeği
 şişip cp arama marjlarını bozdu; ölçek hipotezi), material-freeze+reg **~NÖTR** (-9.3 ±
 19.4). Baseline `94c5b95` DEĞİŞMEDİ. Tuner + datagen NNUE'ya da hizmet eder.
-SIRADAKİ: Blok 3/13 kalan (her biri AYRI commit + AYRI SPRT): countermove'un
-history-bonusu, kök hamle sıralamasında önceki iterasyon düğüm sayıları. Blok 4 tuning
-için daha derin/çeşitli veri ya da joint arama-marj tuning (madde 16) ileride adaydır.
+Blok 3/13 countermove yumuşak history-bonusu (retry) TAMAM: SPRT +10.4 ± 7.2 Elo, LLR
+2.96 TAM KABUL (4602 oyun, 1242-2256-1104, LOS %99.8). Base `94c5b95` vs new `aaaec37`.
+Eski sert-bant (-60 Elo, `875d5f5`) yerine quiet skoruna eklenip history bandına kırpılan
+yumuşak bonus; cont_hist örtüşmesine rağmen net pozitif (mütevazı -> çok oyun). YENİ
+BASELINE `aaaec37`, 138 test. SIRADAKİ: Blok 3/13 kalan (AYRI commit + AYRI SPRT): kök
+hamle sıralamasında önceki iterasyon düğüm sayıları. Blok 4 tuning için daha derin/çeşitli
+veri ya da joint arama-marj tuning (madde 16) ileride adaydır.
 Blok 2 kalanı opsiyonel: Blok
 2/10 ProbCut, Blok 2/4 multicut. Capture history + IIR-tuning (kIirMinDepth 6-8 /
 reduce-by-2) + null verification (düşük kNullVerifyMinDepth ya da fail-soft null) +
@@ -800,8 +831,10 @@ kronolojik sırayla, ÇAKIŞMASIZ cherry-pick edildi (14 commit) ve doğrulandı
 test, düğüm-eşitliği (startpos d13 668137 / Kiwipete d12 715497 klasik HEAD ile birebir).
 NNUE origin/main = `51ce064`. Revert edilen deneyler (Blok 1/3, 2/6, 2/9-C2, 3/12) ve
 "Yol haritası" commit'leri (NNUE kendi CLAUDE.md'sini taşır) taşınmadı. Fork kısıtı:
-Faz 2D commit'leri N4'ten önce cherry-pick edilmeli.
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 131
+Faz 2D commit'leri N4'ten önce cherry-pick edilmeli. **YENİ CHERRY-PICK BORCU: Blok
+3/13 countermove `aaaec37` (2026-07-12'den sonra kabul edildi) henüz NNUE reposuna
+taşınmadı.**
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 138
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
