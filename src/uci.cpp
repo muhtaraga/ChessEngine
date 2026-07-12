@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "engine/board.hpp"
+#include "engine/eval.hpp"
 #include "engine/movegen.hpp"
 #include "engine/search.hpp"
 #include "engine/tt.hpp"
@@ -145,6 +146,14 @@ void handle_setoption(std::istringstream& ss) {
         // Buton: TT'yi elle temizle (analiz için kullanışlı).
         stop_search();
         TT.clear();
+    } else if (name == "EvalFile") {
+        // Texel-tune edilmiş eval parametrelerini dosyadan yükle. Boş/geçersiz
+        // ("<empty>" ya da açılamayan dosya) -> yerleşik varsayılan korunur.
+        stop_search();  // g_eval arama thread'i canlıyken değişmemeli
+        if (!value.empty() && value != "<empty>") {
+            if (!load_eval_params(g_eval, value))
+                std::cerr << "EvalFile yuklenemedi: " << value << '\n';
+        }
     }
     // Tanınmayan option: sessizce yok say (UCI önerisi).
 }
@@ -311,6 +320,8 @@ void uci_loop(std::istream& in, std::ostream& out) {
             // "Hash" ve "Clear Hash"i özel arayüzle tanır).
             out << "option name Hash type spin default 16 min 1 max 1024\n";
             out << "option name Clear Hash type button\n";
+            // Eval parametre dosyası (Texel tuning çıktısı). Boş -> yerleşik varsayılan.
+            out << "option name EvalFile type string default <empty>\n";
             out << "uciok\n";
             out.flush();
         } else if (cmd == "isready") {
