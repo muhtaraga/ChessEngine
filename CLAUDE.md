@@ -614,8 +614,31 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
         (128->129). Kapı near-exact (SPRT YOK; ~+2 Elo 5+0.05'te temiz karar veremez,
         Blok 1/3 Ders 3): non-mate birebir (yukarıdaki iki pozisyon) + MAT node-drop
         (iki-kale matı d4 1357->662 düğüm ~%51, skor/ilk-hamle aynı) + tüm mat testleri.
-      Kalan (her biri AYRI oturum + AYRI commit + AYRI SPRT): **delta pruning**
-      (qsearch, SEE ile — Adım 3'ten beri ertelenen, en yüksek değerli),
+      - [x] **delta pruning (qsearch) — TAMAM, SPRT GEÇTİ H1 (+7.8 ± 5.8 Elo, LLR
+        2.96 TAM KABUL, 7192 oyun, 1989-3375-1828, LOS %99.5). Base `a44d6eb` vs new
+        `94c5b95`. YENİ BASELINE `94c5b95`.** Beklenti (+5-15) tam ortası; mütevazı
+        etki -> çok oyun istedi (razoring +16.5/2912 oyun deseni, ~2× daha da fazla).
+        - **Mekanik:** qsearch'in çekte-olmayan dalında, ana döngüde (selection
+          sort'tan SONRA, do_move'dan ÖNCE), promosyon-olmayan yakalamalar için üst
+          sınır `raw_eval + MaterialValue[victim] + kDeltaMargin(200) <= alpha` ise
+          `continue`. `raw_eval` bu dalda stand_pat değerini tutar (çekteyken
+          kEvalNone -> gate zaten `!in_check` ile kapalı). `victim` = ep'te PAWN,
+          aksi `b.type_on(m.to())` (score döngüsündeki desen). ÇALIŞAN alpha ile
+          (upfront todo filtresi değil): alpha yükseldikçe budama güçlenir; strictly
+          daha güçlü. tt_move primi MVV-LVA sırasını bozabildiğinden güvenli
+          `continue` (break değil). Tek sabit `kDeltaMargin`, yeni altyapı yok.
+        - **Güvenlik:** promosyon muaf (vezir ekler, materyal sıçraması delta
+          mantığına aykırı; SEE muafiyetiyle aynı) -> 8. sıra taktikleri korunur;
+          çekte dal delta'ya hiç girmez (stand-pat yok, tüm kaçışlar aranır); marj
+          (200 cp, bir piyondan biraz fazla) pozisyonel salınımı örter.
+        - Kapılar: perft birebir (startpos d6 119060324, Kiwipete d5 193690690 ->
+          movegen'e dokunmaz); 131/131 test (+2: DeltaPruningKeepsWinningCapture ->
+          bedava vezir Rxe5 üst sınır alpha'yı aşar, budanmaz / KeepsMateSearch ->
+          arka sıra matı, çekte dal). Düğüm sağlaması (Release, `a44d6eb` base, taze
+          TT): startpos d13 668137->617518 (-%7.6), Kiwipete d12 715497->612182
+          (-%14.4), bestmove makul (Kiwipete e2a6 aynı). Sağlama, kapı DEĞİL.
+          kDeltaMargin=200 ilk elle-seçim, Blok 4/16 SPSA adayı.
+      Kalan (her biri AYRI oturum + AYRI commit + AYRI SPRT):
       **countermove'un history-bonusu** olarak yeniden denenmesi (taban değişti),
       **kök hamle sıralamasında önceki iterasyon düğüm sayıları**.
 
@@ -731,11 +754,16 @@ Blok 3/13 (fırsat işleri) KISMEN: hijyen paketi (ikisi de SPRT'siz) TAMAM ->
 seldepth raporlama (kozmetik, EXACT, `caf663a`) + mate distance pruning (near-exact,
 `9307674`). seldepth arama davranışını hiç değiştirmez; MDP non-mate sonuçlara
 dokunmaz (a44d6eb'a karşı startpos d13 668137 / Kiwipete d12 715497 birebir), yalnız
-mat hatlarında budar (iki-kale matı d4 1357->662). 129 test. Baseline DEĞİŞMEDİ
-(`a44d6eb`; exact/near-exact, Elo iddiası yok).
-SIRADAKİ: Blok 3/13 kalan (her biri AYRI commit + AYRI SPRT): delta pruning (qsearch,
-SEE — en yüksek değerli), countermove'un history-bonusu, kök hamle sıralamasında
-önceki iterasyon düğüm sayıları; sonra Blok 4 (Texel). Blok 2 kalanı opsiyonel: Blok
+mat hatlarında budar (iki-kale matı d4 1357->662). Ardından **delta pruning (qsearch)
+TAMAM: SPRT +7.8 ± 5.8 Elo, LLR 2.96 TAM KABUL (7192 oyun, 1989-3375-1828, LOS %99.5).
+Base `a44d6eb` vs new `94c5b95`. YENİ BASELINE `94c5b95`, 131 test.** Çekte değilken,
+promosyon-olmayan yakalama için `raw_eval + MaterialValue[victim] + kDeltaMargin(200)
+<= alpha` -> `continue` (çalışan alpha ile, güvenli continue). Beklenti (+5-15) tam
+ortası, mütevazı etki -> çok oyun (razoring deseni). Perft birebir; düğüm sağlaması
+startpos d13 -%7.6 / Kiwipete d12 -%14.4 (bestmove makul).
+SIRADAKİ: Blok 3/13 kalan (her biri AYRI commit + AYRI SPRT): countermove'un
+history-bonusu, kök hamle sıralamasında önceki iterasyon düğüm sayıları; sonra Blok 4
+(Texel). Blok 2 kalanı opsiyonel: Blok
 2/10 ProbCut, Blok 2/4 multicut. Capture history + IIR-tuning (kIirMinDepth 6-8 /
 reduce-by-2) + null verification (düşük kNullVerifyMinDepth ya da fail-soft null) +
 tempo (Texel sonrası/cerrahi) + adaptif zamanın fail-low uzatması ileride yeniden
@@ -749,7 +777,7 @@ test, düğüm-eşitliği (startpos d13 668137 / Kiwipete d12 715497 klasik HEAD
 NNUE origin/main = `51ce064`. Revert edilen deneyler (Blok 1/3, 2/6, 2/9-C2, 3/12) ve
 "Yol haritası" commit'leri (NNUE kendi CLAUDE.md'sini taşır) taşınmadı. Fork kısıtı:
 Faz 2D commit'leri N4'ten önce cherry-pick edilmeli.
-Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 129
+Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 131
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
 LMR + futility ailesi + LMP + razoring TAMAM (hepsi SPRT'den geçti). Check extension
@@ -767,10 +795,13 @@ Blok 2/6 capture history DENENDİ/RAFA (SPRT H0 -16.2, düğüm iyi ama Elo nega
 `8fa2281`); Blok 2/7 IIR TAMAM, SPRT +15 -> `3bde658`; Blok 2/8 history-tabanlı quiet
 budaması TAMAM, SPRT +14.3 -> `a8ac0d9`; Blok 2/9 null move güçlendirme KISMEN TAMAM
 (Commit 1 `eval>=beta`+dinamik R KABUL SPRT +21.9 -> `a2a6bfa`; Commit 2 verification
-search DENENDİ/RAFA SPRT nötr +1.8 -> `a2a6bfa`'ya geri alındı `f3f48e6`); sıradaki
-Blok 2 kalan [ProbCut] + singular multicut opsiyonel eki -> Blok 3 zaman
-yönetimi + küçükler -> Blok 4 Texel tuning, (2) Faz 2D Lazy SMP (tüm bloklar bitince,
-NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
+search DENENDİ/RAFA SPRT nötr +1.8 -> `a2a6bfa`'ya geri alındı `f3f48e6`); Blok 3/11
+adaptif zaman yönetimi TAMAM, SPRT +40.6 -> `a44d6eb`; Blok 3/12 tempo DENENDİ/RAFA
+(H0 -18.6) -> `a44d6eb`; Blok 3/13 hijyen paketi (seldepth+MDP, SPRT'siz) + delta
+pruning TAMAM, SPRT +7.8 -> `94c5b95` (YENİ BASELINE); sıradaki Blok 3/13 kalan
+(countermove history-bonusu, kök hamle sıralaması) -> Blok 4 Texel tuning. Blok 2
+kalanı opsiyonel [ProbCut + singular multicut], (2) Faz 2D Lazy SMP (tüm bloklar
+bitince, NNUE'ya N4'ten önce cherry-pick).** Proje iki repoya ayrılıyor
 (klasik + NNUE, ikisi de aktif; bkz. memory `iki-taban-karari`). Ayrıntılı adım-adım
 kayıt ve en güncel özet aşağıdaki bölümlerde + memory `proje-durumu`.
 
