@@ -740,10 +740,15 @@ SEE — en yüksek değerli), countermove'un history-bonusu, kök hamle sıralam
 reduce-by-2) + null verification (düşük kNullVerifyMinDepth ya da fail-soft null) +
 tempo (Texel sonrası/cerrahi) + adaptif zamanın fail-low uzatması ileride yeniden
 denenebilir. FAZ 2D tüm bloklar bitince.**
-Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da; bu commit'ler oraya cherry-pick
-edilecek (Blok 1/2 `1d73725..23d28b0`, Blok 2/4 `a803a3f`, Blok 2/5 `dd9e8f3..8fa2281`,
-Blok 2/7 `3bde658`, Blok 2/8 `a8ac0d9`, Blok 2/9 Commit 1 `a2a6bfa` henüz taşınmadı;
-Blok 2/9 Commit 2 `3f0f5ac` RAFA -> taşınmaz; Blok 3/11 `a44d6eb` henüz taşınmadı).
+Proje fork'landı: NNUE işi `../ChessEngineNNUE`'da. **NNUE CHERRY-PICK BORCU KAPANDI
+(2026-07-12):** tüm kabul edilmiş kod backlog'u (Blok 1/2 `1d73725..23d28b0`, Blok 2/4
+`a803a3f`, Blok 2/5 `dd9e8f3..8fa2281`, Blok 2/7 `3bde658`, Blok 2/8 `a8ac0d9`, Blok 2/9
+Commit 1 `a2a6bfa`, Blok 3/11 `a44d6eb`, Blok 3/13 `caf663a`+`9307674`) NNUE reposuna
+kronolojik sırayla, ÇAKIŞMASIZ cherry-pick edildi (14 commit) ve doğrulandı: 129/129
+test, düğüm-eşitliği (startpos d13 668137 / Kiwipete d12 715497 klasik HEAD ile birebir).
+NNUE origin/main = `51ce064`. Revert edilen deneyler (Blok 1/3, 2/6, 2/9-C2, 3/12) ve
+"Yol haritası" commit'leri (NNUE kendi CLAUDE.md'sini taşır) taşınmadı. Fork kısıtı:
+Faz 2D commit'leri N4'ten önce cherry-pick edilmeli.
 Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 129
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
