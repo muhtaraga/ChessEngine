@@ -50,6 +50,12 @@ constexpr int kScoreKiller2  =   790'000;  // 2. killer
 constexpr int kHistoryMax    =   700'000;  // history taban tavanı (killer'ın altında)
 constexpr int kScoreBadCapture = -1'000'000;  // kayıplı yakalama (see<0): quiet bandının altında
 
+// Countermove ordering bonusu: quiet skoruna eklenir, sonra history bandına kırpılır
+// (ayrık bant korunur; sert bant DEĞİL — eski sert-bant denemesi -60 Elo, 875d5f5).
+// İlk elle-seçim; commit öncesi geçici enstrümantasyonla sağlaması yapıldı (bonusun
+// anlamlı ama sınırlı bir düğüm oranında sıralamayı değiştirdiği ölçüldü).
+constexpr int kCountermoveBonus = 8192;
+
 // History ödül/ceza ölçek çarpanı. Ölçüldü: ölçeksiz (bonus = depth²) tipik |history|
 // değerleri 3-100 bandındaydı, tavanın (700k) ~5000 katı altında. Bu iki soruna yol
 // açıyordu: age()'deki h/=2 tamsayı bölmesi sinyali siliyordu, ve history-tabanlı
@@ -94,10 +100,18 @@ struct SearchTables::Impl {
         std::array<std::array<std::array<std::array<int, SQUARE_NB>, 12>, SQUARE_NB>, 12>;
     std::unique_ptr<ContHist> cont_hist = std::make_unique<ContHist>();
 
+    // Countermove: [önceki hamlenin taşı 0..11][önceki hamlenin hedef karesi] ->
+    // o bağlamda en son beta kesmesi yapan quiet hamle. cont_hist ile AYNI indeksleme
+    // ama biriken puan değil tek-slot recency; score_move'da yumuşak ordering bonusu
+    // (kCountermoveBonus) verir. Context-indexed olduğundan (history/cont_hist gibi,
+    // ply-indexed killer gibi değil) aramalar arası kalıcıdır: age()'de temizlenmez.
+    Move countermove[12][SQUARE_NB] = {};
+
     // Yeni oyun: her şey sıfır.
     void clear() {
         std::memset(killers, 0, sizeof(killers));
         std::memset(history, 0, sizeof(history));
+        std::memset(countermove, 0, sizeof(countermove));
         cont_hist->fill({});
     }
 
@@ -252,7 +266,14 @@ int Searcher::score_move(const Board& b, Move m, Move tt_move, int ply) const {
     // (ayrık bant yapısı korunur). cont_hist sıfırken skor eski davranışla birebir.
     if (m == tb.killers[ply][0]) return kScoreKiller1;
     if (m == tb.killers[ply][1]) return kScoreKiller2;
-    const int s = tb.history[b.side_to_move][m.from()][m.to()] + cont_score(b, m, ply);
+    int s = tb.history[b.side_to_move][m.from()][m.to()] + cont_score(b, m, ply);
+    // Countermove yumuşak bonusu: bu bağlamda (önceki hamle) en son kesme yapan
+    // quiet ise küçük ek. Kırpma sayesinde history bandını aşamaz (ayrık bant korunur).
+    if (ply >= 1 && stack[ply - 1].piece != kNoPiece) {
+        const StackEntry& prev = stack[ply - 1];
+        if (tb.countermove[prev.piece][prev.to] == m)
+            s += kCountermoveBonus;
+    }
     return std::clamp(s, -kHistoryMax, kHistoryMax);
 }
 
@@ -282,6 +303,10 @@ void Searcher::update_quiet_stats(const Board& b, Move m, int ply, int depth,
     const bool  has_prev = (ply >= 1 && stack[ply - 1].piece != kNoPiece);
     const int   pp = has_prev ? stack[ply - 1].piece : 0;
     const Square pt = has_prev ? stack[ply - 1].to : A1;
+
+    // Countermove: bu bağlamda kesme yapan quiet hamleyi kaydet (tek-slot recency).
+    if (has_prev)
+        tb.countermove[pp][pt] = m;
 
     // m'i ödüllendir; m'den önce boşuna aranan quiet'leri cezalandır.
     add_history(tb.history[us][m.from()][m.to()], bonus);
