@@ -447,6 +447,35 @@ TEST(Search, CountermoveKeepsMateSearch) {
     EXPECT_GT(r.score, 0);
 }
 
+// --- Kök hamle sıralaması (önceki iterasyon düğüm sayıları) ---
+
+// Kök yeniden sıralama yalnız search_iterative'de (ID döngüsü Searcher'ı koruduğu
+// için) ve depth >= kRootNodeOrderMinDepth'ten itibaren devreye girer — search()
+// [sabit derinlik, tek negamax] taze Searcher kullandığından etkilenmez. Alt-ağaç
+// TT/history yol-bağımlılığı nedeniyle sezgisel (skoru/best'i değiştirebilir, IIR
+// emsali); kabul kapısı SPRT. Bu test yalnız taktiğin korunduğunu güvence altına alır.
+TEST(Search, RootOrderingKeepsWinningTactic) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchLimits lim;
+    lim.max_depth = 8;  // ID: depth 2'den itibaren kök sıralaması aktif
+    SearchResult r = search_iterative(b, lim);
+    EXPECT_EQ(r.best, Move::make(E1, E5));  // yine de bedava veziri al
+    EXPECT_GT(r.score, 400);
+}
+
+// Kök sıralaması mat aramasını bozmamalı: arka sıra matı ID boyunca bulunur.
+TEST(Search, RootOrderingKeepsMateSearch) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchLimits lim;
+    lim.max_depth = 6;
+    SearchResult r = search_iterative(b, lim);
+    EXPECT_EQ(r.best, Move::make(A1, A8));
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- History-tabanlı LMR ---
 
 // Birleşik history sinyali (main + continuation) indirimi ayarlar: kötü geçmişli
