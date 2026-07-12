@@ -458,6 +458,18 @@ TEST(Search, FindsTwoRookMate) {
     EXPECT_GT(r.score, 0);
 }
 
+// Mate distance pruning mat aramasını bozmamalı: arka sıra matı derin aramada
+// da doğru hamle/skorla bulunur (MDP yalnız pencereyi mat sınırlarıyla daraltır,
+// non-mate sonuçlar aynen korunur — bkz. node-sanity kapısı).
+TEST(Search, MateDistancePruningKeepsMate) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("6k1/5ppp/8/8/8/8/8/R6K w - - 0 1"));
+    SearchResult r = search(b, 9);
+    EXPECT_EQ(r.best, Move::make(A1, A8));  // arka sıra matı hâlâ bulunur
+    EXPECT_TRUE(is_mate_score(r.score));
+    EXPECT_GT(r.score, 0);
+}
+
 // --- Tekrar (repetition) tespiti ---
 
 // Zorunlu tekrar KAYBEDEN tarafı kurtarır (ayırt edici mekanizma testi).

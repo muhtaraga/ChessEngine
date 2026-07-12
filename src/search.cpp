@@ -461,6 +461,21 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
     if (depth == 0 || ply >= MAX_PLY - 1)
         return quiescence(b, alpha, beta, ply);
 
+    // --- Mate distance pruning ---
+    // Kökten ply uzaklıkta olası en iyi mat (MATE - (ply+1)) beta'dan iyi değilse
+    // ya da en kötü mated (-MATE + ply) alpha'dan kötü değilse pencereyi daralt;
+    // çakışırsa kes. Yalnız pencere mat sınırlarına yakınken (mat hatları) ısırır
+    // -> non-mate aramada bounds değişmez, sonuç birebir korunur. Kök (ply 0)
+    // dokunulmaz. score_to_tt/from_tt ply-normalizasyonuyla tutarlı (aynı MATE-ply
+    // deseni). excluded (singular) iken tt_value/singular_beta mat-olmayan olduğundan
+    // no-op -> ayrı guard gerekmez.
+    if (ply > 0) {
+        alpha = std::max(alpha, -MATE + ply);
+        beta  = std::min(beta,  MATE - (ply + 1));
+        if (alpha >= beta)
+            return alpha;
+    }
+
     // --- Transposition table sondası ---
     TTEntry tte;
     const bool tt_hit  = TT.probe(b.key, tte);
