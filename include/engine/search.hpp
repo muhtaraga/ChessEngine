@@ -83,6 +83,10 @@ struct SearchLimits {
     // bu bayrağı düzenli yoklar; true olunca düğüm ortasında kesilir. "go infinite"
     // için zaman sınırı olmadan yalnızca bu bayrakla durmayı sağlar.
     const std::atomic<bool>* stop = nullptr;
+    // Adaptif zaman yönetimi: kök best-move kararlılığına göre soft limiti ölçekle.
+    // Yalnız timed-game (wtime/btime) modunda true; movetime/depth/infinite/default
+    // budget modlarında false (o modlarda soft==hard ya da -1, ölçekleme yanlış olur).
+    bool adaptive_time = false;
 };
 
 // Her tamamlanan derinlikten sonra çağrılan bilgi geri-çağırması (UCI "info"
@@ -100,5 +104,12 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
                               const InfoCallback& info = {},
                               const std::vector<std::uint64_t>& history = {},
                               SearchTables* tables = nullptr);
+
+// Adaptif zaman yönetimi ölçeği (best-move stability). stability = kök best-move'un
+// art arda değişmeden kaldığı tamamlanan derinlik sayısı. Kararsız (0) -> büyük ölçek
+// (soft limiti uzat), kararlı -> küçük ölçek (kıs). Monoton azalan, sınırlı. Yalnız
+// search_iterative timed-game modunda kullanır; birim testinde doğrulanabilsin diye
+// ilan edilir.
+double time_scale(int stability);
 
 }  // namespace engine

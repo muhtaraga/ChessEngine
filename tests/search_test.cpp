@@ -7,6 +7,7 @@
 #include "engine/move.hpp"
 #include "engine/search.hpp"
 #include "engine/see.hpp"
+#include "engine/tt.hpp"
 
 using namespace engine;
 
@@ -115,6 +116,42 @@ TEST(Search, IterativeReturnsMoveUnderTightTime) {
     lim.hard_ms   = 1;
     SearchResult r = search_iterative(b, lim);
     EXPECT_NE(r.best, Move());  // en az derinlik 1'in hamlesi elde olmalı
+}
+
+// Adaptif zaman ölçeği: stability arttıkça monoton AZALAN (kararlı -> kıs), sınırlı.
+// Yön hatası (sign flip) time-trouble'a yol açar; SPRT bunu "nötr" gösterip sebebi
+// gizleyebilir -> burada saf fonksiyonla yakalanır.
+TEST(Search, TimeScaleMonotonicAndBounded) {
+    double prev = time_scale(0);
+    EXPECT_GT(prev, time_scale(8));         // kararlı belirgin daha kısa
+    for (int s = 1; s <= 12; ++s) {
+        double cur = time_scale(s);
+        EXPECT_LE(cur, prev);               // monoton azalan (artmaz)
+        EXPECT_GE(cur, 0.5);                // kTimeStabFloor
+        EXPECT_LE(cur, 1.5);                // kTimeStabMax
+        prev = cur;
+    }
+    EXPECT_DOUBLE_EQ(time_scale(0), 1.5);   // stability 0 -> en uzun
+}
+
+// Uygunluk kapısı: adaptive_time=true bile olsa, zaman sınırı olmayan (soft/hard=-1)
+// sabit-derinlik araması BİREBİR değişmez -> ölçekleme yalnız timed-game'de devrede.
+// Movetime/depth/infinite modlarının dokunulmazlığının deterministik kanıtı. TT her
+// iki koşudan önce temizlenir (soğuk = soğuk) ki düğüm sayısı da birebir kıyaslanabilsin.
+TEST(Search, AdaptiveTimeInertWithoutTimeLimit) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
+    SearchLimits base;
+    base.max_depth = 6;  // süresiz
+    SearchLimits adapt = base;
+    adapt.adaptive_time = true;  // bayrak set ama zaman sınırı yok -> etkisiz olmalı
+    TT.clear();
+    SearchResult r0 = search_iterative(b, base);
+    TT.clear();
+    SearchResult r1 = search_iterative(b, adapt);
+    EXPECT_EQ(r0.best, r1.best);
+    EXPECT_EQ(r0.score, r1.score);
+    EXPECT_EQ(r0.nodes, r1.nodes);  // birebir aynı arama
 }
 
 // Null move pruning zugzwang'da (yalnız şah+piyon materyali) doğru sonucu

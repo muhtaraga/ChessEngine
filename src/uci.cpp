@@ -230,6 +230,10 @@ void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
         lim.soft_ms = alloc;
         lim.hard_ms = std::min<std::int64_t>(alloc * 3, max_use);
         if (lim.hard_ms < lim.soft_ms) lim.hard_ms = lim.soft_ms;
+        // Best-move stability ölçeklemesi yalnız bu (timed-game) modda aktif:
+        // movetime/depth/infinite/default budget'ta soft==hard olduğundan ölçekleme
+        // yanlış olur (bkz. search_iterative uygunluk kapısı).
+        lim.adaptive_time = true;
     } else {
         // Çıplak "go" (parametresiz): terminal kolaylığı için varsayılan bütçe.
         lim.soft_ms = kDefaultBudgetMs;

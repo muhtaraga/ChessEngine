@@ -1020,6 +1020,28 @@ int Searcher::search_root(const Board& b, int depth, int prev_score) {
 
 }  // namespace
 
+// --- Adaptif zaman yönetimi (best-move stability) parametreleri ---
+// stability = art arda kök best-move'un değişmediği tamamlanan derinlik sayısı.
+// 0 (kararsız) -> soft limiti UZAT (düşünmeye devam et), yüksek -> KIS (erken dur,
+// saati bankala). Ölçek tipik pozisyonda ~1.0 civarında merkezlenir; hard_ms zaten
+// mutlak tavan olduğundan uzatma sınırlıdır. Sabitler ilk elle-seçim, SPRT/SPSA ile
+// ayarlanabilir (Blok 4/16).
+namespace {
+constexpr double kTimeStabMax   = 1.5;   // stability 0'da ölçek (en uzun)
+constexpr double kTimeStabStep  = 0.13;  // her kararlı derinlikte azalma
+constexpr int    kTimeStabCap   = 8;     // sayaç doygunluğu
+constexpr double kTimeStabFloor = 0.5;   // en agresif kısma (alt sınır)
+}  // namespace
+
+// stability -> soft limit ölçeği. Monoton azalan, [kTimeStabFloor, kTimeStabMax]
+// sınırlı saf fonksiyon (search.hpp'de ilan; birim testte doğrulanır).
+double time_scale(int stability) {
+    int s = stability < kTimeStabCap ? stability : kTimeStabCap;
+    if (s < 0) s = 0;
+    double f = kTimeStabMax - kTimeStabStep * s;
+    return f < kTimeStabFloor ? kTimeStabFloor : f;
+}
+
 SearchResult search(const Board& b, int depth, std::int64_t max_time_ms,
                     const std::vector<std::uint64_t>& history) {
     // Sabit derinlik: her çağrı sıfırdan tablolarla, deterministik (testlerin kapısı).
@@ -1072,6 +1094,9 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
 
     SearchResult best;      // son TAMAMLANAN derinliğin sonucu
     int          prev_score = 0;
+    // Adaptif zaman yönetimi: kök best-move'un derinlikler boyunca kararlılığı.
+    Move         prev_best  = Move();
+    int          stability  = 0;
 
     for (int depth = 1; depth <= lim.max_depth; ++depth) {
         s.root_best_move  = Move();
@@ -1124,11 +1149,26 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
         if (is_mate_score(score))
             break;  // mat bulundu: daha derine gitmenin anlamı yok
 
+        // Kök best-move kararlılığını güncelle (derinlik 1 daima ilk hamle -> sayaç
+        // depth 2'den itibaren birikir).
+        if (depth > 1 && best.best == prev_best) ++stability;
+        else                                     stability = 0;
+        prev_best = best.best;
+
         // Soft limit: hedef bütçeyi aştıysak bir sonraki (daha pahalı) derinliğe
-        // başlama; elimizdeki en iyi hamleyi oyna.
+        // başlama; elimizdeki en iyi hamleyi oyna. Timed-game modunda (adaptive_time)
+        // eşik best-move kararlılığına göre ölçeklenir: kararlıysa kıs (erken dur),
+        // kararsızsa uzat (hard_ms tavanına kadar). Diğer modlarda birebir statik.
         std::int64_t soft = (lim.soft_ms >= 0) ? lim.soft_ms : lim.hard_ms;
-        if (soft >= 0 && elapsed_ms() >= soft)
-            break;
+        if (soft >= 0) {
+            std::int64_t eff = soft;
+            if (lim.adaptive_time && lim.hard_ms > lim.soft_ms) {
+                eff = static_cast<std::int64_t>(soft * time_scale(stability));
+                if (eff > lim.hard_ms) eff = lim.hard_ms;  // hard tavanı aşma
+            }
+            if (elapsed_ms() >= eff)
+                break;
+        }
     }
 
     return best;
