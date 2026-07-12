@@ -870,10 +870,15 @@ countermove `aaaec37` NNUE'ya cherry-pick edildi (çakışmasız) -> NNUE origin
 o an henüz kabul edilmemişti) ATLAMIŞTI — CLAUDE.md yalnız `aaaec37`'yi borç işaretledi,
 delta gözden kaçtı. Bu oturumda ikisi de taşındı (delta önce cherry-pick edildi ama
 NNUE'ya countermove'dan SONRA uygulandı; ikisi bağımsız bölge [qsearch vs move ordering]
-olduğundan sıra final kodu etkilemez, klasik `aaaec37` ile eşdeğer). Düğüm-eşitliği artık
-klasik ile UYGULANAMAZ (NNUE eval ıraksadı: startpos d13 klasik cp22/780013 vs NNUE
-cp25/523133) -> doğrulama kapısı 133/133 test + çakışmasız cherry-pick. Kök hamle sıralaması
-(`4612c5c`, revert) NNUE'ya taşınmadı (net-sıfır deney).
+olduğundan sıra final kodu etkilemez, klasik `aaaec37` ile eşdeğer). **DÜĞÜM-EŞİTLİĞİ
+DOĞRULANDI (ikisi de taşındıktan sonra): NNUE `fc3b082` search.cpp == klasik `aaaec37`
+search.cpp BİREBİR (diff boş); startpos d13 780013/cp22/b1c3 + Kiwipete d12 488482/cp-76/
+d5e6 klasik ile PV dahil özdeş.** 133 test. NOT: eval ıraksamadı — NNUE işi henüz
+başlamadı; kaynak farkı yalnız Blok 4 Texel altyapısı (datagen/tuner/eval_params +
+eval.cpp EXACT refactor `2742583`, tuning adopte EDİLMEDİ -> eval değerleri özdeş),
+search'e dokunmuyor. (İlk ölçümde görülen fark, delta pruning HENÜZ taşınmamışken alınmıştı;
+delta portlanınca kayboldu.) Kök hamle sıralaması (`4612c5c`, revert) NNUE'ya taşınmadı
+(net-sıfır deney).
 Motor UCI üzerinden GUI'ye bağlanıyor, legal oynuyor, perft geçiyor. Toplam 138
 test geçiyor. Faz 2B (gelişmiş evaluation + SPRT/maç altyapısı) tamamlandı; tüm
 eval terimleri SPRT'den geçti. Faz 2C selective search: PVS + null move + SEE +
