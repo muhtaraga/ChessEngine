@@ -357,16 +357,6 @@ constexpr int kNullBaseR    = 3;    // taban indirim
 constexpr int kNullDepthDiv = 3;    // derinliğe bağlı ek indirim böleni (depth/3)
 constexpr int kNullEvalDiv  = 200;  // (eval-beta) başına ek indirim böleni
 constexpr int kNullEvalMaxR = 3;    // eval-tabanlı ek indirim tavanı
-// Zugzwang doğrulaması: null yalnız bu derinliğin ÜSTÜNDE fail-high olunca, null'suz
-// azaltılmış bir aramayla teyit edilir (has_non_pawn_material'in gözden kaçırdığı
-// derin zugzwang'a karşı). Altında doğrudan budanır (mevcut davranış).
-constexpr int kNullVerifyMinDepth = 12;
-// Verification aramasına özel "excluded" sentinel'i: aynı `b`'yi aynı ply'de null'suz
-// yeniden ararken singular'ın prolog-atlama yolunu (repetition/50-hamle/TT-cutoff/
-// KeyGuard-push/TT-store atlanır) yeniden kullanırız. from==to -> movegen asla
-// üretmez (döngüde hiçbir gerçek hamleyle eşleşmez); B1B1 nonzero -> Move()'dan
-// farklı (A1A1 == Move() olurdu) -> excluded != Move() dalı tetiklenir.
-constexpr Move kNullVerifyExcluded = Move::make(B1, B1);
 
 // --- LMP (late move pruning / move-count) parametreleri ---
 // Sığ, çekte-olmayan düğümde, iyi sıralamada belli sayıdan sonraki quiet
@@ -576,24 +566,8 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
                              /*null_allowed=*/false);
         if (aborted)
             return 0;  // süre doldu: sonuç yukarıda yok sayılır (fn başıyla tutarlı)
-        if (score >= beta) {
-            // Düşük derinlikte doğrulama gerekmez: doğrudan buda (mevcut davranış).
-            if (depth < kNullVerifyMinDepth)
-                return beta;  // fail-hard; sahte mat skoru sızmasın
-            // Zugzwang doğrulaması: AYNI pozisyonu null'suz, azaltılmış derinlikte
-            // ara. Doğrulama da >= beta verirse gerçekten fail-high -> buda. Aksi
-            // halde null yanılttı (zugzwang) -> budama YOK, gerçek hamle aramasına düş.
-            // excluded=kNullVerifyExcluded: prolog kısayolları atlanır (b.key dış
-            // düğümce zaten push edildi; çift-push repetition'ı bozardı). Sentinel
-            // gerçek hamle dışlamaz (from==to hiçbir hamleyle eşleşmez).
-            int v = negamax(b, null_depth, beta - 1, beta, ply,
-                            /*null_allowed=*/false, /*excluded=*/kNullVerifyExcluded);
-            if (aborted)
-                return 0;
-            if (v >= beta)
-                return beta;  // doğrulandı: buda
-            // doğrulanamadı: fall-through, bu düğümü normal ara.
-        }
+        if (score >= beta)
+            return beta;  // fail-high: dalı buda (fail-hard; sahte mat skoru sızmasın)
     }
 
     // --- Internal Iterative Reduction (IIR) ---

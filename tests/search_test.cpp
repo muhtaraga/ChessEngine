@@ -143,19 +143,6 @@ TEST(Search, NullMoveGateKeepsWinningTactic) {
     EXPECT_GT(r.score, 400);
 }
 
-// Null verification search (Commit 2) aramayı bozmamalı: kNullVerifyMinDepth (12)
-// üstünde null fail-high'ları null'suz azaltılmış aramayla teyit edilir. Piyon-dışı
-// materyalli, açıkça kazanan bir pozisyonda motor derin aramada da doğru hamleyi
-// bulmalı (verification'ın excluded-sentinel yolu prolog'u/TT'yi bozmadığının
-// sanity'si). Gerçek zugzwang-yanılması vakası SPRT ile ölçülür, unit-test değil.
-TEST(Search, NullVerificationKeepsWin) {
-    Board b;
-    ASSERT_TRUE(b.set_fen("4k3/8/8/4q3/8/8/8/4RK2 w - - 0 1"));
-    SearchResult r = search(b, 13);          // verification aktif (>= 12)
-    EXPECT_EQ(r.best, Move::make(E1, E5));    // bedava veziri al
-    EXPECT_GT(r.score, 400);
-}
-
 // --- LMR (Late Move Reductions) ---
 
 // LMR aktifken (derinlik 3'ten büyük, geç quiet hamleler indirilir) taktik
