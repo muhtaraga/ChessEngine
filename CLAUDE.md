@@ -644,14 +644,32 @@ söz değil (LMP/razoring dersi: mütevazı etki = çok oyun ister).
 
 *Blok 4 — Texel tuning (kullanıcı kararı 2026-07-10: dahil, en sonda):*
 
-- [ ] **14. Veri pipeline'ı**: self-play (cutechess altyapısı + `chess fen`) ->
-      quiet pozisyon süzme -> (FEN, oyun sonucu) veri seti. NNUE veri toplama
-      pipeline'ının ön ürünü — bir kez kurulur, İKİ tabana hizmet eder.
-- [ ] **15. Texel fit**: logistic regression ile eval skalerleri (material, PST,
-      pawn structure, mobility, king safety, bishop pair, rook file — ~65 anlamlı
-      skaler + PST girdileri, tümü elle seçilmiş `constexpr`; SPRT'ler yalnız
-      "terim var olmalı mı?"yı test etti). Toplu sonuç tek SPRT ile doğrulanır.
-      Beklenti +50-100 ("Eval tavan mı?" bölümünün kendi tahmini).
+- [x] **14. Veri pipeline'ı TAMAM (`5e64fd4`)**: gömülü `chess datagen <games> <out>
+      [seed] [depth]` alt-komutu (cutechess+PGN yerine — kullanıcı kararı). Self-play,
+      quiet-etiketli (FEN, oyun sonucu) veri. Çekirdek `datagen.hpp/cpp` engine
+      kütüphanesinde -> NNUE veri toplamaya da hizmet eder. Quiet filtresi: çekte değil
+      + bestmove yakalama/promosyon değil + skor mat değil; açılış plyleri atlanır.
+      `tools/sprt/gen-data.ps1` paralel çok-işçi. 133 test.
+- [~] **15. Texel fit: ALTYAPI TAMAM, İLK TUNING ~NÖTR (2026-07-12).** Baseline
+      `94c5b95` DEĞİŞMEDİ (tune edilmiş eval adopte edilmedi).
+      - `2742583` **15a (EXACT)**: tunable ağırlıklar constexpr -> mutable `g_eval`;
+        EG PST MG'den ayrıldı; SEE+delta pruning kendi dondurulmuş MaterialValue'sunu
+        tutar (material tune edilince arama budaması kaymasın). Düğüm birebir.
+      - `29ddeaa` **15b/c (tuner)**: flat param haritası (kaydet/yükle + tuner tek
+        doğruluk kaynağı), C++ `chess tune` (feature: material+PST doğrudan, gerisi
+        finite-diff -> DRIFT YOK, testli; K kalibrasyonu; Adam). `3dfc3a9` EvalFile UCI
+        option (aynı binary üzerinde izole tuned-eval SPRT'si).
+      - `1343b74` **15d İKİ SPRT -> ~NÖTR**: (1) tune-tümü **-110 Elo REGRESYON** ->
+        teşhis: eval ölçeği şişti (vezir 900->1185), aramanın cp-kalibre DONDURULMUŞ
+        marjlarını (RFP/futility/razor/LMP/null/delta/aspiration) bozdu (tempo/improving
+        emsali). (2) düzeltme (kullanıcı kararı): materyali DONDUR (ölçek çıpası) +
+        PST/pozisyoneli varsayılana AdamW weight decay ile regularize -> **~NÖTR**
+        (932 oyun, -9.3 ± 19.4, LOS %17). Material freeze -110'u düzeltti (ölçek
+        hipotezi DOĞRULANDI) ama regularize pozisyonel tuning zaten iyi elle-ayarlı
+        eval'i sığ self-play verisinde YENEMEDI.
+      - İLERİDE: daha derin/çeşitli veri, joint arama-marj tuning (madde 16), farklı
+        reg, ya da Faz 3 NNUE eval'i değiştireceğinden erteleme. Beklenti (+50-100) bu
+        pass'te GERÇEKLEŞMEDİ.
 - [ ] **16. (opsiyonel) Arama sabitleri mini-SPSA/elle**: aspiration delta (25),
       RFP 80×d / d≤6, futility {150,250,400} / d≤3, LMP 3+d² / d≤8, razor
       {300,500,700} / d≤3, LMR taban 0.75 / bölen 2.25 / kLmrStatDiv 512, history
@@ -761,9 +779,15 @@ promosyon-olmayan yakalama için `raw_eval + MaterialValue[victim] + kDeltaMargi
 <= alpha` -> `continue` (çalışan alpha ile, güvenli continue). Beklenti (+5-15) tam
 ortası, mütevazı etki -> çok oyun (razoring deseni). Perft birebir; düğüm sağlaması
 startpos d13 -%7.6 / Kiwipete d12 -%14.4 (bestmove makul).
+BLOK 4 (Texel) ALTYAPI TAMAM ama İLK TUNING ~NÖTR (2026-07-12): 14 datagen `5e64fd4`,
+15a EvalParams refactor `2742583` (EXACT), 15b/c tuner `29ddeaa` + EvalFile `3dfc3a9`,
+tuner-sertleştirme `1343b74`. İki SPRT: tune-tümü **-110 Elo REGRESYON** (eval ölçeği
+şişip cp arama marjlarını bozdu; ölçek hipotezi), material-freeze+reg **~NÖTR** (-9.3 ±
+19.4). Baseline `94c5b95` DEĞİŞMEDİ. Tuner + datagen NNUE'ya da hizmet eder.
 SIRADAKİ: Blok 3/13 kalan (her biri AYRI commit + AYRI SPRT): countermove'un
-history-bonusu, kök hamle sıralamasında önceki iterasyon düğüm sayıları; sonra Blok 4
-(Texel). Blok 2 kalanı opsiyonel: Blok
+history-bonusu, kök hamle sıralamasında önceki iterasyon düğüm sayıları. Blok 4 tuning
+için daha derin/çeşitli veri ya da joint arama-marj tuning (madde 16) ileride adaydır.
+Blok 2 kalanı opsiyonel: Blok
 2/10 ProbCut, Blok 2/4 multicut. Capture history + IIR-tuning (kIirMinDepth 6-8 /
 reduce-by-2) + null verification (düşük kNullVerifyMinDepth ya da fail-soft null) +
 tempo (Texel sonrası/cerrahi) + adaptif zamanın fail-low uzatması ileride yeniden
