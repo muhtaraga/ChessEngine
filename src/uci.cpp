@@ -2,11 +2,13 @@
 
 #include "engine/uci.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -35,9 +37,23 @@ std::thread       g_search_thread;
 std::atomic<bool> g_search_bounded{false};
 
 // Move ordering tabloları: bir OYUN boyunca yaşar (aramalar arası birikim korunur,
-// her arama başında yaşlanır), "ucinewgame"de temizlenir. Arama thread'inden okunur;
-// her go öncesi stop_search() thread'i join ettiği için yarış yok.
-SearchTables g_tables;
+// her arama başında yaşlanır), "ucinewgame"de temizlenir. Lazy SMP için thread başına
+// BİR örnek (her thread kendi killer/history/cont-hist'ini tutar, aralarında sızıntı
+// yok). g_thread_tables[0] eski tek-thread rolünü üstlenir. Arama thread'lerinden
+// okunur; her go öncesi stop_search() tüm thread'leri join ettiği için yarış yok.
+std::vector<std::unique_ptr<SearchTables>> g_thread_tables;
+
+// Lazy SMP iş parçacığı sayısı (UCI "Threads" option; varsayılan 1). Donanım üst sınırı.
+int          g_threads     = 1;
+const int    g_max_threads =
+    static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
+
+// g_thread_tables'ı en az n örneğe kadar büyüt (mevcut birikimi korur; küçültmez —
+// büyütme yeter, fazlası kullanılmaz). Her go öncesi ve Threads değişince çağrılır.
+void ensure_thread_tables(int n) {
+    while (static_cast<int>(g_thread_tables.size()) < n)
+        g_thread_tables.push_back(std::make_unique<SearchTables>());
+}
 // Çıktı akışı (out) iki thread'den yazılabildiği için (arama: info/bestmove;
 // ana döngü: readyok vб.) tüm yazımlar bu kilit altında yapılır.
 std::mutex        g_io_mtx;
@@ -146,6 +162,19 @@ void handle_setoption(std::istringstream& ss) {
         // Buton: TT'yi elle temizle (analiz için kullanışlı).
         stop_search();
         TT.clear();
+    } else if (name == "Threads") {
+        // Lazy SMP thread sayısı. Geçersiz sayı -> yok say. [1, donanım] clamp.
+        std::int64_t nt = 0;
+        try {
+            nt = std::stoll(value);
+        } catch (...) {
+            return;  // bozuk/eksik value: yok say
+        }
+        if (nt < 1)             nt = 1;
+        if (nt > g_max_threads) nt = g_max_threads;
+        stop_search();  // thread havuzu arama canlıyken değişmemeli
+        g_threads = static_cast<int>(nt);
+        ensure_thread_tables(g_threads);
     } else if (name == "EvalFile") {
         // Texel-tune edilmiş eval parametrelerini dosyadan yükle. Boş/geçersiz
         // ("<empty>" ya da açılamayan dosya) -> yerleşik varsayılan korunur.
@@ -249,6 +278,14 @@ void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
         lim.hard_ms = kDefaultBudgetMs;
     }
 
+    // Lazy SMP: bu arama için thread sayısı + her thread'in kalıcı tablosu.
+    lim.threads = g_threads;
+    ensure_thread_tables(g_threads);
+    std::vector<SearchTables*> tt_ptrs;
+    tt_ptrs.reserve(g_threads);
+    for (int i = 0; i < g_threads; ++i)
+        tt_ptrs.push_back(g_thread_tables[i].get());
+
     // Önceki arama hâlâ koşuyorsa (GUI normalde önce "stop" gönderir) durdur.
     stop_search();
     g_stop.store(false, std::memory_order_relaxed);
@@ -259,10 +296,12 @@ void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
 
     // Aramayı ayrı thread'de başlat: ana döngü stdin okumaya devam etsin ki
     // "stop" gelince kesebilelim. Pozisyonun bir KOPYASINI thread'e veriyoruz
-    // (ana döngüdeki board sonraki "position" ile değişebilir).
+    // (ana döngüdeki board sonraki "position" ile değişebilir). tt_ptrs değerle
+    // kopyalanır: g_thread_tables global ve kalıcı, sonraki go stop_search ile join
+    // ettiğinden yarış yok.
     Board pos = b;
     auto hist = history;  // thread'e taşınacak kopya (ana geçmiş değişebilir)
-    g_search_thread = std::thread([pos, lim, hist, &out] {
+    g_search_thread = std::thread([pos, lim, hist, tt_ptrs, &out] {
         using clock = std::chrono::steady_clock;
         auto start = clock::now();
         auto elapsed_ms = [&] {
@@ -286,7 +325,7 @@ void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
             }
             out << '\n';
             out.flush();
-        }, hist, &g_tables);
+        }, hist, tt_ptrs);
 
         std::lock_guard<std::mutex> lk(g_io_mtx);
         if (best.best == Move())
@@ -320,6 +359,9 @@ void uci_loop(std::istream& in, std::ostream& out) {
             // "Hash" ve "Clear Hash"i özel arayüzle tanır).
             out << "option name Hash type spin default 16 min 1 max 1024\n";
             out << "option name Clear Hash type button\n";
+            // Lazy SMP: iş parçacığı sayısı (min 1, max donanım eşzamanlılığı).
+            out << "option name Threads type spin default 1 min 1 max "
+                << g_max_threads << "\n";
             // Eval parametre dosyası (Texel tuning çıktısı). Boş -> yerleşik varsayılan.
             out << "option name EvalFile type string default <empty>\n";
             out << "uciok\n";
@@ -336,7 +378,8 @@ void uci_loop(std::istream& in, std::ostream& out) {
             board.set_startpos();
             history.clear();  // yeni oyun: pozisyon geçmişini sıfırla
             TT.clear();  // yeni oyun: önceki oyunun girişlerini at
-            g_tables.clear();  // yeni oyun: killer/history/continuation history sıfır
+            for (auto& t : g_thread_tables)  // her thread: killer/history/cont-hist sıfır
+                t->clear();
         } else if (cmd == "setoption") {
             handle_setoption(ss);  // Hash / Clear Hash (kendi içinde stop_search)
         } else if (cmd == "position") {

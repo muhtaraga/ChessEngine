@@ -85,6 +85,40 @@ TEST(Uci, AdvertisesOptions) {
     EXPECT_LT(out.find("option name Hash"), out.find("uciok"));
 }
 
+// Lazy SMP: "Threads" seçeneği ilan edilmeli (spin, min 1, donanım max).
+TEST(Uci, AdvertisesThreadsOption) {
+    std::string out = run_uci("uci\nquit\n");
+    EXPECT_NE(out.find("option name Threads type spin"), std::string::npos);
+    EXPECT_NE(out.find("min 1"), std::string::npos);
+    EXPECT_LT(out.find("option name Threads"), out.find("uciok"));
+}
+
+// Lazy SMP duman testi: Threads>1 ile çok-thread arama yolu (orchestrator + yardımcı
+// thread spawn/join + paylaşılan TT eşzamanlı erişim) alıştırılır. Çok-thread arama
+// DETERMİNİSTİK DEĞİLDİR -> düğüm/skor/tam-hamle eşitliği İDDİA EDİLMEZ; yalnız
+// (a) mat pozisyonunda mat bulunur, (b) normal pozisyonda legal hamle oynanır, (c)
+// çökme yok. Sonda Threads=1'e döndürülür (g_threads global, testler arası sızmasın).
+TEST(Uci, ThreadsSmpFindsMateAndPlaysLegal) {
+    // (a) Çok-thread mat: Ra8# hâlâ bulunmalı (paylaşılan TT + yardımcılar).
+    std::string mate = run_uci(
+        "setoption name Threads value 4\n"
+        "position fen 6k1/5ppp/8/8/8/8/8/R6K w - - 0 1\n"
+        "go depth 4\n"
+        "quit\n");
+    EXPECT_NE(mate.find("bestmove a1a8"), std::string::npos);
+    EXPECT_NE(mate.find("score mate"), std::string::npos);
+
+    // (b) Çok-thread normal pozisyon: legal hamle (0000 değil), çökme yok.
+    std::string play = run_uci(
+        "setoption name Threads value 4\n"
+        "position startpos\n"
+        "go depth 6\n"
+        "setoption name Threads value 1\n"  // testler arası tek-thread'e geri dön
+        "quit\n");
+    EXPECT_NE(play.find("bestmove "), std::string::npos);
+    EXPECT_EQ(play.find("bestmove 0000"), std::string::npos);
+}
+
 // "setoption name Hash value N" TT'yi yeniden boyutlandırmalı ve sonrasında
 // motor hâlâ düzgün çalışmalı (fonksiyonel regresyon yok).
 TEST(Uci, SetHashResizesTT) {

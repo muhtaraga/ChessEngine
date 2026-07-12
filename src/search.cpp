@@ -9,7 +9,9 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include "engine/bitboard.hpp"
 #include "engine/eval.hpp"
@@ -1133,25 +1135,14 @@ SearchResult search(const Board& b, int depth, std::int64_t max_time_ms,
     return res;
 }
 
-SearchResult search_iterative(const Board& b, const SearchLimits& lim,
-                              const InfoCallback& info,
-                              const std::vector<std::uint64_t>& history,
-                              SearchTables* tables) {
-    // Kalıcı tablolar verildiyse aramalar arası birikimi koru, ama yaşlandır
-    // (history yarılanır -> doyma yok, eski bilgi söner; killer'lar temizlenir).
-    // Verilmediyse geçici, sıfırdan tablolar (testler deterministik kalır).
-    SearchTables local;
-    SearchTables& t = tables ? *tables : local;
-    if (tables) t.impl->age();
+namespace {
 
-    Searcher s(*t.impl);
-    s.keys = history;  // tekrar tespiti için oyun geçmişiyle tohumla
-    s.stop = lim.stop;
-    if (lim.hard_ms >= 0) {
-        s.use_deadline = true;
-        s.deadline = Clock::now() + std::chrono::milliseconds(lim.hard_ms);
-    }
-
+// Tek bir Searcher üzerinde iterative deepening döngüsü: aspiration windows, zaman
+// yönetimi (soft/hard), abort'ta best koruma, adaptif zaman, mate-break. SMP'de her
+// thread bunu koşar. is_main: yalnız ana thread info raporlar; yardımcı thread'lerin
+// döndürdüğü sonuç atılır (onlar yalnız TT'yi doldurur).
+SearchResult run_id_loop(Searcher& s, const Board& b, const SearchLimits& lim,
+                         bool is_main, const InfoCallback& info) {
     const auto start = Clock::now();
     auto elapsed_ms = [&] {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1212,7 +1203,7 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
             best.pv.push_back(s.pv_table[0][j]);
         best.best = best.pv.empty() ? Move() : best.pv[0];
 
-        if (info)
+        if (is_main && info)
             info(best, depth);
 
         if (is_mate_score(score))
@@ -1239,6 +1230,93 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
                 break;
         }
     }
+
+    return best;
+}
+
+// Bir Searcher'ın ortak kurulumu (keys/stop/deadline). SMP ve tek-thread paylaşır.
+void setup_searcher(Searcher& s, const SearchLimits& lim,
+                    const std::vector<std::uint64_t>& history,
+                    const std::atomic<bool>* stop) {
+    s.keys = history;  // tekrar tespiti için oyun geçmişiyle tohumla
+    s.stop = stop;
+    if (lim.hard_ms >= 0) {
+        s.use_deadline = true;
+        s.deadline = Clock::now() + std::chrono::milliseconds(lim.hard_ms);
+    }
+}
+
+}  // namespace
+
+SearchResult search_iterative(const Board& b, const SearchLimits& lim,
+                              const InfoCallback& info,
+                              const std::vector<std::uint64_t>& history,
+                              SearchTables* tables) {
+    // Kalıcı tablolar verildiyse aramalar arası birikimi koru, ama yaşlandır
+    // (history yarılanır -> doyma yok, eski bilgi söner; killer'lar temizlenir).
+    // Verilmediyse geçici, sıfırdan tablolar (testler deterministik kalır).
+    SearchTables local;
+    SearchTables& t = tables ? *tables : local;
+    if (tables) t.impl->age();
+
+    Searcher s(*t.impl);
+    setup_searcher(s, lim, history, lim.stop);
+    return run_id_loop(s, b, lim, /*is_main=*/true, info);
+}
+
+SearchResult search_iterative(const Board& b, const SearchLimits& lim,
+                              const InfoCallback& info,
+                              const std::vector<std::uint64_t>& history,
+                              const std::vector<SearchTables*>& thread_tables) {
+    const int n = std::max<int>(1, std::min<int>(lim.threads,
+                                static_cast<int>(thread_tables.size())));
+
+    // Tek thread: mevcut tek-thread yoluna delege et (davranış birebir; run_smp'nin
+    // yardımcı-spawn/atomik-stop yükü hiç ödenmez).
+    if (n <= 1) {
+        SearchTables* t = thread_tables.empty() ? nullptr : thread_tables[0];
+        return search_iterative(b, lim, info, history, t);
+    }
+
+    // Yardımcı thread'leri durdurmak için ana thread'in sahip olduğu bayrak. Ana
+    // thread ID döngüsünü bitirince (soft/mate/maxdepth/abort) set eder -> yardımcılar
+    // abort eder. Yardımcılar ayrıca deadline'a (hard_ms) da uyar. Ana thread gerçek
+    // UCI stop'unu (lim.stop) yoklar; kendi bitince smp_stop'u set eder.
+    std::atomic<bool> smp_stop{false};
+
+    // Her thread için bir Searcher; her biri kendi (yaşlandırılmış) tablosunu alır.
+    std::vector<std::unique_ptr<Searcher>> searchers;
+    searchers.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        thread_tables[i]->impl->age();
+        auto s = std::make_unique<Searcher>(*thread_tables[i]->impl);
+        setup_searcher(*s, lim, history, (i == 0) ? lim.stop : &smp_stop);
+        searchers.push_back(std::move(s));
+    }
+
+    // Yardımcılar (id 1..n-1) ayrı thread'de sessizce arar: paylaşılan TT'yi doldurur
+    // ve küçük zamanlama/sıralama farklarıyla ana thread'ten ıraksar.
+    std::vector<std::thread> helpers;
+    helpers.reserve(n - 1);
+    for (int i = 1; i < n; ++i)
+        helpers.emplace_back([&searchers, &b, &lim, i] {
+            run_id_loop(*searchers[i], b, lim, /*is_main=*/false, {});
+        });
+
+    // Ana thread (id 0) bu thread'te koşar ve info raporlar.
+    SearchResult best = run_id_loop(*searchers[0], b, lim, /*is_main=*/true, info);
+
+    // Ana thread bitti: yardımcıları durdur ve bekle.
+    smp_stop.store(true, std::memory_order_relaxed);
+    for (auto& h : helpers)
+        h.join();
+
+    // Toplam düğüm (join SONRASI -> yarış yok): tüm thread'lerin düğümlerini topla,
+    // böylece raporlanan toplam nps çok-thread'de anlamlı olur.
+    std::uint64_t total_nodes = 0;
+    for (auto& sp : searchers)
+        total_nodes += sp->nodes;
+    best.nodes = total_nodes;
 
     return best;
 }

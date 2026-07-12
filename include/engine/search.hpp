@@ -88,6 +88,10 @@ struct SearchLimits {
     // Yalnız timed-game (wtime/btime) modunda true; movetime/depth/infinite/default
     // budget modlarında false (o modlarda soft==hard ya da -1, ölçekleme yanlış olur).
     bool adaptive_time = false;
+    // Lazy SMP iş parçacığı sayısı. 1 -> tek thread (mevcut davranış birebir).
+    // >1 -> bu kadar thread aynı kökü paylaşılan TT ile arar (vector<SearchTables*>
+    // alan search_iterative overload'u ile kullanılır).
+    int threads = 1;
 };
 
 // Her tamamlanan derinlikten sonra çağrılan bilgi geri-çağırması (UCI "info"
@@ -105,6 +109,18 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
                               const InfoCallback& info = {},
                               const std::vector<std::uint64_t>& history = {},
                               SearchTables* tables = nullptr);
+
+// Lazy SMP overload'u: lim.threads iş parçacığı aynı kök pozisyonu paylaşılan TT
+// üzerinden arar; TT yarışları + küçük move-ordering farklarıyla doğal olarak
+// ıraksarlar. Ana thread (id 0) info raporlar ve sonucu döndürür; yardımcı thread'ler
+// yalnız TT'yi doldurur. thread_tables: her thread için bir SearchTables (boyut >=
+// lim.threads olmalı; her thread kendi örneğini alır, aralarında sızıntı yok).
+// lim.threads <= 1 -> yukarıdaki tek-thread yoluna delege eder (davranış birebir).
+// Determinizm YOKTUR (çok-thread): düğüm/skor iddialı testler tek-thread koşmalı.
+SearchResult search_iterative(const Board& b, const SearchLimits& lim,
+                              const InfoCallback& info,
+                              const std::vector<std::uint64_t>& history,
+                              const std::vector<SearchTables*>& thread_tables);
 
 // Adaptif zaman yönetimi ölçeği (best-move stability). stability = kök best-move'un
 // art arda değişmeden kaldığı tamamlanan derinlik sayısı. Kararsız (0) -> büyük ölçek
