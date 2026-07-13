@@ -758,9 +758,11 @@ doğal olarak ıraksarlar, ana thread raporlar. Gereksinimler:
 - [x] **SCALING SPRT — GEÇTİ H1 (2 thread vs 1 thread, aynı kod)**: Elo **+88.7 ±
       24.5**, LOS %100, LLR 2.95 TAM KABUL (424 oyun, W-D-L 168-194-62). SMP gerçekten
       Elo veriyor (nps ölçeklemesi ≠ Elo idi; ölçüldü, doğrulandı). **FAZ 2D TAMAM.**
-      Opsiyonel ileri: 2→4 thread ölçeklemesi (daha fazla Elo veriyor mu?). Kalan
-      thread-safe TT rafinesi (prefetch, 4-yollu bucket) ve Lazy SMP iyileştirmeleri
-      (depth-skipping ile daha iyi ıraksama) ileride aday.
+      **2→4 thread ölçekleme de GEÇTİ H1: Elo +75.5 ± 22.3, LOS %100, LLR 2.95 TAM
+      KABUL (505 oyun, 190-233-82).** Ölçekleme sürüyor (1→2 +88.7, 2→4 +75.5; azalan
+      getiri beklenen/sağlıklı, kümülatif 1→4 ~+164 Elo mertebesi). Kalan thread-safe
+      TT rafinesi (prefetch, 4-yollu bucket) ve Lazy SMP iyileştirmeleri (depth-skipping
+      ile daha iyi ıraksama) ileride aday; ilk sıradaki iş NNUE cherry-pick borcu + Faz 3.
 
 ### Faz 3 — NNUE'ya Geçiş
 
