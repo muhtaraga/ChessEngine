@@ -879,6 +879,21 @@ H0/nötr -> geri al + dersi buraya yaz.
 - [ ] **King safety rafineleri** (HER BİRİ AYRI COMMIT/SPRT — paketleme yok):
       pawn storm, şah açık/yarı-açık hatta, safe/knight check, attacker-count
       çarpanı, ring'e piyon saldırısı (`KingAttackWeight[PAWN]=0`). Toplam +15-40.
+      - [~] **şah açık/yarı-açık hatta — DENENDİ (`9c62fe6`), RAFA (SPRT H0), revert
+        `d7963d2` (`9c4f6d1`'e birebir).** Rakipte R/Q varken şah hattı/komşu sütun
+        dost piyonsuzsa danger (open 15 / semi 8), SafetyTable'dan SONRA düz eklenir.
+        **SPRT: 1533 oyun, W-D-L 378-725-430, Elo −11.9 ± 12.7, LOS %3.3, LLR −1.72
+        (H0'a net, kullanıcı durdurdu).** TEŞHİS (üç kök sebep): (1) **üst-üste sayım**
+        — king exposure zaten king-PST (MG'de açık şah ağır cezalı) + kalkan + ring
+        atağı ile ÜÇ yerde yakalanıyor; açık-hat dördüncü kez şişirdi. (2) **kaba gate**
+        — "rakipte R/Q var" orta oyunda hep doğru -> terim çok geniş ateşliyor (güvenli
+        yarı-açık sütunlar da cezalanıyor; kale/vezir o hatta BAKIYOR mu bakmıyor).
+        (3) **doğrusal ekleme SafetyTable'dan SONRA -> nonlinear doygunluğu ATLIYOR**;
+        düşük-tehlike pozisyonlarında düz −15/−8 saf gürültü. Emsal: check extension /
+        improving / capture history (güçlü motorda zaten yakalanan sinyali kaba biçimde
+        tekrar eklemek net-negatif). İLERİDE ADAY: açık-hat'ı SafetyTable UNITS'ine kat
+        (doygunlukla birleşsin), gate'i "R/Q o hatta bakıyor" yap, kalkanla örtüşmeyi
+        azalt; ya da E7 joint king-safety tuning'e bırak.
 - [ ] **Mobility quality**: mobility area'dan rakip piyon vuruşlarını çıkar
       (+ opsiyonel pin-farkındalığı). Beklenti +5-15.
 
@@ -930,9 +945,17 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-15): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
 Klasik motorun arama/movegen/SMP tarafı bitti. FAZ 3 (klasik) — Eval Güçlendirme
-DEVAM: BLOK E1 (altyapı+hız) TAM TAMAM, BLOK E2 Commit 1 (threats/hanging) KABUL —
-SIRADAKİ İŞ: Blok E2 / 2. madde (king-safety rafineleri, HER BİRİ AYRI COMMIT+SPRT)
--> sonra mobility quality. NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+DEVAM: BLOK E1 (altyapı+hız) TAM TAMAM, BLOK E2 Commit 1 (threats/hanging) KABUL
+(baseline `9c4f6d1`); king-safety rafinesi "şah açık hatta" DENENDİ/RAFA (SPRT H0,
+revert). SIRADAKİ İŞ: Blok E2 farklı king-safety rafinesi (pawn storm / ring'e piyon
+saldırısı) ya da mobility quality. NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+**SON: Blok E2 king-on-open-file DENENDİ, RAFA KALDIRILDI — SPRT net H0 (1533 oyun,
+378-725-430, Elo −11.9 ± 12.7, LOS %3.3, LLR −1.72). Revert `d7963d2` (`9c4f6d1`'e
+birebir, threats korundu, 152 test). TEŞHİS: (1) üst-üste sayım (king-PST + kalkan +
+ring zaten king exposure'ı yakalıyor), (2) kaba gate ("R/Q var" hep doğru -> çok geniş
+ateşliyor), (3) doğrusal ekleme SafetyTable doygunluğunu atlıyor (düşük-tehlikede
+gürültü). İLERİDE: açık-hat'ı SafetyTable UNITS'ine kat / gate "R/Q o hatta bakıyor" /
+E7 joint tuning.**
 **SON: Blok E2 Commit 1 — threats / hanging (tam aile) KABUL. YENİ BASELINE `9c4f6d1`,
 152 test. Dört alt-terim (ThreatByPawn 40/30, ThreatByMinor 25/20 [minör→majör],
 ThreatByRook 20/15 [kale→vezir], Hanging 25/25 [savunmasız]), E1'in birleşik attack-
