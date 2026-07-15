@@ -242,6 +242,27 @@ TEST(Eval, KingSafetySymmetry) {
     EXPECT_EQ(evaluate(b), 0);
 }
 
+// Piyon king-ring saldırısı: siyah g3 piyonu beyaz şah (g1) halkasındaki f2 ve h2'yi
+// vurur (2 kare) -> units = 2 × KingAttackWeight[PAWN], nonlinear SafetyTable üzerinden
+// danger. Kalkan tam (f2,g2,h2) + rakip taş yok -> yalnız piyon-ring katkısı.
+// (KingAttackWeight[PAWN] artık > 0; önce 0'dı, piyon halka saldırısı hiç sayılmıyordu.)
+TEST(Eval, KingSafetyPawnRingAttack) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("1k6/ppp5/8/8/8/6p1/5PPP/6K1 w - - 0 1"));
+    int mg = 0, eg = 0;
+    king_safety(b, mg, eg);
+    EXPECT_EQ(mg, -SafetyTable[KingAttackWeight[PAWN] * 2]);
+    EXPECT_LT(mg, 0);
+    EXPECT_EQ(eg, 0);
+
+    // Kontrol: piyon halkaya değmiyorsa (g3 yerine a3) danger yok.
+    Board c;
+    ASSERT_TRUE(c.set_fen("1k6/ppp5/8/8/8/p7/5PPP/6K1 w - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    king_safety(c, mg2, eg2);
+    EXPECT_EQ(mg2, 0);
+}
+
 // --- Threats / hanging testleri (threats yardımcısıyla, PST/materyal gürültüsü yok) ---
 
 // Piyon tehdidi: beyaz e4 piyonu siyah atı d5'i vuruyor; at c6 piyonuyla savunuluyor

@@ -123,7 +123,7 @@ inline constexpr int ShieldMissingPenalty = 15;  // eksik kalkan sütunu başın
 // ağırlık, o taşın şah halkasında vurduğu kare sayısıyla çarpılır (CPW "King
 // Safety" örneği). Küçük ağırlıklar kasıtlı: kare-sayısıyla çarpılıp toplanır.
 inline constexpr int KingAttackWeight[PIECE_TYPE_NB] = {
-    0,  // PAWN  (piyon baskısı ayrı ele alınmıyor)
+    1,  // PAWN  (piyon vuruşu şah halkasında -> units; storm/piyon-destekli saldırı)
     2,  // KNIGHT
     2,  // BISHOP
     3,  // ROOK
