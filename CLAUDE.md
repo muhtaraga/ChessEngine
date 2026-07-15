@@ -812,10 +812,31 @@ marjları bozar — kanıtlı emsaller: tempo `evaluate()` içinde −18.6, impr
 tune-all −110. Kural: yeni terimleri **mütevazı** tut, ölçeği kaydırma; büyük etki
 gerekiyorsa joint arama-marj tuning'e (E7) bırak.
 
+**EN KRİTİK DERS — ORTOGONAL vs YENİDEN-İFADE (2026-07-16, 10+ veri noktası).** Motor
+artık güçlü; marjinal bir terimin SPRT'yi geçmesi için **YENİ bilgi** taşıması şart.
+İki sınıf net ayrışıyor:
+- **GEÇEN** (hep): daha önce hiç sayılmayan **ortogonal** sinyal. tapered, pawn
+  structure, mobility, bishop pair, rook-file, king safety (İLK kurulum), threats/
+  hanging + arama terimleri (singular, SEE, IIR...). Hepsi eksik bir eksene bilgi ekledi.
+- **KALAN/H0** (hep): (a) **zaten yakalanan sinyalin yeniden-ifadesi** — check extension
+  (arama zaten görüyor), improving, capture history (MVV-LVA+SEE zaten güçlü), kök
+  node-sıralaması; ya da (b) **dondurulmuş kalibre alt-sisteme enjeksiyon** — tempo /
+  tune-all (cp marjları), **king-on-open-file** (−11.9; king exposure zaten king-PST +
+  kalkan + ring ile ÜÇ katmanda) ve **piyon king-ring** (~nötr; frozen nonlinear
+  SafetyTable'a `KingAttackWeight[PAWN]` enjeksiyonu, tablo units-tanımıyla kalibre).
+Kural: yeni terim önerince ÖNCE sor — "bu sinyal şu an başka bir yerde sayılıyor mu?
+kalibre-dondurulmuş bir sisteme mi giriyor?" İkisinden biri EVET ise, ayrı bir SPRT'de
+denemek yerine ya ORTOGONAL bir terime geç ya da o alt-sistemi joint tune et (E7).
+Emsal-genişletme: H0 çıkan bir terimi "sabiti düzeltip" retry etme (capture-history:
+node-pozitif yapıldı, Elo yine −16 — sorun sabit değil KATEGORİ).
+
 **Metodoloji (mevcut disiplin): her terim ayrı commit + ayrı SPRT.** Kabul kapısı
 Elo; düğüm sayısı Elo proxy'si DEĞİL (Blok 2/6 dersi). Bağımsız sezgiselleri tek
 SPRT'de PAKETLEME (Blok 1/3 dersi). Mütevazı terim = çok oyun ister (razoring/LMP
-deseni). Beklentiler mertebe tahmini, söz değil.
+deseni). **Mütevazı etkide erken kareye göre karar VERME** (LMP dersi): 135 oyun /
+±47 hata bandı bilgi taşımaz; SPRT'yi sınıra bırak ya da sabit-N kullan. SPRT sonucunu
+**kapatmadan** final satırıyla kaydet (threats istatistiği test kapanınca kayboldu).
+Beklentiler mertebe tahmini, söz değil ("+15-40" gibi lore beklentileri ÖLÇÜM değil).
 
 **Yeni terim eklemenin standart iş akışı** (E2-E6 her maddesi): (1) `EvalParams`
 struct'a alan (`eval.hpp`) + `make_default_eval_params` varsayılanı (`eval.cpp`) +
@@ -876,9 +897,25 @@ H0/nötr -> geri al + dersi buraya yaz.
       sinyali boğuldu). Thread↑ -> SPRT eşzamanlılığı↓ (2 motor × N thread ≤ fiziksel
       çekirdek) + Hash'i thread'e göre büyüt. "1-thread kazancı N-thread'te yıkanabilir"
       dersinin (SMP paketi) TERSİ hata: yanlış kurulum gerçek kazancı gizler.**
-- [ ] **King safety rafineleri** (HER BİRİ AYRI COMMIT/SPRT — paketleme yok):
-      pawn storm, şah açık/yarı-açık hatta, safe/knight check, attacker-count
-      çarpanı, ring'e piyon saldırısı (`KingAttackWeight[PAWN]=0`). Toplam +15-40.
+- [~] **King safety rafineleri — E7 JOINT TUNING'E ERTELENDİ (2026-07-16, kategori
+      kanıtı aleyhte).** İki deneme üst üste başarısız (aşağıda): açık-hat net H0,
+      piyon-ring ~nötr. Kök sebep tekil sabit değil KATEGORİ — hepsi ya (a) king-PST +
+      kalkan + ring ile zaten ÜÇ katmanda sayılan king-exposure'ı yeniden ifade ediyor,
+      ya (b) units-tanımıyla kalibre **dondurulmuş nonlinear SafetyTable**'a enjeksiyon.
+      Kalan adaylar (pawn storm, safe/knight check, attacker-count çarpanı) da AYNI
+      frozen sisteme girer -> tek tek elle-SPRT YERİNE **E7'de safety bloğunu (weights +
+      SafetyTable) BİRLİKTE tune et** (king-safety'den değer almanın dürüst yolu).
+      Tek tek yeniden deneme (ör. ağırlık-2 retry) YOK (bkz. EN KRİTİK DERS + capture-
+      history emsali). İki deneme kaydı:
+      - [~] **ring'e piyon saldırısı — DENENDİ (`3fc3d73`), RAFA (SPRT ~nötr/H0), revert
+        `cce222c` (`9c4f6d1`'e birebir).** `KingAttackWeight[PAWN]` 0->1; piyon vuruşları
+        (`by_pawn`) rakip şah halkasında units'e eklenir (nonlinear tabloya girer -> önceki
+        üç hatayı bilinçle atlatmıştı: ortogonal sinyal, doğal gate, tablo doygunluğu).
+        **SPRT base `9c4f6d1` vs new `3fc3d73`: H1'e gitmedi -> 639 oyun, W-D-L 170-284-185,
+        Elo −7.3 ± 20.3, LOS %24.1, LLR −0.454 (kullanıcı durdurdu).** Üç hatayı düzeltmek
+        bile yetmedi -> asıl sorun: frozen SafetyTable units-tanımıyla (N2/B2/R3/Q5, piyon
+        YOK) kalibre; `KingAttackWeight[PAWN]` enjeksiyonu tablonun çalışma noktasını
+        global kaydırıyor (tempo/tune-all deseni, ama frozen safety içinde). -> E7 joint.
       - [~] **şah açık/yarı-açık hatta — DENENDİ (`9c62fe6`), RAFA (SPRT H0), revert
         `d7963d2` (`9c4f6d1`'e birebir).** Rakipte R/Q varken şah hattı/komşu sütun
         dost piyonsuzsa danger (open 15 / semi 8), SafetyTable'dan SONRA düz eklenir.
@@ -895,12 +932,25 @@ H0/nötr -> geri al + dersi buraya yaz.
         (doygunlukla birleşsin), gate'i "R/Q o hatta bakıyor" yap, kalkanla örtüşmeyi
         azalt; ya da E7 joint king-safety tuning'e bırak.
 - [ ] **Mobility quality**: mobility area'dan rakip piyon vuruşlarını çıkar
-      (+ opsiyonel pin-farkındalığı). Beklenti +5-15.
+      (`by_pawn[enemy]` birleşik pass'te zaten var). ORTA GÜVEN — mevcut mobility
+      terimini RAFİNE eder (ortogonal yeni sinyal değil), ama rakip-piyon-kontrolü
+      şu an hiçbir yerde sayılmadığından tam "yeniden-ifade" de değil. Beklenti +5-15.
+
+**SIRADAKİ İŞ (2026-07-16 pivot): E3/E4'ün ORTOGONAL terimleri** (passed-pawn
+rafineleri, outpost, rook-on-7th) — kategori kanıtı (EN KRİTİK DERS) bunları
+king-safety rafinelerinin ÖNÜNE koyuyor: yeni eksene bilgi ekliyorlar, dondurulmuş
+alt-sisteme enjeksiyon değiller. Mobility quality (orta güven) ve E7 king-safety
+joint tuning sonraya.
 
 *Blok E3 — Piyon yapısı derinleştirme (E1 pawn hash sonrası):*
 - [ ] **Passed pawn rafineleri** (ayrı commit'ler): blockade, şah mesafesi
       (dost+rakip), rook-behind-passer, connected/protected passer, unstoppable/free
-      passer. Beklenti +10-25 dağınık.
+      passer. Beklenti +10-25 dağınık. **TUZAK (pawn-hash-cache): blockade / şah-mesafesi
+      / rook-behind-passer piyon-DIŞI duruma (şah yeri, kale, blocker taşı) bağlıdır ->
+      pawn-hash-cache'li `pawn_structure` İÇİNE GİREMEZ** (aynı piyon yapısı farklı taş
+      dizilimiyle bayat değer döner; g_pawn_cache_enabled aynı emsal). Bu terimler cache
+      DIŞINDA (geçer-piyon kare seti pawn_structure'dan/cache'ten alınıp) hesaplanmalı;
+      yalnız saf-piyon terimleri (connected/protected/phalanx/backward) cache'e girebilir.
 - [ ] **Backward pawns**. **Connected / phalanx pawns**. Her biri +5-15.
 
 *Blok E4 — Taş-yerleşim terimleri:*
@@ -929,7 +979,11 @@ H0/nötr -> geri al + dersi buraya yaz.
       ilk geçiş ~nötr çıkmıştı (sığ veri + ölçek bağı).
 - [ ] **Daha derin/çeşitli veri** (datagen depth artır, açılış çeşitliliği) —
       "veri tavanı" teşhisini hedefler.
-- [ ] **King-safety tunable** (dondurulmuş nonlinear `safety_table` ayrı ele alım).
+- [ ] **King-safety JOINT tuning** (dondurulmuş nonlinear `safety_table` + weights +
+      E2'den ertelenen rafineler BİRLİKTE). E2'nin iki king-safety denemesi (açık-hat H0,
+      piyon-ring ~nötr) tek tek elle enjeksiyonun frozen tabloda çalışmadığını kanıtladı
+      -> pawn storm / safe check / attacker-count / ring'e-piyon / açık-hat burada, safety
+      alt-sistemi bir bütün olarak tune edilerek eklenir (tek tek elle-SPRT DEĞİL).
 - [ ] **Joint arama-marj tuning** (Blok 4/16 ile birleşik): eval-ölçek↔marj bağını
       çözmek için RFP/futility/razor/LMP/null marjlarını da tune et (tune-all −110'un
       kök sebebi buydu).
@@ -943,19 +997,23 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-15): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
+**Güncel durum (2026-07-16): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
 Klasik motorun arama/movegen/SMP tarafı bitti. FAZ 3 (klasik) — Eval Güçlendirme
 DEVAM: BLOK E1 (altyapı+hız) TAM TAMAM, BLOK E2 Commit 1 (threats/hanging) KABUL
-(baseline `9c4f6d1`); king-safety rafinesi "şah açık hatta" DENENDİ/RAFA (SPRT H0,
-revert). SIRADAKİ İŞ: Blok E2 farklı king-safety rafinesi (pawn storm / ring'e piyon
-saldırısı) ya da mobility quality. NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
-**SON: Blok E2 king-on-open-file DENENDİ, RAFA KALDIRILDI — SPRT net H0 (1533 oyun,
-378-725-430, Elo −11.9 ± 12.7, LOS %3.3, LLR −1.72). Revert `d7963d2` (`9c4f6d1`'e
-birebir, threats korundu, 152 test). TEŞHİS: (1) üst-üste sayım (king-PST + kalkan +
-ring zaten king exposure'ı yakalıyor), (2) kaba gate ("R/Q var" hep doğru -> çok geniş
-ateşliyor), (3) doğrusal ekleme SafetyTable doygunluğunu atlıyor (düşük-tehlikede
-gürültü). İLERİDE: açık-hat'ı SafetyTable UNITS'ine kat / gate "R/Q o hatta bakıyor" /
-E7 joint tuning.**
+(baseline `9c4f6d1`, 152 test). BLOK E2 king-safety rafineleri E7 JOINT TUNING'e
+ERTELENDİ (iki deneme H0/nötr, kategori kanıtı aleyhte). **SIRADAKİ İŞ: E3/E4 ORTOGONAL
+terimleri (passed-pawn rafineleri, outpost, rook-on-7th) — bkz. EN KRİTİK DERS +
+SIRADAKİ İŞ pivot notu.** NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+**EN KRİTİK DERS (2026-07-16): ORTOGONAL sinyal GEÇER; zaten-yakalanan sinyalin
+YENİDEN-İFADESİ ya da FROZEN kalibre alt-sisteme (SafetyTable / cp marjları) enjeksiyon
+KALIR. Yeni terimde ÖNCE sor: "bu sinyal başka yerde sayılıyor mu / kalibre-dondurulmuş
+sisteme mi giriyor?" -> EVET ise ortogonal terime geç ya da E7 joint tune. H0'ı sabit
+düzeltip retry ETME (kategori sorunu). Ayrıntı: Faz 3 metodoloji girişi.**
+**SON: Blok E2 iki king-safety rafinesi RAFA (kategori kapanışı): (a) king-on-open-file
+`9c62fe6` -> net H0 (1533 oyun, Elo −11.9 ± 12.7), revert `d7963d2`; (b) piyon-king-ring
+`3fc3d73` -> ~nötr/H0 (639 oyun, W-D-L 170-284-185, Elo −7.3 ± 20.3, LOS %24.1, LLR
+−0.454), revert `cce222c`. İkisi de `9c4f6d1`'e birebir, threats korundu, 152 test.
+Kalan king-safety (pawn storm/safe check/attacker-count) -> E7 joint safety tuning.**
 **SON: Blok E2 Commit 1 — threats / hanging (tam aile) KABUL. YENİ BASELINE `9c4f6d1`,
 152 test. Dört alt-terim (ThreatByPawn 40/30, ThreatByMinor 25/20 [minör→majör],
 ThreatByRook 20/15 [kale→vezir], Hanging 25/25 [savunmasız]), E1'in birleşik attack-
