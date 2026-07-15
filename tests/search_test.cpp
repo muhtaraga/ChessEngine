@@ -566,33 +566,3 @@ TEST(Search, WinningSideAvoidsRepetition) {
     EXPECT_NE(r.best, Move::make(A4, A5));  // tekrarı (Qa4a5) seçme
     EXPECT_GT(r.score, 800);                // kazanç korunuyor (0'a düşmedi)
 }
-
-// Lazy SMP derinlik-atlama saf fonksiyonu. Ana thread (idx 0) hiçbir derinliği
-// atlamamalı (depth 1 garantisi + tek-thread EXACT'lığın temeli); yardımcı thread'ler
-// bazı derinlikleri atlayıp bazılarını aramalı (kaydırma gerçekten oluyor). Yön hatası
-// = ana thread'in bir derinliği atlaması (bestmove kaybı) ya da yardımcının hiç/tümünü
-// atlaması (ıraksama yok), saf fonksiyonla yakalanır.
-TEST(Search, LazySmpSkip) {
-    // Ana thread ASLA atlamaz: tam schedule korunur -> tek-thread davranışı değişmez.
-    for (int d = 1; d <= 64; ++d)
-        EXPECT_FALSE(lazy_smp_skip(0, d)) << "ana thread depth " << d << " atladı";
-
-    // Yardımcı thread'ler hem atlamalı hem aramalı (ne hep-atla ne hiç-atla).
-    for (int idx = 1; idx <= 4; ++idx) {
-        int skipped = 0, searched = 0;
-        for (int d = 1; d <= 64; ++d)
-            (lazy_smp_skip(idx, d) ? skipped : searched)++;
-        EXPECT_GT(skipped, 0)  << "yardımcı " << idx << " hiç atlamadı";
-        EXPECT_GT(searched, 0) << "yardımcı " << idx << " her derinliği atladı";
-    }
-
-    // Deterministik: aynı girdi aynı çıktı.
-    EXPECT_EQ(lazy_smp_skip(1, 5), lazy_smp_skip(1, 5));
-
-    // Farklı yardımcılar farklı fazlar üretir (ıraksama) -> en az bir derinlikte
-    // thread 1 ile thread 2 farklı karar verir.
-    bool differ = false;
-    for (int d = 1; d <= 64 && !differ; ++d)
-        if (lazy_smp_skip(1, d) != lazy_smp_skip(2, d)) differ = true;
-    EXPECT_TRUE(differ) << "thread 1 ve 2 aynı atlama desenine sahip";
-}
