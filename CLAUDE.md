@@ -10,12 +10,14 @@ bu fazlara göre değerlendir.
 
 **FORK (2026-07-10, `9d42bef`):** Bu repo artık **klasik taban**. NNUE işi ayrı bir
 repoda yürüyor: `../ChessEngineNNUE` (github.com/muhtaraga/ChessEngineNNUE), bu reponun
-git clone'u. İkisi de aktif. Buradaki Faz 3 (NNUE) maddeleri **orada** hayata geçiyor;
-burada kalan iş Faz 2C-devam (tek-thread güçlendirme) + Faz 2D (Lazy SMP). SPRT'den geçen
+git clone'u. İkisi de aktif. **NNUE bu repoda YOK — NNUE = NNUE reposunun işi (orada
+Faz 3).** Klasik reponun Faz 1 + 2A-2D'si TAMAM; **Faz 2D sonrası yeni işi = Faz 3
+(klasik) — Statik Değerlendirme (Eval) Güçlendirme** (aşağıya bak). SPRT'den geçen
 search/movegen commit'leri NNUE reposuna `git fetch classical && git cherry-pick <sha>`
-ile taşınır. `tools/sprt/*` yalnız BURADA değiştirilir (iki kopyanın sürüklenmesi en
-sinsi risk). **Faz 2D, NNUE tarafında N4'ten (incremental accumulator) ÖNCE cherry-pick
-edilmeli** — N4 Board/Searcher'ı derinden değiştirip merge'i zorlaştıracak.
+ile taşınır (Faz 2D borcu KAPANDI); eval terimleri de NNUE'ya cherry-pick ADAYI (NNUE
+kendi eval'ini devreye alana kadar klasik eval terimleri orada da işe yarar — zorunlu
+değil, kullanıcı kararına bağlı). `tools/sprt/*` yalnız BURADA değiştirilir (iki
+kopyanın sürüklenmesi en sinsi risk).
 
 ### Genel çalışma prensipleri
 
@@ -789,20 +791,111 @@ doğal olarak ıraksarlar, ana thread raporlar. Gereksinimler:
         için depth-skip yeniden aday (kolay re-add).
 
 Kalan opsiyonel ileri: TT prefetch mesafesi/derinliği ince ayarı, `kReplaceAgePenalty`
-tuning (Blok 4/16), yüksek-çekirdek depth-skip retry; ilk sıradaki iş NNUE cherry-pick
-borcu + Faz 3.
+tuning (Blok 4/16), yüksek-çekirdek depth-skip retry; **ilk sıradaki iş Faz 3 (klasik)
+— Eval Güçlendirme (Blok E1'den).** (NNUE cherry-pick borcu KAPANDI; NNUE ayrı repoda.)
 
-### Faz 3 — NNUE'ya Geçiş
+### Faz 3 (klasik) — Statik Değerlendirme (Eval) Güçlendirme
 
-- [ ] Self-play ile pozisyon + sonuç verisi toplama pipeline'ı (ayrı bir
-      Python/PyTorch alt-projesi olabilir)
-- [ ] HalfKP benzeri feature set tasarımı
-- [ ] Küçük feedforward network mimarisi ve eğitim scripti
-- [ ] Eğitilen ağırlıkların quantize edilip (int8/int16) motora entegrasyonu
-- [ ] Incremental update (accumulator) mantığı
-- [ ] SIMD optimizasyonları (AVX2/AVX512) inference hızlandırma için
+**NNUE bu repoda YOK.** NNUE işi ayrı repoda (`../ChessEngineNNUE`, Faz 3 orada).
+Klasik reponun Faz 2D sonrası yeni odağı: statik değerlendirmeyi güçlendirmek.
+Gerekçe: klasik tarafta kalan en büyük **ölçülmüş** kaldıraç eval — her katsayı
+elle-seçilmiş `constexpr`; geçmiş SPRT'ler yalnız "bu terim var olmalı mı?"
+sorusunu cevapladı, "katsayı doğru mu / hangi terimler eksik?" değil. Standart
+klasik motora göre eksik terimler: threats/hanging, passed-pawn rafineleri,
+backward/connected/phalanx piyon, outpost, bad bishop, rook-on-7th, king-safety
+rafineleri, endgame scaling, tempo (+ pawn hash yok, pawn eval her çağrıda yeniden).
 
-Bu faza şimdilik detaylı girmiyoruz, Faz 1-2 sağlam oturmadan başlamayacağız.
+**KRİTİK KISIT (her blokta): eval-ölçek ↔ arama-marjı bağı.** RFP/futility/razor/
+LMP/null/delta/aspiration marjları cp-kalibre ve DONDURULMUŞ; SEE+delta ayrı
+dondurulmuş `MaterialValue` kullanır. Genel eval ölçeğini kaydıran değişiklik bu
+marjları bozar — kanıtlı emsaller: tempo `evaluate()` içinde −18.6, improving nötr,
+tune-all −110. Kural: yeni terimleri **mütevazı** tut, ölçeği kaydırma; büyük etki
+gerekiyorsa joint arama-marj tuning'e (E7) bırak.
+
+**Metodoloji (mevcut disiplin): her terim ayrı commit + ayrı SPRT.** Kabul kapısı
+Elo; düğüm sayısı Elo proxy'si DEĞİL (Blok 2/6 dersi). Bağımsız sezgiselleri tek
+SPRT'de PAKETLEME (Blok 1/3 dersi). Mütevazı terim = çok oyun ister (razoring/LMP
+deseni). Beklentiler mertebe tahmini, söz değil.
+
+**Yeni terim eklemenin standart iş akışı** (E2-E6 her maddesi): (1) `EvalParams`
+struct'a alan (`eval.hpp`) + `make_default_eval_params` varsayılanı (`eval.cpp`) +
+`flat_param_pointers`/`flat_param_names` sırası (`eval_params.cpp`, frozen sınırının
+doğru tarafında) -> terim otomatik tunable + kaydedilebilir olur; (2) izole test
+edilebilir `void term(const Board&, int& mg, int& eg)` helper, `eval_accumulate`
+içinde çağır; (3) `tests/eval_test.cpp` deseninde test (izole, renk-simetri, faz);
+(4) build + testler + elle sanity; (5) GUI'den SPRT, H1 -> tut + yeni baseline,
+H0/nötr -> geri al + dersi buraya yaz.
+
+*Blok E1 — Eval altyapısı + hız (prereq): TAMAM (YENİ BASELINE `5dbc2ff`, 148 test).*
+- [x] **Pawn hash table (TAMAM, EXACT, commit `201e9d8`).** Global lockless-XOR pawn
+      cache (TT Bucket deseni; küme/aging/paketleme yok). `Board::pawn_key` incremental
+      (put/remove_piece'te `if pt==PAWN` XOR; do_move değişmedi; `compute_pawn_key`
+      oracle; pawn_key = key'in piyona-özel alt-kümesi, side/rok/ep DAHİL DEĞİL).
+      `PawnTable` (pawn_table.hpp/cpp) 2^16 yuva ~1MB. `eval_accumulate` probe/store;
+      `pawn_structure` saf/raw kaldı. `g_pawn_cache_enabled` bayrağı -> TUNER
+      finite-diff'te KAPATIR (perturbe pawn ağırlığı için bayat değer -> gradyan
+      bozulurdu). Temizleme: ucinewgame + Clear Hash + EvalFile. Kapı EXACT:
+      node-equality vs `1f497dc` birebir (startpos d13 609707/cp28/e2e4, Kiwipete d12
+      549629/cp-72/e2a6), perft birebir, 148 test (+6 PawnTable, walk_and_check'e
+      pawn_key invaryantı). nps +%2.0/+%5.1. Değer E3'te katlanır. NNUE cherry-pick ADAYI.
+- [x] **Birleşik attack-pass (TAMAM, EXACT, commit `5dbc2ff`).** mobility() ve
+      king_safety() aynı N/B/R/Q atak setlerini iki kez üretiyordu; tek geçişli
+      `mobility_king_safety_impl` (anon ns, `AttackEval {mob_mg,mob_eg,ks_mg}`) her
+      atak setini bir kez hesaplar -> sliding-magic çağrıları ~yarıya. mobility()/
+      king_safety() ince sarmalayıcı (impl'e delege -> izolasyon testleri değişmedi,
+      drift yok); eval_accumulate impl'i bir kez çağırır (int toplam, sıra bağımsız ->
+      ayrı çağırmakla BİREBİR). Kapı EXACT: node-equality vs `201e9d8` birebir
+      (609707/549629), perft trivial (movegen'e dokunmadı). nps +%2.4/+%2.2. Threats
+      (E2) aynı pass'e eklenecek.
+
+*Blok E2 — Yüksek-değer pozisyonel terimler:*
+- [ ] **Threats / hanging pieces**: küçük taşın büyük taşa saldırısı, savunmasız
+      taş, pinli taşa baskı. Genelde büyük kazanç; ölçeğe DİKKAT. Beklenti +15-30.
+- [ ] **King safety rafineleri** (HER BİRİ AYRI COMMIT/SPRT — paketleme yok):
+      pawn storm, şah açık/yarı-açık hatta, safe/knight check, attacker-count
+      çarpanı, ring'e piyon saldırısı (`KingAttackWeight[PAWN]=0`). Toplam +15-40.
+- [ ] **Mobility quality**: mobility area'dan rakip piyon vuruşlarını çıkar
+      (+ opsiyonel pin-farkındalığı). Beklenti +5-15.
+
+*Blok E3 — Piyon yapısı derinleştirme (E1 pawn hash sonrası):*
+- [ ] **Passed pawn rafineleri** (ayrı commit'ler): blockade, şah mesafesi
+      (dost+rakip), rook-behind-passer, connected/protected passer, unstoppable/free
+      passer. Beklenti +10-25 dağınık.
+- [ ] **Backward pawns**. **Connected / phalanx pawns**. Her biri +5-15.
+
+*Blok E4 — Taş-yerleşim terimleri:*
+- [ ] **Knight/bishop outpost** (desteklenen, kovulamayan ileri kare).
+- [ ] **Bad bishop** (kendi renginde piyon sayısı).
+- [ ] **Rook on 7th / connected rooks / rook trapped by king**.
+- [ ] **Bishop pair zıt-kare rafinesi** (mevcut basit ≥2 sayımı). Her biri +3-12.
+
+*Blok E5 — Endgame ölçekleme (HAFİF; kullanıcı kararı — tam KPK/KBNK bilgisi HARİÇ):*
+- [ ] **Scaling factor altyapısı**: `evaluate()` sonunda eg skoruna `[0, SCALE_NORMAL]`
+      çarpanı (Stockfish `ScaleFactor` deseni); orta oyunu bozmaz (yalnız eg tarafı).
+- [ ] **Zıt-renk fil beraberlik eğilimi** (materyal-eşit/az-farklı OCB -> skoru sıfıra).
+- [ ] **Yanlış kale-piyonu** (a/h piyonu + yanlış köşe fili -> beraberlik).
+- [ ] **Genel drawish scaling** (materyal-fazla-ama-kazanamıyor: tek minör, KRKB vb.)
+      + **insufficient/low-material scaling**. Beklenti +5-20, güvenli (ölçek kaydırmaz).
+
+*Blok E6 — Küçükler:*
+- [ ] **Tempo (cerrahi varyant)**: Blok 3/12 dersi — tempo yalnız yaprak/qsearch
+      stand-pat DÖNÜŞÜNE eklenir; budama kapıları tempo'suz `static_eval` üzerinde
+      kalır (RFP/null marjları kaymaz). `evaluate()` içi versiyon −18.6 vermişti.
+- [ ] (opsiyonel) **Space**, **contempt (draw≠0)**.
+
+*Blok E7 — Texel tuning retry (SONA, opsiyonel büyük; kullanıcı kararı):*
+- [ ] E2-E6'daki tüm yeni terimler EvalParams'a eklendiğinden tuner otomatik kapsar
+      (daha zengin parametre uzayı). Altyapı zaten var (Blok 4: datagen/tuner/EvalFile),
+      ilk geçiş ~nötr çıkmıştı (sığ veri + ölçek bağı).
+- [ ] **Daha derin/çeşitli veri** (datagen depth artır, açılış çeşitliliği) —
+      "veri tavanı" teşhisini hedefler.
+- [ ] **King-safety tunable** (dondurulmuş nonlinear `safety_table` ayrı ele alım).
+- [ ] **Joint arama-marj tuning** (Blok 4/16 ile birleşik): eval-ölçek↔marj bağını
+      çözmek için RFP/futility/razor/LMP/null marjlarını da tune et (tune-all −110'un
+      kök sebebi buydu).
+
+Bu faz iteratif: her madde tek başına doğrulanır. Faz 1-2 sağlam oturdu, artık
+tek tek eval terimleri ekleyip SPRT'den geçiriyoruz.
 
 ### Şu an nerede olduğumuzu takip et
 
@@ -811,8 +904,19 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-15): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
-Klasik motorun tamamı bitti — sıradaki büyük iş NNUE (ayrı repo, Faz 3).**
-**SON: SMP iyileştirme paketi — TT prefetch (`01853a0`, EXACT) + 4-yollu bucket TT
+Klasik motorun arama/movegen/SMP tarafı bitti. FAZ 3 (klasik) — Eval Güçlendirme
+BAŞLADI: BLOK E1 (altyapı+hız) TAM TAMAM — SIRADAKİ İŞ: Blok E2 (threats/hanging ->
+king-safety rafineleri -> mobility quality; her biri ayrı commit + AYRI SPRT, artık
+davranış değiştiren eval terimleri, EXACT değil). NNUE bu repoda YOK, ayrı repoda
+(`../ChessEngineNNUE`).**
+**SON: Blok E1 (Eval altyapısı+hız) TAM TAMAM — iki EXACT commit, YENİ BASELINE
+`5dbc2ff`, 148 test. (a) Pawn hash table `201e9d8` (global lockless-XOR pawn cache;
+Board::pawn_key incremental; g_pawn_cache_enabled tuner'da kapalı; nps +%2.0/+%5.1).
+(b) Birleşik attack-pass `5dbc2ff` (mobility+king_safety tek geçiş, aynı N/B/R/Q atak
+setleri; mobility()/king_safety() ince sarmalayıcı impl'e delege; nps +%2.4/+%2.2).
+İkisi de node-equality birebir (startpos d13 609707, Kiwipete d12 549629). Kabul kapısı
+EXACT (SPRT'siz; TT-prefetch/seldepth/MDP emsali). Değer E3'te katlanır; NNUE cherry-pick
+ADAYI (search'e dokunmaz). ÖNCESİ: SMP iyileştirme paketi — TT prefetch (`01853a0`, EXACT) + 4-yollu bucket TT
 (`ee266e5`, heuristik) KABUL (ikili SPRT: 1v1 H1 → depth-skip 1 thread'te inert
 olduğundan prefetch+4-way'e atfedildi); depth-skipping (`466b6f6`) RAFA (`1f497dc`
 revert; 4v4 nötr, ölü ağırlık). YENİ BASELINE `1f497dc`, 142 test. DERS: 1-thread
