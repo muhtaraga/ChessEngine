@@ -106,22 +106,45 @@ void pawn_structure(const Board& b, int& mg, int& eg) {
     }
 }
 
-void mobility(const Board& b, int& mg, int& eg) {
-    mg = 0;
-    eg = 0;
+namespace {
+
+// mobility ve king_safety AYNI taş-atak setlerini (at/fil/kale/vezir) yeniden
+// üretiyordu: mobility kendi renginin taşları için, king_safety rakip şaha saldıran
+// aynı taşlar için. Bu tek geçiş her taşın atak setini BİR KEZ hesaplar ve iki
+// katkıyı da toplar -> davranış-koruyan (EXACT), yalnız sliding-magic çağrıları yarıya.
+struct AttackEval {
+    int mob_mg = 0;
+    int mob_eg = 0;
+    int ks_mg  = 0;  // king safety (eg her zaman 0; taper ile EG'de solar)
+};
+
+AttackEval mobility_king_safety_impl(const Board& b) {
+    AttackEval r;
     const Bitboard occ = b.occupancy();
 
-    // Her renk için at/fil/kale/vezir; ulaşılabilir (dost olmayan) kare sayısı ×
-    // tür ağırlığı. Beyaz +, siyah − (beyaz bakışı). Sliding taşlar magic
-    // tablolarla, at sabit tabloyla; hepsi statik olarak init edilmiş durumda.
+    // Şah bölgeleri (king ring): beyaz şaha SİYAH taşlar, siyah şaha BEYAZ taşlar
+    // saldırır. Tehlike birimleri (units) her şah için ayrı biriktirilir.
+    const Square   wksq        = b.king_square(WHITE);
+    const Square   bksq        = b.king_square(BLACK);
+    const Bitboard wzone       = king_attacks(wksq);
+    const Bitboard bzone       = king_attacks(bksq);
+    int            units_white = 0;  // beyaz şaha karşı (siyah saldıranlar)
+    int            units_black = 0;  // siyah şaha karşı (beyaz saldıranlar)
+
+    // --- Mobility + king-ring saldırıları: taş başına tek atak seti ---
     for (Color c : {WHITE, BLACK}) {
-        const Bitboard own  = b.colors[c];
-        const int      sign = (c == WHITE) ? 1 : -1;
+        const Bitboard own             = b.colors[c];
+        const int      sign            = (c == WHITE) ? 1 : -1;
+        const Bitboard enemy_king_zone = (c == WHITE) ? bzone : wzone;
+        int&           enemy_units     = (c == WHITE) ? units_black : units_white;
 
         auto add = [&](PieceType pt, Bitboard attacks) {
-            int m = popcount(attacks & ~own);  // dost taşla dolu kareler hariç
-            mg += sign * m * g_eval.mobility_mg[pt];
-            eg += sign * m * g_eval.mobility_eg[pt];
+            // mobility: dost taşla dolu kareler hariç ulaşılabilir kare sayısı
+            int m = popcount(attacks & ~own);
+            r.mob_mg += sign * m * g_eval.mobility_mg[pt];
+            r.mob_eg += sign * m * g_eval.mobility_eg[pt];
+            // king safety: bu taş rakip şah bölgesinde kaç kare vuruyor × ağırlık
+            enemy_units += g_eval.king_attack_weight[pt] * popcount(attacks & enemy_king_zone);
         };
 
         Bitboard knights = b.pieces[KNIGHT] & own;
@@ -136,6 +159,46 @@ void mobility(const Board& b, int& mg, int& eg) {
         Bitboard queens = b.pieces[QUEEN] & own;
         while (queens) { Square s = pop_lsb(queens); add(QUEEN, queen_attacks(s, occ)); }
     }
+
+    // --- Piyon kalkanı + SafetyTable: her şah için (atak setlerinden bağımsız) ---
+    for (Color c : {WHITE, BLACK}) {
+        const int    sign = (c == WHITE) ? 1 : -1;
+        const Square ksq  = b.king_square(c);
+        const int    kf   = file_of(ksq);
+        const int    kr   = rank_of(ksq);
+        int          danger = 0;
+
+        // Piyon kalkanı: şahın önündeki iki sıra, kf-1..kf+1 sütunları.
+        const Bitboard own_pawns = b.pieces[PAWN] & b.colors[c];
+        for (int f = kf - 1; f <= kf + 1; ++f) {
+            if (f < 0 || f > 7) continue;  // tahta kenarı
+            Bitboard front = 0;
+            for (int step = 1; step <= 2; ++step) {
+                int rr = (c == WHITE) ? kr + step : kr - step;
+                if (rr < 0 || rr > 7) continue;
+                front |= Bitboard{1} << (rr * 8 + f);
+            }
+            if ((own_pawns & front) == 0)  // bu sütunda kalkan piyonu yok
+                danger += g_eval.shield_missing;
+        }
+
+        int units = (c == WHITE) ? units_white : units_black;
+        if (units > 99) units = 99;  // tablo indeksini kırp
+        danger += g_eval.safety_table[units];
+
+        r.ks_mg += -sign * danger;  // tehlike, o rengin skorunu düşürür
+    }
+
+    return r;
+}
+
+}  // namespace
+
+void mobility(const Board& b, int& mg, int& eg) {
+    // İzole test için ince sarmalayıcı; gerçek hesap tek geçişli impl'de.
+    AttackEval r = mobility_king_safety_impl(b);
+    mg = r.mob_mg;
+    eg = r.mob_eg;
 }
 
 void bishop_pair(const Board& b, int& mg, int& eg) {
@@ -175,62 +238,11 @@ void rook_on_file(const Board& b, int& mg, int& eg) {
 }
 
 void king_safety(const Board& b, int& mg, int& eg) {
-    mg = 0;
-    eg = 0;  // king safety yalnız orta oyun terimi; taper ile EG'de solar.
-    const Bitboard occ = b.occupancy();
-
-    // Her rengin ŞAHI için tehlike (danger, pozitif santipiyon) hesaplanır; bu,
-    // o rengin puanını düşürür. Beyaz bakışı: beyaz şah tehlikesi mg'yi düşürür,
-    // siyah şah tehlikesi mg'yi yükseltir -> mg += -sign * danger.
-    for (Color c : {WHITE, BLACK}) {
-        const int      sign = (c == WHITE) ? 1 : -1;
-        const Square   ksq  = b.king_square(c);
-        const int      kf   = file_of(ksq);
-        const int      kr   = rank_of(ksq);
-
-        int danger = 0;
-
-        // --- Piyon kalkanı: şahın önündeki iki sıra, kf-1..kf+1 sütunları ---
-        const Bitboard own_pawns = b.pieces[PAWN] & b.colors[c];
-        for (int f = kf - 1; f <= kf + 1; ++f) {
-            if (f < 0 || f > 7) continue;  // tahta kenarı: geçersiz sütun sayılmaz
-            Bitboard front = 0;
-            for (int step = 1; step <= 2; ++step) {
-                int r = (c == WHITE) ? kr + step : kr - step;
-                if (r < 0 || r > 7) continue;
-                front |= Bitboard{1} << (r * 8 + f);
-            }
-            if ((own_pawns & front) == 0)  // bu sütunda kalkan piyonu yok
-                danger += g_eval.shield_missing;
-        }
-
-        // --- Şah bölgesi (king ring) saldırıları: rakip taşların bölgede vurduğu
-        // kare sayısı × tür ağırlığı -> attack units -> SafetyTable. ---
-        const Bitboard zone      = king_attacks(ksq);  // şahı çevreleyen 8 kare
-        const Bitboard enemy     = b.colors[~c];
-        int            units     = 0;
-
-        auto accumulate = [&](PieceType pt, Bitboard attacks) {
-            units += g_eval.king_attack_weight[pt] * popcount(attacks & zone);
-        };
-
-        Bitboard knights = b.pieces[KNIGHT] & enemy;
-        while (knights) { Square s = pop_lsb(knights); accumulate(KNIGHT, knight_attacks(s)); }
-
-        Bitboard bishops = b.pieces[BISHOP] & enemy;
-        while (bishops) { Square s = pop_lsb(bishops); accumulate(BISHOP, bishop_attacks(s, occ)); }
-
-        Bitboard rooks = b.pieces[ROOK] & enemy;
-        while (rooks) { Square s = pop_lsb(rooks); accumulate(ROOK, rook_attacks(s, occ)); }
-
-        Bitboard queens = b.pieces[QUEEN] & enemy;
-        while (queens) { Square s = pop_lsb(queens); accumulate(QUEEN, queen_attacks(s, occ)); }
-
-        if (units > 99) units = 99;  // tablo indeksini kırp
-        danger += g_eval.safety_table[units];
-
-        mg += -sign * danger;  // tehlike, o rengin skorunu düşürür
-    }
+    // İzole test için ince sarmalayıcı; gerçek hesap tek geçişli impl'de
+    // (mobility ile paylaşılan taş-atak setleri). eg her zaman 0.
+    AttackEval r = mobility_king_safety_impl(b);
+    mg = r.ks_mg;
+    eg = 0;
 }
 
 void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
@@ -271,11 +283,12 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     mg += pmg;
     eg += peg;
 
-    // Mobility (at/fil/kale/vezir) katkısı beyaz − siyah olarak eklenir.
-    int mmg = 0, meg = 0;
-    mobility(b, mmg, meg);
-    mg += mmg;
-    eg += meg;
+    // Mobility + king safety TEK GEÇİŞTE (paylaşılan at/fil/kale/vezir atak setleri
+    // yeniden üretilmez). mob_mg/eg mobility, ks_mg king safety (eg 0). Ayrı ayrı
+    // mobility()+king_safety() çağırmakla BİREBİR aynı toplam (int, sıra bağımsız).
+    AttackEval aks = mobility_king_safety_impl(b);
+    mg += aks.mob_mg + aks.ks_mg;
+    eg += aks.mob_eg;
 
     // Bishop pair katkısı.
     int bmg = 0, beg = 0;
@@ -288,13 +301,6 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     rook_on_file(b, rmg, reg);
     mg += rmg;
     eg += reg;
-
-    // King safety katkısı (piyon kalkanı + şah bölgesi saldırıları). Yalnız MG
-    // (keg her zaman 0); orta oyunda etkili, oyun sonunda taper ile solar.
-    int kmg = 0, keg = 0;
-    king_safety(b, kmg, keg);
-    mg += kmg;
-    eg += keg;
 
     mg_white = mg;
     eg_white = eg;
