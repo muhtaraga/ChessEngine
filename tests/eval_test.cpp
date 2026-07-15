@@ -242,6 +242,52 @@ TEST(Eval, KingSafetySymmetry) {
     EXPECT_EQ(evaluate(b), 0);
 }
 
+// King on open file: beyaz şah h1, h-sütunu tam açık (hiç piyon yok), siyahta kale
+// var (ağır taş kapısı açık). g-sütununda g2 piyonu (kalkan tam). Beyaz tehlikesi =
+// eksik kalkan (h) + açık hat (h). Siyah şah b8 tam kalkanlı, beyazda ağır taş yok.
+TEST(Eval, KingSafetyOpenFile) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("1k6/ppp5/8/r7/8/8/6P1/7K w - - 0 1"));
+    int mg = 0, eg = 0;
+    king_safety(b, mg, eg);
+    EXPECT_EQ(mg, -(ShieldMissingPenalty + KingOpenFilePenalty));
+    EXPECT_EQ(eg, 0);
+}
+
+// Açık hat cezası yalnız rakipte AĞIR taş (kale/vezir) varken uygulanır: aynı pozisyon
+// ama siyah kale yerine fil (minör) -> ağır-taş kapısı kapalı -> yalnız kalkan cezası.
+TEST(Eval, KingSafetyOpenFileNeedsHeavyPiece) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("1k6/ppp5/8/b7/8/8/6P1/7K w - - 0 1"));
+    int mg = 0, eg = 0;
+    king_safety(b, mg, eg);
+    EXPECT_EQ(mg, -ShieldMissingPenalty);  // açık-hat cezası yok (ağır taş yok)
+    EXPECT_EQ(eg, 0);
+}
+
+// Yarı-açık hat: h-sütununda yalnız SİYAH piyon (h7) var, beyaz piyon yok -> yarı-açık
+// (tam açıktan daha az tehlikeli). Beyaz tehlikesi = eksik kalkan (h) + yarı-açık (h).
+TEST(Eval, KingSafetySemiOpenFile) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("1k6/ppp4p/8/r7/8/8/6P1/7K w - - 0 1"));
+    int mg = 0, eg = 0;
+    king_safety(b, mg, eg);
+    EXPECT_EQ(mg, -(ShieldMissingPenalty + KingSemiOpenFilePenalty));
+    EXPECT_EQ(eg, 0);
+}
+
+// Renk simetrisi: her iki şah da h-sütununda açık hatta + karşıda kale (aynalı) ->
+// king_safety katkısı tam sıfır, evaluate() de 0.
+TEST(Eval, KingSafetyOpenFileSymmetry) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("7k/6p1/8/r7/R7/8/6P1/7K w - - 0 1"));
+    int mg = 0, eg = 0;
+    king_safety(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+}
+
 // --- Threats / hanging testleri (threats yardımcısıyla, PST/materyal gürültüsü yok) ---
 
 // Piyon tehdidi: beyaz e4 piyonu siyah atı d5'i vuruyor; at c6 piyonuyla savunuluyor

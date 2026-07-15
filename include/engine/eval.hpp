@@ -119,6 +119,14 @@ inline constexpr int ShieldMissingPenalty = 15;  // eksik kalkan sütunu başın
 // Şah kenarda değilse (kf-1 veya kf+1 tahta içindeyse) her sütun sayılır; tahta
 // kenarındaki geçersiz sütun eksik sayılmaz (aşağıdaki döngü atlar).
 
+// King on open/semi-open file: şahın bulunduğu ve komşu sütunlar (kf-1..kf+1) dost
+// piyondan yoksunsa şah o hattan (rakip kale/vezirle) vurulabilir -> danger. YALNIZ
+// rakipte ağır taş (kale ya da vezir) varken uygulanır — yoksa açık hat şaha zararsız.
+// Kalkan cezasından ayrı sinyal: kalkan yalnız şah önü iki sırayı ve rakip taşları
+// GÖRMEZ; bu terim tüm sütunu + rakip ağır-taş varlığını görür. MG-only (king safety).
+inline constexpr int KingOpenFilePenalty     = 15;  // sütunda hiç piyon yok (tam açık)
+inline constexpr int KingSemiOpenFilePenalty = 8;   // yalnız rakip piyon (yarı-açık)
+
 // Şah bölgesi (king ring) saldırıları -> "attack units". Rakip taş türü başına
 // ağırlık, o taşın şah halkasında vurduğu kare sayısıyla çarpılır (CPW "King
 // Safety" örneği). Küçük ağırlıklar kasıtlı: kare-sayısıyla çarpılıp toplanır.
@@ -342,6 +350,8 @@ struct EvalParams {
 
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
+    int king_open_file;                          // şah açık hatta (dost+rakip piyon yok)
+    int king_semi_open_file;                     // şah yarı-açık hatta (yalnız rakip piyon)
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
     int safety_table[100];                       // attack units -> danger (doğrusal değil)
 };
