@@ -108,12 +108,24 @@ public:
 private:
     static constexpr std::size_t kDefaultSizeMb = 16;
 
+    // 4-yollu set-associative: her index bir kClusterSize yuvalı cluster seçer.
+    // Bucket 16 bayt -> 4 yuva = 64 bayt = tam cache line (tt.hpp Bucket yorumundaki
+    // "cache line'a 4 yuva" geometrisi artık gerçek). Aynı cluster'a düşen farklı
+    // pozisyonlar bir arada yaşar -> daha yüksek hit-rate, daha az yararlı-giriş kaybı.
+    static constexpr std::size_t kClusterSize = 4;
+
+    // key -> cluster'ın ilk yuvasının index'i. Cluster seçimi yüksek-kalite bitlerle
+    // (key & cluster_mask_); yuva-içi ayrım her yuvanın kendi anahtarıyla (probe tarar).
+    std::size_t cluster_index(std::uint64_t key) const {
+        return (key & cluster_mask_) * kClusterSize;
+    }
+
     // Atomik yuvalar kopyalanamaz -> std::vector yerine unique_ptr<Bucket[]>
     // (make_unique dizi biçimi atomikleri sıfır başlatır; clear() döngüyle 0 yazar).
     std::unique_ptr<Bucket[]> table_;
-    std::size_t               count_      = 0;  // yuva sayısı (2'nin kuvveti)
-    std::size_t               mask_       = 0;  // index maskesi (count-1)
-    std::uint8_t              generation_ = 0;
+    std::size_t               count_        = 0;  // toplam yuva (2'nin kuvveti, >= kClusterSize)
+    std::size_t               cluster_mask_ = 0;  // cluster index maskesi (count/kClusterSize - 1)
+    std::uint8_t              generation_   = 0;
 };
 
 // Program genelinde tek TT örneği (arama bu örneği kullanır).

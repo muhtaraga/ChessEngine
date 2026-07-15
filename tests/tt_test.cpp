@@ -173,6 +173,44 @@ TEST(TT, LocklessRoundtripSignedAndPromo) {
     EXPECT_EQ(e.generation(), 9u);
 }
 
+// --- Birim: 4-yollu set-associativity ---
+// Aynı cluster'a düşen 4 farklı key bir arada yaşamalı (hepsi geri okunabilir); 5.
+// key cluster'ı doldurunca en değersiz yuva (en sığ + en bayat) evict edilmeli.
+// Cluster index düşük bitlerden seçilir -> keyleri yalnız üst bitlerde (>=40)
+// değiştirerek herhangi makul TT boyutunda aynı cluster'a düşmelerini garantileriz.
+TEST(TT, FourWayAssociativity) {
+    TT.clear();
+    // Düşük 40 bit özdeş, üst bitler farklı -> aynı cluster, 4 farklı key.
+    const std::uint64_t low = 0x000000A5A5A5A5A5ULL;  // bit 0..39 sabit
+    std::uint64_t keys[4];
+    for (int i = 0; i < 4; ++i)
+        keys[i] = low | (static_cast<std::uint64_t>(i + 1) << 40);
+
+    // Artan derinliklerle sakla (5,6,7,8) -> hepsi ayrı boş yuvaya gider.
+    for (int i = 0; i < 4; ++i)
+        TT.store(keys[i], /*depth=*/5 + i, /*score=*/100 + i, Bound::EXACT,
+                 Move::make(E2, E4));
+
+    // Dördü de geri okunabilmeli (associativity: tek yuva olsaydı 3'ü kaybolurdu).
+    for (int i = 0; i < 4; ++i) {
+        TTEntry e;
+        ASSERT_TRUE(TT.probe(keys[i], e)) << "key " << i << " kayboldu";
+        EXPECT_EQ(e.score, 100 + i);
+        EXPECT_EQ(e.depth, 5 + i);
+    }
+
+    // 5. key (aynı cluster) doludur -> en sığ (depth 5) + en bayat yuvayı evict eder.
+    const std::uint64_t key5 = low | (static_cast<std::uint64_t>(5) << 40);
+    TT.store(key5, /*depth=*/9, /*score=*/200, Bound::EXACT, Move::make(D2, D4));
+
+    TTEntry e;
+    EXPECT_FALSE(TT.probe(keys[0], e));  // en değersiz atıldı
+    ASSERT_TRUE(TT.probe(key5, e));      // yenisi yerleşti
+    EXPECT_EQ(e.score, 200);
+    for (int i = 1; i < 4; ++i)          // derin girişler korundu
+        EXPECT_TRUE(TT.probe(keys[i], e)) << "key " << i << " yanlışlıkla atıldı";
+}
+
 namespace {
 
 // Aynı FEN'i verilen derinlikte arar. TT'yi çağırandan yönetiyoruz.

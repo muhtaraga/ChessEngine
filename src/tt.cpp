@@ -34,6 +34,11 @@ void unpack_data(std::uint64_t d, TTEntry& e) {
     e.gen_bound = static_cast<std::uint8_t>((d >> 56) & 0xFF);
 }
 
+// 4-yollu victim seçiminde bir nesil eskilik, kaç ply sığlığa eşdeğer sayılır.
+// Bayat girişler derin olsalar bile önce atılsın (TT bir önbellek; eski aramanın
+// derinliği bugünkü aramaya yaramaz). İlk elle-seçim; Blok 4/16 tuning adayı.
+constexpr int kReplaceAgePenalty = 8;
+
 }  // namespace
 
 void TranspositionTable::resize(std::size_t mb) {
@@ -46,14 +51,17 @@ void TranspositionTable::resize(std::size_t mb) {
     if (entries < 1)
         entries = 1;
 
-    // 2'nin kuvvetine aşağı yuvarla (index'te ucuz maskeleme için).
+    // 2'nin kuvvetine aşağı yuvarla (cluster index'inde ucuz maskeleme için).
     std::size_t pow2 = std::size_t{1} << (std::bit_width(entries) - 1);
+    if (pow2 < kClusterSize)
+        pow2 = kClusterSize;  // en az bir cluster (küçücük TT)
 
     // make_unique dizi biçimi Bucket'ları value-initialize eder -> atomikler 0.
-    table_      = std::make_unique<Bucket[]>(pow2);
-    count_      = pow2;
-    mask_       = pow2 - 1;
-    generation_ = 0;
+    // count_ 2'nin kuvveti ve >= kClusterSize -> cluster sayısı da 2'nin kuvveti.
+    table_        = std::make_unique<Bucket[]>(pow2);
+    count_        = pow2;
+    cluster_mask_ = (pow2 / kClusterSize) - 1;
+    generation_   = 0;
 }
 
 void TranspositionTable::clear() {
@@ -69,27 +77,33 @@ bool TranspositionTable::probe(std::uint64_t key, TTEntry& out) const {
     if (!table_)
         return false;
 
-    const Bucket& b = table_[key & mask_];
-    // Data'yı önce, key'i sonra oku (store da aynı sırada yazar: data sonra key).
-    // Tüm yırtık okuma pencereleri (eski data + yeni key, ya da yeni data + eski
-    // key) (k ^ d) != key verir -> miss; yalnız iki söz de tutarlıyken hit.
-    const std::uint64_t d = b.data.load(std::memory_order_relaxed);
-    const std::uint64_t k = b.key.load(std::memory_order_relaxed);
-    if ((k ^ d) != key)
-        return false;
+    // Cluster'ın kClusterSize yuvasını tara; ilk tutarlı-eşleşen giriş hit.
+    const std::size_t base = cluster_index(key);
+    for (std::size_t i = 0; i < kClusterSize; ++i) {
+        const Bucket& b = table_[base + i];
+        // Data'yı önce, key'i sonra oku (store da aynı sırada yazar: data sonra key).
+        // Tüm yırtık okuma pencereleri (eski data + yeni key, ya da yeni data + eski
+        // key) (k ^ d) != key verir -> miss; yalnız iki söz de tutarlıyken hit.
+        const std::uint64_t d = b.data.load(std::memory_order_relaxed);
+        const std::uint64_t k = b.key.load(std::memory_order_relaxed);
+        if ((k ^ d) != key)
+            continue;
 
-    TTEntry e;
-    unpack_data(d, e);
-    if (e.bound() == Bound::NONE)
-        return false;  // boş yuva (key==0 çakışması) ya da geçersiz
-    e.key = key;
-    out   = e;
-    return true;
+        TTEntry e;
+        unpack_data(d, e);
+        if (e.bound() == Bound::NONE)
+            continue;  // boş yuva (key==0 tesadüfi eşleşmesi) -> başka yuvaya bak
+        e.key = key;
+        out   = e;
+        return true;
+    }
+    return false;
 }
 
 void TranspositionTable::prefetch(std::uint64_t key) const {
     if (table_)
-        _mm_prefetch(reinterpret_cast<const char*>(&table_[key & mask_]),
+        // Cluster'ın ilk yuvası = 64 baytlık cache line başı -> tüm 4 yuva çekilir.
+        _mm_prefetch(reinterpret_cast<const char*>(&table_[cluster_index(key)]),
                      _MM_HINT_T0);
 }
 
@@ -101,37 +115,55 @@ void TranspositionTable::store(std::uint64_t key, int depth, int score,
     if (depth > kMaxTtDepth)
         depth = kMaxTtDepth;  // int8 alan sarmasın
 
-    Bucket& bucket = table_[key & mask_];
+    // Cluster'ı tara: (1) aynı-key yuvası varsa onu güncelle (dublicate üretme),
+    // (2) yoksa en değersiz yuvayı (victim) seç. Racy okuma zararsız: değiştirme
+    // yalnız bir sezgisel, TT bir önbellek.
+    const std::size_t base = cluster_index(key);
+    Bucket*  target   = nullptr;   // yazılacak yuva
+    TTEntry  target_e;             // hedef yuvanın açılmış mevcut içeriği (rich-field için)
+    int      best_value = 0;       // en iyi victim adayının değeri (target!=nullptr iken geçerli)
 
-    // Mevcut girişi aç (değiştirme politikası + zengin-alan koruması için). Racy
-    // okuma zararsız: bu yalnız bir değiştirme sezgiselidir, TT bir önbellek.
-    const std::uint64_t cur_data = bucket.data.load(std::memory_order_relaxed);
-    const std::uint64_t cur_key  = bucket.key.load(std::memory_order_relaxed);
-    TTEntry e;
-    unpack_data(cur_data, e);
-    e.key = cur_key ^ cur_data;  // saklanan gerçek anahtarı geri kur
+    for (std::size_t i = 0; i < kClusterSize; ++i) {
+        Bucket& b = table_[base + i];
+        const std::uint64_t cd = b.data.load(std::memory_order_relaxed);
+        const std::uint64_t ck = b.key.load(std::memory_order_relaxed);
+        TTEntry e;
+        unpack_data(cd, e);
+        e.key = ck ^ cd;  // saklanan gerçek anahtarı geri kur
 
-    // Değiştirme politikası: boş yuvayı, eski nesilden bir girişi, en az bizim
-    // kadar sığ aranmışı (depth-preferred), ya da aynı pozisyonun exact değerini
-    // üzerine yaz. Korunan tek durum: aynı nesilden DAHA DERİN aranmış, exact
-    // olmayan bir giriş. ("Aynı pozisyon daima ezer" kuralı bilinçle yok:
-    // qsearch girişleri depth 0, o kural altında depth-N negamax'ı ezebilirdi.)
-    const bool replace = e.bound() == Bound::NONE ||
-                         e.generation() != generation_ ||
-                         depth >= e.depth ||
-                         (e.key == key && bound == Bound::EXACT);
-    if (!replace)
-        return;
+        // (1) Aynı pozisyon: depth-preferred + EXACT muafiyeti (eski tek-yuva kuralı).
+        // Aynı nesilden DAHA DERİN aranmış, exact-olmayan girişi koru (qsearch depth 0
+        // derin negamax'ı ezmesin) -> o durumda HİÇ yazma (başka yuvaya da yazma,
+        // dublicate üretme).
+        if (e.bound() != Bound::NONE && e.key == key) {
+            if (!(depth >= e.depth || bound == Bound::EXACT))
+                return;
+            target   = &b;
+            target_e = e;
+            break;
+        }
 
-    // Aynı pozisyona ait bir girişin üstüne yazarken elimizdekinden daha zengin
-    // olan alanları kaybetmeyelim: yeni hamle/eval boşsa eskisini koru.
+        // (2) Victim adayı: boş yuva en iyi kurban; yoksa (depth - yaş cezası) en
+        // düşük olan. Bayat + sığ tercih edilir; derin+taze giriş doğal korunur.
+        const int value = (e.bound() == Bound::NONE)
+            ? std::numeric_limits<int>::min()
+            : e.depth - kReplaceAgePenalty *
+                  static_cast<int>((generation_ - e.generation()) & kGenMask);
+        if (target == nullptr || value < best_value) {
+            best_value = value;
+            target     = &b;
+            target_e   = e;
+        }
+    }
+
+    // Zengin-alan koruması yalnız aynı pozisyonun üstüne yazarken (farklı key'de
+    // eski move/eval alakasız).
     Move best_move = move;
-    if (best_move == Move() && e.key == key)
-        best_move = e.move;
-
     std::int16_t new_eval = static_cast<std::int16_t>(eval);
-    if (new_eval == kEvalNone && e.key == key)
-        new_eval = e.eval;
+    if (target_e.bound() != Bound::NONE && target_e.key == key) {
+        if (best_move == Move())    best_move = target_e.move;
+        if (new_eval == kEvalNone)  new_eval  = target_e.eval;
+    }
 
     const std::uint8_t gen_bound = static_cast<std::uint8_t>(
         (generation_ << 2) | static_cast<std::uint8_t>(bound));
@@ -141,8 +173,8 @@ void TranspositionTable::store(std::uint64_t key, int depth, int score,
 
     // Data'yı önce, key'i (key ^ data) sonra yaz. Böyle bir okuyucu (data önce)
     // ya iki güncel sözü ya da eski data + yeni key'i görür; ikincisi XOR ile elenir.
-    bucket.data.store(nd, std::memory_order_relaxed);
-    bucket.key.store(key ^ nd, std::memory_order_relaxed);
+    target->data.store(nd, std::memory_order_relaxed);
+    target->key.store(key ^ nd, std::memory_order_relaxed);
 }
 
 TranspositionTable TT;
