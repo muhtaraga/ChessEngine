@@ -1109,6 +1109,18 @@ double time_scale(int stability) {
     return f < kTimeStabFloor ? kTimeStabFloor : f;
 }
 
+// Lazy SMP derinlik-atlama deseni (Stockfish SkipSize/SkipPhase). thread_idx==0 ana
+// thread -> asla atlamaz (tam schedule). Yardımcı thread'ler (idx>=1) belli
+// derinlikleri atlar; 20-girişli desen thread'ler arasında farklı fazlar üretir ->
+// iterative-deepening yörüngeleri kaydırılır. Saf ve deterministik.
+bool lazy_smp_skip(int thread_idx, int depth) {
+    if (thread_idx <= 0) return false;  // ana thread daima tam derinlik dizisi
+    static constexpr int kSkipSize[20]  = {1,1,2,2,2,2,3,3,3,3,3,3,3,3,3,3,4,4,4,4};
+    static constexpr int kSkipPhase[20] = {0,1,0,1,2,3,0,1,2,3,4,5,6,7,8,9,0,1,2,3};
+    const int t = (thread_idx - 1) % 20;
+    return ((depth + kSkipPhase[t]) / kSkipSize[t]) % 2 != 0;
+}
+
 SearchResult search(const Board& b, int depth, std::int64_t max_time_ms,
                     const std::vector<std::uint64_t>& history) {
     // Sabit derinlik: her çağrı sıfırdan tablolarla, deterministik (testlerin kapısı).
@@ -1142,7 +1154,8 @@ namespace {
 // thread bunu koşar. is_main: yalnız ana thread info raporlar; yardımcı thread'lerin
 // döndürdüğü sonuç atılır (onlar yalnız TT'yi doldurur).
 SearchResult run_id_loop(Searcher& s, const Board& b, const SearchLimits& lim,
-                         bool is_main, const InfoCallback& info) {
+                         bool is_main, const InfoCallback& info,
+                         int thread_idx = 0) {
     const auto start = Clock::now();
     auto elapsed_ms = [&] {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1156,6 +1169,13 @@ SearchResult run_id_loop(Searcher& s, const Board& b, const SearchLimits& lim,
     int          stability  = 0;
 
     for (int depth = 1; depth <= lim.max_depth; ++depth) {
+        // Lazy SMP: yardımcı thread bu derinliği atlayıp yörüngesini kaydırır (ana
+        // thread thread_idx==0 -> asla atlamaz). Atlanan iterasyon yalnız aritmetik
+        // + continue; yardımcının sonucu atıldığından güvenli, prev_score en son
+        // TAMAMLANAN derinlikten kalır (aspiration hafif bayat merkezli, fail'de
+        // genişler).
+        if (lazy_smp_skip(thread_idx, depth)) continue;
+
         s.root_best_move  = Move();
         s.root_best_score = -INF;
         s.seldepth        = 0;  // her iterasyonun selektif erişimini ayrı raporla
@@ -1300,7 +1320,8 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
     helpers.reserve(n - 1);
     for (int i = 1; i < n; ++i)
         helpers.emplace_back([&searchers, &b, &lim, i] {
-            run_id_loop(*searchers[i], b, lim, /*is_main=*/false, {});
+            run_id_loop(*searchers[i], b, lim, /*is_main=*/false, {},
+                        /*thread_idx=*/i);
         });
 
     // Ana thread (id 0) bu thread'te koşar ve info raporlar.

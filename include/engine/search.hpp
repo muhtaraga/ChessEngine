@@ -129,4 +129,12 @@ SearchResult search_iterative(const Board& b, const SearchLimits& lim,
 // ilan edilir.
 double time_scale(int stability);
 
+// Lazy SMP derinlik-atlama: yardımcı thread'lerin iterative-deepening yörüngelerini
+// kaydırır. Stockfish-tarzı SkipSize/SkipPhase deseni: yardımcı thread belli
+// derinlikleri atlar -> thread'ler farklı derinlik alt-kümelerini arar, ağacı daha
+// çeşitli keşfeder ve paylaşılan TT'yi çeşitli-derinlikli girişlerle doldurur.
+// thread_idx==0 (ana thread) ASLA atlamaz (tam schedule; depth 1 garantisi + best/PV
+// korunur). Saf/deterministik; birim testinde doğrulanabilsin diye ilan edilir.
+bool lazy_smp_skip(int thread_idx, int depth);
+
 }  // namespace engine
