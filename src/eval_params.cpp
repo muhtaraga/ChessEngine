@@ -42,9 +42,8 @@ std::vector<int*> flat_param_pointers(EvalParams& p) {
     v.push_back(&p.threat_by_rook_mg);  v.push_back(&p.threat_by_rook_eg);
     v.push_back(&p.hanging_mg);          v.push_back(&p.hanging_eg);
     // --- eval_frozen_start() buraya denk gelir ---
-    // 7) king safety (DONDURULMUŞ): shield + open-file + attack_weight + safety_table
+    // 7) king safety (DONDURULMUŞ): shield + attack_weight + safety_table
     v.push_back(&p.shield_missing);
-    v.push_back(&p.king_open_file); v.push_back(&p.king_semi_open_file);
     for (int i = 0; i < PIECE_TYPE_NB; ++i) v.push_back(&p.king_attack_weight[i]);
     for (int i = 0; i < 100; ++i) v.push_back(&p.safety_table[i]);
 
@@ -79,7 +78,6 @@ const std::vector<std::string>& flat_param_names() {
         n.push_back("threat_by_rook_mg");  n.push_back("threat_by_rook_eg");
         n.push_back("hanging_mg");          n.push_back("hanging_eg");
         n.push_back("shield_missing");
-        n.push_back("king_open_file"); n.push_back("king_semi_open_file");
         for (int i = 0; i < PIECE_TYPE_NB; ++i) n.push_back(idx("king_attack_weight", i));
         for (int i = 0; i < 100; ++i) n.push_back(idx("safety_table", i));
         return n;

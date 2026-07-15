@@ -41,8 +41,6 @@ EvalParams make_default_eval_params() {
     p.threat_by_rook_mg  = ThreatByRookMg;  p.threat_by_rook_eg  = ThreatByRookEg;
     p.hanging_mg         = HangingMg;        p.hanging_eg         = HangingEg;
     p.shield_missing = ShieldMissingPenalty;
-    p.king_open_file      = KingOpenFilePenalty;
-    p.king_semi_open_file = KingSemiOpenFilePenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
     return p;
@@ -214,22 +212,6 @@ AttackEval attack_eval_impl(const Board& b) {
             }
             if ((own_pawns & front) == 0)  // bu sütunda kalkan piyonu yok
                 danger += g_eval.shield_missing;
-        }
-
-        // King on open/semi-open file: rakipte ağır taş (kale/vezir) varken, şah
-        // hattı ve komşu sütunlar (kf-1..kf+1) dost piyondan yoksunsa şah o hattan
-        // vurulabilir. Tam açık (hiç piyon yok) daha tehlikeli; yarı-açık (yalnız
-        // rakip piyon) daha az. Kalkandan ayrı: rakip ağır-taş varlığını + tüm sütunu görür.
-        if ((b.pieces[ROOK] | b.pieces[QUEEN]) & b.colors[~c]) {
-            const Bitboard enemy_pawns = b.pieces[PAWN] & b.colors[~c];
-            for (int f = kf - 1; f <= kf + 1; ++f) {
-                if (f < 0 || f > 7) continue;
-                if ((own_pawns & FileMask[f]) == 0) {  // dost piyon yok
-                    danger += (enemy_pawns & FileMask[f]) == 0
-                                  ? g_eval.king_open_file        // tam açık
-                                  : g_eval.king_semi_open_file;  // yarı-açık
-                }
-            }
         }
 
         int units = (c == WHITE) ? units_white : units_black;
