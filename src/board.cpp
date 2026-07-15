@@ -23,6 +23,7 @@ void Board::clear() {
     halfmove_clock  = 0;
     fullmove_number = 1;
     key             = 0;
+    pawn_key        = 0;
 }
 
 std::uint64_t Board::compute_key() const {
@@ -44,16 +45,34 @@ std::uint64_t Board::compute_key() const {
     return k;
 }
 
+std::uint64_t Board::compute_pawn_key() const {
+    std::uint64_t k = 0;
+    // Yalnız piyon taş-kare anahtarları; castling/ep/side DAHİL DEĞİL.
+    for (int c = 0; c < COLOR_NB; ++c) {
+        Bitboard bb = pieces[PAWN] & colors[c];
+        while (bb) {
+            Square sq = pop_lsb(bb);
+            k ^= ZOBRIST.psq[c][PAWN][sq];
+        }
+    }
+    return k;
+}
+
 void Board::put_piece(Color c, PieceType pt, Square sq) {
     set_bit(pieces[pt], sq);
     set_bit(colors[c], sq);
     key ^= ZOBRIST.psq[c][pt][sq];  // Zobrist anahtarının taş-kare kısmını bakımla
+    // Piyon alt-anahtarı: yalnız piyon olayları. Promosyonda pawn remove edilir
+    // (burası toggle'lar), promosyon tipi put edilir (pt != PAWN, dokunmaz) ->
+    // piyon anahtarından doğru düşer. En passant capture de remove_piece'ten geçer.
+    if (pt == PAWN) pawn_key ^= ZOBRIST.psq[c][PAWN][sq];
 }
 
 void Board::remove_piece(Color c, PieceType pt, Square sq) {
     clear_bit(pieces[pt], sq);
     clear_bit(colors[c], sq);
     key ^= ZOBRIST.psq[c][pt][sq];  // XOR tersine çevrilebilir: kaldırma da toggle
+    if (pt == PAWN) pawn_key ^= ZOBRIST.psq[c][PAWN][sq];
 }
 
 PieceType Board::type_on(Square sq) const {
@@ -91,6 +110,7 @@ void Board::set_startpos() {
     halfmove_clock  = 0;
     fullmove_number = 1;
     key             = compute_key();
+    pawn_key        = compute_pawn_key();
 }
 
 bool Board::piece_at(Square sq, Color& out_color, PieceType& out_type) const {
@@ -392,6 +412,7 @@ bool Board::set_fen(const std::string& fen) {
 
     // Tüm taş dizilimi ve durum bilgisi kurulduktan sonra anahtarı hesapla.
     key = compute_key();
+    pawn_key = compute_pawn_key();
 
     return true;
 }

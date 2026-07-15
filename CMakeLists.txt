@@ -20,6 +20,7 @@ add_library(engine STATIC
     src/movegen.cpp
     src/zobrist.cpp
     src/tt.cpp
+    src/pawn_table.cpp
     src/eval.cpp
     src/eval_params.cpp
     src/see.cpp

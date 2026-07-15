@@ -26,6 +26,13 @@ struct Board {
     // artımlı günceller. Her zaman compute_key() ile tutarlı olmalıdır.
     std::uint64_t key = 0;
 
+    // Yalnız piyon diziliminin Zobrist alt-anahtarı (pawn hash için). key ile aynı
+    // ZOBRIST.psq[c][PAWN][sq] değerlerinden XOR'lanır -> key'in gerçek alt-kümesi.
+    // Piyon-DIŞI durum (side/rok/ep) DAHİL DEĞİL: piyon yapısı onlardan bağımsız
+    // (aynı piyonlar, farklı stm/rok/ep -> aynı pawn_key). put_piece/remove_piece
+    // artımlı bakımlıdır; compute_pawn_key() ile tutarlı olmalıdır.
+    std::uint64_t pawn_key = 0;
+
     // Tahtayı tamamen boşaltır (tüm bitboard'lar 0, varsayılan durum bilgisi).
     void clear();
 
@@ -74,6 +81,11 @@ struct Board {
     // hesaplar. do_move'un artımlı güncellemesini doğrulamak için de kullanılır
     // (invariant: key == compute_key()).
     std::uint64_t compute_key() const;
+
+    // pawn_key'i piyon diziliminden sıfırdan hesaplar (compute_key'in piyona
+    // kısıtlanmış aynası). Artımlı bakımı doğrulamak için de kullanılır
+    // (invariant: pawn_key == compute_pawn_key()).
+    std::uint64_t compute_pawn_key() const;
 
     // FEN dizesinden pozisyon kurar. Başarılıysa true.
     bool set_fen(const std::string& fen);

@@ -35,6 +35,10 @@ const char* kPosition5 =
 void walk_and_check(const Board& b, int depth, int& failures) {
     if (b.key != b.compute_key())
         ++failures;
+    // Artımlı pawn_key de sıfırdan hesapla ile uyuşmalı (put/remove_piece bakımı):
+    // capture/ep/promosyon/rok/çift-itiş yolları bu ağaçta kapsanır.
+    if (b.pawn_key != b.compute_pawn_key())
+        ++failures;
 
     if (depth == 0)
         return;

@@ -5,8 +5,15 @@
 #include "engine/attacks.hpp"
 #include "engine/bitboard.hpp"
 #include "engine/board.hpp"
+#include "engine/pawn_table.hpp"
 
 namespace engine {
+
+// Pawn hash cache anahtarı: arama sırasında true (pawn_structure sonucu
+// PAWN_TABLE'da memoize edilir). Tuner FALSE yapar: finite-difference pawn
+// ağırlıklarını perturbe edip eval_accumulate çağırıyor; cache açıkken perturbe
+// edilmiş param için BAYAT değer döner -> pawn gradyanları ~0 -> hiç tune edilmez.
+bool g_pawn_cache_enabled = true;
 
 EvalParams make_default_eval_params() {
     EvalParams p{};
@@ -252,8 +259,15 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     }
 
     // Pawn structure (izole/çift/geçer) katkısı beyaz − siyah olarak eklenir.
+    // Pawn hash cache: pawn_key ile memoize (saf fonksiyon -> EXACT). Miss'te
+    // ham hesap + store. Tuner cache'i kapatır (bkz. g_pawn_cache_enabled).
     int pmg = 0, peg = 0;
-    pawn_structure(b, pmg, peg);
+    if (g_pawn_cache_enabled && PAWN_TABLE.probe(b.pawn_key, pmg, peg)) {
+        // cache hit
+    } else {
+        pawn_structure(b, pmg, peg);
+        if (g_pawn_cache_enabled) PAWN_TABLE.store(b.pawn_key, pmg, peg);
+    }
     mg += pmg;
     eg += peg;
 

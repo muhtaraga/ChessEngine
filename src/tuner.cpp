@@ -92,6 +92,12 @@ TuneResult run_texel_tune(const TexelData& d, const TuneConfig& cfg) {
     const std::size_t n = d.pos.size();
     const int F = eval_frozen_start();  // tune edilen düz parametre sayısı [0, F)
 
+    // Pawn hash cache'i tuning boyunca KAPAT: finite-difference pawn ağırlıklarını
+    // (isolated/doubled/passed) tek tek perturbe edip eval_accumulate çağırıyor;
+    // cache açıksa perturbe edilmiş param için BAYAT değer döner -> pawn gradyanları
+    // ~0 -> hiç tune edilmez. Tune tek seferlik alt-komut, geri açmaya gerek yok.
+    g_pawn_cache_enabled = false;
+
     std::vector<int*> ptrs = flat_param_pointers(g_eval);
 
     // w0: tune edilen parametrelerin başlangıç (varsayılan) değerleri.

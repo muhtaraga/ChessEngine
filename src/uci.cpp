@@ -18,6 +18,7 @@
 #include "engine/board.hpp"
 #include "engine/eval.hpp"
 #include "engine/movegen.hpp"
+#include "engine/pawn_table.hpp"
 #include "engine/search.hpp"
 #include "engine/tt.hpp"
 
@@ -162,6 +163,7 @@ void handle_setoption(std::istringstream& ss) {
         // Buton: TT'yi elle temizle (analiz için kullanışlı).
         stop_search();
         TT.clear();
+        PAWN_TABLE.clear();
     } else if (name == "Threads") {
         // Lazy SMP thread sayısı. Geçersiz sayı -> yok say. [1, donanım] clamp.
         std::int64_t nt = 0;
@@ -183,6 +185,7 @@ void handle_setoption(std::istringstream& ss) {
             if (!load_eval_params(g_eval, value))
                 std::cerr << "EvalFile yuklenemedi: " << value << '\n';
         }
+        PAWN_TABLE.clear();  // eval ağırlıkları değişti -> bayat pawn girişlerini at
     }
     // Tanınmayan option: sessizce yok say (UCI önerisi).
 }
@@ -378,6 +381,7 @@ void uci_loop(std::istream& in, std::ostream& out) {
             board.set_startpos();
             history.clear();  // yeni oyun: pozisyon geçmişini sıfırla
             TT.clear();  // yeni oyun: önceki oyunun girişlerini at
+            PAWN_TABLE.clear();  // yeni oyun: pawn hash'i de temizle
             for (auto& t : g_thread_tables)  // her thread: killer/history/cont-hist sıfır
                 t->clear();
         } else if (cmd == "setoption") {

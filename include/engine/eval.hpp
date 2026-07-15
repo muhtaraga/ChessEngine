@@ -381,4 +381,9 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white);
 // Hamle sırası olan tarafın bakışından statik değerlendirme (santipiyon).
 int evaluate(const Board& b);
 
+// Pawn hash cache anahtarı (varsayılan true). Tuner finite-difference sırasında
+// false yapmalı: perturbe edilmiş pawn ağırlıkları için cache bayat değer döndürür
+// -> pawn gradyanları bozulur.
+extern bool g_pawn_cache_enabled;
+
 }  // namespace engine
