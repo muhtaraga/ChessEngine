@@ -849,8 +849,33 @@ H0/nötr -> geri al + dersi buraya yaz.
       (E2) aynı pass'e eklenecek.
 
 *Blok E2 — Yüksek-değer pozisyonel terimler:*
-- [ ] **Threats / hanging pieces**: küçük taşın büyük taşa saldırısı, savunmasız
-      taş, pinli taşa baskı. Genelde büyük kazanç; ölçeğe DİKKAT. Beklenti +15-30.
+- [x] **Threats / hanging pieces (tam aile) — TAMAM, SPRT H1 KABUL (commit `9c4f6d1`).
+      YENİ BASELINE `9c4f6d1`, 152 test.** Dört alt-terim (BEYAZ−SİYAH, tapered),
+      E1'in birleşik attack-pass'ine FOLD edildi (ayrı geçiş = E1 kazancını geri verir):
+      `mobility_king_safety_impl` -> `attack_eval_impl`; iç döngüde tür-bazlı aggregate
+      atak bitboard'ları (`by_pawn` shift ile, `by_minor`=at|fil, `by_rook`, `by_piece`),
+      iki renk döngüsünden sonra `by_all=by_pawn|by_piece|king_attacks` ile threats.
+      - **ThreatByPawn** (40/30): piyon vuruşu altındaki rakip N/B/R/Q
+      - **ThreatByMinor** (25/20): minör atağı altındaki rakip R/Q (minör→majör)
+      - **ThreatByRook** (20/15): kale atağı altındaki rakip Q (kale→vezir)
+      - **Hanging** (25/25): bizim vurduğumuz + rakibin savunmadığı rakip N/B/R/Q
+      Heuristik -> kabul kapısı SPRT (node-equality DEĞİL). Ölçek modest tutuldu
+      (eval-ölçek↔arama-marjı bağı; tempo −18.6 / tune-all −110 emsali). 8 skaler
+      EvalParams'a frozen sınır ÖNÜNE eklendi (tunable); `eval_frozen_start` 812->820.
+      Sabitler ilk elle-seçim (E7 SPSA/Texel adayı). `threats()` izole wrapper (mobility/
+      king_safety deseni). Perft birebir (movegen'e dokunmaz). 4 test (148->152:
+      ThreatByPawnBonus, ThreatHangingPiece [savunulunca kalkar], ThreatByMinorOnMajor,
+      ThreatsSymmetry); FrozenBoundary son-tunable "hanging_eg"e güncellendi.
+      **SPRT: base `5dbc2ff` vs new `9c4f6d1`. 1-thread H1 TAM KABUL (kanonik kapı;
+      tüm baseline'lar 1-thread ile kuruldu); 2-thread + büyük Hash ile de H1 doğrulandı.
+      Tam istatistik (Elo±hata/W-D-L/oyun) kaydedilmedi — test kapatıldı.** NNUE
+      cherry-pick ADAYI. **DERS (SMP + SPRT metodolojisi): İLK 4-thread koşusu H0 verdi
+      -> teşhis: kod bug'ı DEĞİL (SMP entegrasyonu satır satır incelendi, tam thread
+      izolasyonu doğrulandı; bkz. memory `sprt-gui`) -> OVERSUBSCRIPTION (2 motor × 4
+      thread > 14 fiziksel çekirdek, aynı eşzamanlılıkta açlık -> sığ arama -> eval
+      sinyali boğuldu). Thread↑ -> SPRT eşzamanlılığı↓ (2 motor × N thread ≤ fiziksel
+      çekirdek) + Hash'i thread'e göre büyüt. "1-thread kazancı N-thread'te yıkanabilir"
+      dersinin (SMP paketi) TERSİ hata: yanlış kurulum gerçek kazancı gizler.**
 - [ ] **King safety rafineleri** (HER BİRİ AYRI COMMIT/SPRT — paketleme yok):
       pawn storm, şah açık/yarı-açık hatta, safe/knight check, attacker-count
       çarpanı, ring'e piyon saldırısı (`KingAttackWeight[PAWN]=0`). Toplam +15-40.
@@ -905,11 +930,20 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
 **Güncel durum (2026-07-15): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
 Klasik motorun arama/movegen/SMP tarafı bitti. FAZ 3 (klasik) — Eval Güçlendirme
-BAŞLADI: BLOK E1 (altyapı+hız) TAM TAMAM — SIRADAKİ İŞ: Blok E2 (threats/hanging ->
-king-safety rafineleri -> mobility quality; her biri ayrı commit + AYRI SPRT, artık
-davranış değiştiren eval terimleri, EXACT değil). NNUE bu repoda YOK, ayrı repoda
-(`../ChessEngineNNUE`).**
-**SON: Blok E1 (Eval altyapısı+hız) TAM TAMAM — iki EXACT commit, YENİ BASELINE
+DEVAM: BLOK E1 (altyapı+hız) TAM TAMAM, BLOK E2 Commit 1 (threats/hanging) KABUL —
+SIRADAKİ İŞ: Blok E2 / 2. madde (king-safety rafineleri, HER BİRİ AYRI COMMIT+SPRT)
+-> sonra mobility quality. NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+**SON: Blok E2 Commit 1 — threats / hanging (tam aile) KABUL. YENİ BASELINE `9c4f6d1`,
+152 test. Dört alt-terim (ThreatByPawn 40/30, ThreatByMinor 25/20 [minör→majör],
+ThreatByRook 20/15 [kale→vezir], Hanging 25/25 [savunmasız]), E1'in birleşik attack-
+pass'ine fold (mobility_king_safety_impl -> attack_eval_impl; by_pawn/by_minor/by_rook/
+by_piece aggregate, by_all ile hanging). Heuristik -> kapı SPRT; ölçek modest (8 skaler
+frozen sınır önüne, eval_frozen_start 812->820). SPRT base `5dbc2ff` vs new `9c4f6d1`:
+1-thread H1 TAM KABUL (kanonik), 2-thread+büyük Hash ile de doğrulandı; tam istatistik
+kaydedilmedi (test kapatıldı). DERS: ilk 4-thread koşusu H0 -> SMP bug DEĞİL (entegrasyon
+incelendi, tam thread izolasyonu; bkz. memory `sprt-gui`) -> OVERSUBSCRIPTION (2 motor ×
+4 thread > 14 çekirdek). Thread↑ -> eşzamanlılık↓ + Hash↑. NNUE cherry-pick ADAYI.**
+**ÖNCESİ: Blok E1 (Eval altyapısı+hız) TAM TAMAM — iki EXACT commit, baseline
 `5dbc2ff`, 148 test. (a) Pawn hash table `201e9d8` (global lockless-XOR pawn cache;
 Board::pawn_key incremental; g_pawn_cache_enabled tuner'da kapalı; nps +%2.0/+%5.1).
 (b) Birleşik attack-pass `5dbc2ff` (mobility+king_safety tek geçiş, aynı N/B/R/Q atak
