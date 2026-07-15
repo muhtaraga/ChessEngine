@@ -36,6 +36,11 @@ std::vector<int*> flat_param_pointers(EvalParams& p) {
     v.push_back(&p.bishop_pair_mg); v.push_back(&p.bishop_pair_eg);
     v.push_back(&p.rook_open_mg);   v.push_back(&p.rook_open_eg);
     v.push_back(&p.rook_semi_mg);   v.push_back(&p.rook_semi_eg);
+    // 6b) threats / hanging (tune edilir)
+    v.push_back(&p.threat_by_pawn_mg);  v.push_back(&p.threat_by_pawn_eg);
+    v.push_back(&p.threat_by_minor_mg); v.push_back(&p.threat_by_minor_eg);
+    v.push_back(&p.threat_by_rook_mg);  v.push_back(&p.threat_by_rook_eg);
+    v.push_back(&p.hanging_mg);          v.push_back(&p.hanging_eg);
     // --- eval_frozen_start() buraya denk gelir ---
     // 7) king safety (DONDURULMUŞ): shield + attack_weight + safety_table
     v.push_back(&p.shield_missing);
@@ -68,6 +73,10 @@ const std::vector<std::string>& flat_param_names() {
         n.push_back("bishop_pair_mg"); n.push_back("bishop_pair_eg");
         n.push_back("rook_open_mg");   n.push_back("rook_open_eg");
         n.push_back("rook_semi_mg");   n.push_back("rook_semi_eg");
+        n.push_back("threat_by_pawn_mg");  n.push_back("threat_by_pawn_eg");
+        n.push_back("threat_by_minor_mg"); n.push_back("threat_by_minor_eg");
+        n.push_back("threat_by_rook_mg");  n.push_back("threat_by_rook_eg");
+        n.push_back("hanging_mg");          n.push_back("hanging_eg");
         n.push_back("shield_missing");
         for (int i = 0; i < PIECE_TYPE_NB; ++i) n.push_back(idx("king_attack_weight", i));
         for (int i = 0; i < 100; ++i) n.push_back(idx("safety_table", i));
@@ -78,12 +87,13 @@ const std::vector<std::string>& flat_param_names() {
 
 int eval_frozen_start() {
     // material(6) + pst_mg(384) + pst_eg(384) + pawn(20) + mobility(12) +
-    // bishop_pair(2) + rook_file(4) = 812. King safety bundan sonra başlar.
+    // bishop_pair(2) + rook_file(4) + threats(8) = 820. King safety bundan sonra başlar.
     return PIECE_TYPE_NB                       // material
          + 2 * PIECE_TYPE_NB * SQUARE_NB       // pst_mg + pst_eg
          + 2 + 2 + 8 + 8                        // pawn
          + 2 * PIECE_TYPE_NB                    // mobility
-         + 2 + 4;                               // bishop pair + rook file
+         + 2 + 4                                // bishop pair + rook file
+         + 8;                                   // threats / hanging
 }
 
 bool save_eval_params(const EvalParams& p, const std::string& path) {

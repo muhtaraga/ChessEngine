@@ -241,3 +241,60 @@ TEST(Eval, KingSafetySymmetry) {
     EXPECT_EQ(eg, 0);
     EXPECT_EQ(evaluate(b), 0);
 }
+
+// --- Threats / hanging testleri (threats yardımcısıyla, PST/materyal gürültüsü yok) ---
+
+// Piyon tehdidi: beyaz e4 piyonu siyah atı d5'i vuruyor; at c6 piyonuyla savunuluyor
+// (-> hanging DEĞİL, yalnız piyon tehdidi). Başka tehdit yok -> tam ThreatByPawn.
+TEST(Eval, ThreatByPawnBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/2p5/3n4/4P3/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    threats(b, mg, eg);
+    EXPECT_EQ(mg, ThreatByPawnMg);
+    EXPECT_EQ(eg, ThreatByPawnEg);
+}
+
+// Hanging: beyaz kale a1, siyah atı a4'te vuruyor; at savunmasız -> hanging bonusu.
+// (Kale→at "threat by rook" DEĞİL — o yalnız kale→vezir; piyon/minör tehdidi de yok.)
+// Sonra a4 atı b5 piyonuyla savunulunca hanging kalkar -> katkı 0.
+TEST(Eval, ThreatHangingPiece) {
+    Board hang;
+    ASSERT_TRUE(hang.set_fen("4k3/8/8/8/n7/8/8/R3K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    threats(hang, mg, eg);
+    EXPECT_EQ(mg, HangingMg);
+    EXPECT_EQ(eg, HangingEg);
+
+    Board defended;
+    ASSERT_TRUE(defended.set_fen("4k3/8/8/1p6/n7/8/8/R3K3 w - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    threats(defended, mg2, eg2);
+    EXPECT_EQ(mg2, 0);
+    EXPECT_EQ(eg2, 0);
+}
+
+// Minör → majör: beyaz at d4 siyah veziri f5'te vuruyor; vezir e6 piyonuyla savunulu
+// (-> hanging DEĞİL). Yalnız minör tehdidi -> tam ThreatByMinor. (At e6 piyonunu da
+// vuruyor ama piyon "majör" değil, threat_by_minor'a sayılmaz.)
+TEST(Eval, ThreatByMinorOnMajor) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/4p3/5q2/3N4/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    threats(b, mg, eg);
+    EXPECT_EQ(mg, ThreatByMinorMg);
+    EXPECT_EQ(eg, ThreatByMinorEg);
+}
+
+// Renk simetrisi: beyaz Pe4 siyah Nd5'i, siyah Pe5 beyaz Nd4'ü aynalı tehdit eder
+// (ikisi de savunmasız -> her iki tarafta piyon-tehdit + hanging aynalı). Katkı tam
+// sıfır, evaluate() de 0.
+TEST(Eval, ThreatsSymmetry) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/3np3/3NP3/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    threats(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+}

@@ -36,6 +36,10 @@ EvalParams make_default_eval_params() {
     p.bishop_pair_mg = BishopPairMg; p.bishop_pair_eg = BishopPairEg;
     p.rook_open_mg   = RookOpenMg;   p.rook_open_eg   = RookOpenEg;
     p.rook_semi_mg   = RookSemiMg;   p.rook_semi_eg   = RookSemiEg;
+    p.threat_by_pawn_mg  = ThreatByPawnMg;  p.threat_by_pawn_eg  = ThreatByPawnEg;
+    p.threat_by_minor_mg = ThreatByMinorMg; p.threat_by_minor_eg = ThreatByMinorEg;
+    p.threat_by_rook_mg  = ThreatByRookMg;  p.threat_by_rook_eg  = ThreatByRookEg;
+    p.hanging_mg         = HangingMg;        p.hanging_eg         = HangingEg;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
@@ -108,17 +112,32 @@ void pawn_structure(const Board& b, int& mg, int& eg) {
 
 namespace {
 
-// mobility ve king_safety AYNI taş-atak setlerini (at/fil/kale/vezir) yeniden
-// üretiyordu: mobility kendi renginin taşları için, king_safety rakip şaha saldıran
-// aynı taşlar için. Bu tek geçiş her taşın atak setini BİR KEZ hesaplar ve iki
-// katkıyı da toplar -> davranış-koruyan (EXACT), yalnız sliding-magic çağrıları yarıya.
+// mobility, king_safety ve threats AYNI taş-atak setlerini (at/fil/kale/vezir)
+// paylaşır: mobility kendi renginin taşları için, king_safety rakip şaha saldıran
+// aynı taşlar için, threats de aynı atak setlerini rakip taşlarla kesiştirir. Bu tek
+// geçiş her taşın atak setini BİR KEZ hesaplar ve üç katkıyı da toplar -> yalnız
+// sliding-magic çağrıları bir kez. (mobility+king_safety kısmı E1'de davranış-koruyan
+// birleştirildi; threats E2'de eklendi -> eval'i değiştirir, davranış-koruyan DEĞİL.)
 struct AttackEval {
     int mob_mg = 0;
     int mob_eg = 0;
     int ks_mg  = 0;  // king safety (eg her zaman 0; taper ile EG'de solar)
+    int thr_mg = 0;  // threats / hanging (tapered: mg/eg ayrı)
+    int thr_eg = 0;
 };
 
-AttackEval mobility_king_safety_impl(const Board& b) {
+// Bir rengin tüm piyon vuruş karelerinin birleşimi (LERF yön shift'leri; kenar
+// sütun taşmasını FileMask ile önler). Beyaz yukarı-çapraz (<<7/<<9), siyah
+// aşağı-çapraz (>>9/>>7) vurur.
+Bitboard pawn_attack_span(Bitboard pawns, Color c) {
+    const Bitboard not_a = ~FileMask[0];
+    const Bitboard not_h = ~FileMask[7];
+    if (c == WHITE)
+        return ((pawns & not_a) << 7) | ((pawns & not_h) << 9);
+    return ((pawns & not_a) >> 9) | ((pawns & not_h) >> 7);
+}
+
+AttackEval attack_eval_impl(const Board& b) {
     AttackEval r;
     const Bitboard occ = b.occupancy();
 
@@ -130,6 +149,15 @@ AttackEval mobility_king_safety_impl(const Board& b) {
     const Bitboard bzone       = king_attacks(bksq);
     int            units_white = 0;  // beyaz şaha karşı (siyah saldıranlar)
     int            units_black = 0;  // siyah şaha karşı (beyaz saldıranlar)
+
+    // Threats için renk başına toplam atak setleri (birleşik geçişte doldurulur).
+    // by_pawn: piyon vuruşları; by_minor: at|fil; by_rook: kale; by_piece: tüm
+    // N/B/R/Q. by_all (piyon|piece|şah) hanging'in "savunma/saldırı" testinde kullanılır.
+    Bitboard by_pawn[COLOR_NB]  = {pawn_attack_span(b.pieces[PAWN] & b.colors[WHITE], WHITE),
+                                   pawn_attack_span(b.pieces[PAWN] & b.colors[BLACK], BLACK)};
+    Bitboard by_minor[COLOR_NB] = {0, 0};
+    Bitboard by_rook[COLOR_NB]  = {0, 0};
+    Bitboard by_piece[COLOR_NB] = {0, 0};
 
     // --- Mobility + king-ring saldırıları: taş başına tek atak seti ---
     for (Color c : {WHITE, BLACK}) {
@@ -145,6 +173,10 @@ AttackEval mobility_king_safety_impl(const Board& b) {
             r.mob_eg += sign * m * g_eval.mobility_eg[pt];
             // king safety: bu taş rakip şah bölgesinde kaç kare vuruyor × ağırlık
             enemy_units += g_eval.king_attack_weight[pt] * popcount(attacks & enemy_king_zone);
+            // threats: atak setini tür-bazlı aggregate'lere ekle
+            by_piece[c] |= attacks;
+            if (pt == KNIGHT || pt == BISHOP) by_minor[c] |= attacks;
+            else if (pt == ROOK)              by_rook[c]  |= attacks;
         };
 
         Bitboard knights = b.pieces[KNIGHT] & own;
@@ -189,6 +221,44 @@ AttackEval mobility_king_safety_impl(const Board& b) {
         r.ks_mg += -sign * danger;  // tehlike, o rengin skorunu düşürür
     }
 
+    // --- Threats / hanging: paylaşılan atak setlerini rakip taşlarla kesiştir ---
+    // by_all: bir rengin herhangi bir taşının (piyon|N/B/R/Q|şah) vurduğu kareler;
+    // hanging'in "vurulmuş mu / savunuluyor mu" testinde kullanılır.
+    const Bitboard by_all[COLOR_NB] = {
+        by_pawn[WHITE] | by_piece[WHITE] | king_attacks(wksq),
+        by_pawn[BLACK] | by_piece[BLACK] | king_attacks(bksq)};
+
+    for (Color us : {WHITE, BLACK}) {
+        const Color    them = ~us;
+        const int      sign = (us == WHITE) ? 1 : -1;
+        const Bitboard enemy = b.colors[them];
+        const Bitboard enemy_majors = (b.pieces[ROOK] | b.pieces[QUEEN]) & enemy;
+        const Bitboard enemy_queens = b.pieces[QUEEN] & enemy;
+        // Tehdit/hanging yalnız N/B/R/Q için (piyon ve şah hariç).
+        const Bitboard enemy_pieces =
+            (b.pieces[KNIGHT] | b.pieces[BISHOP] | b.pieces[ROOK] | b.pieces[QUEEN]) & enemy;
+
+        // Piyon vuruşumuz altındaki rakip taş.
+        int n = popcount(by_pawn[us] & enemy_pieces);
+        r.thr_mg += sign * n * g_eval.threat_by_pawn_mg;
+        r.thr_eg += sign * n * g_eval.threat_by_pawn_eg;
+
+        // Minör (at/fil) atağımız altındaki rakip majör (kale/vezir).
+        n = popcount(by_minor[us] & enemy_majors);
+        r.thr_mg += sign * n * g_eval.threat_by_minor_mg;
+        r.thr_eg += sign * n * g_eval.threat_by_minor_eg;
+
+        // Kale atağımız altındaki rakip vezir.
+        n = popcount(by_rook[us] & enemy_queens);
+        r.thr_mg += sign * n * g_eval.threat_by_rook_mg;
+        r.thr_eg += sign * n * g_eval.threat_by_rook_eg;
+
+        // Hanging: bizim vurduğumuz ama rakibin hiçbir taşınca savunmadığı rakip taş.
+        n = popcount(enemy_pieces & by_all[us] & ~by_all[them]);
+        r.thr_mg += sign * n * g_eval.hanging_mg;
+        r.thr_eg += sign * n * g_eval.hanging_eg;
+    }
+
     return r;
 }
 
@@ -196,7 +266,7 @@ AttackEval mobility_king_safety_impl(const Board& b) {
 
 void mobility(const Board& b, int& mg, int& eg) {
     // İzole test için ince sarmalayıcı; gerçek hesap tek geçişli impl'de.
-    AttackEval r = mobility_king_safety_impl(b);
+    AttackEval r = attack_eval_impl(b);
     mg = r.mob_mg;
     eg = r.mob_eg;
 }
@@ -240,9 +310,17 @@ void rook_on_file(const Board& b, int& mg, int& eg) {
 void king_safety(const Board& b, int& mg, int& eg) {
     // İzole test için ince sarmalayıcı; gerçek hesap tek geçişli impl'de
     // (mobility ile paylaşılan taş-atak setleri). eg her zaman 0.
-    AttackEval r = mobility_king_safety_impl(b);
+    AttackEval r = attack_eval_impl(b);
     mg = r.ks_mg;
     eg = 0;
+}
+
+void threats(const Board& b, int& mg, int& eg) {
+    // İzole test için ince sarmalayıcı; gerçek hesap tek geçişli impl'de
+    // (mobility/king_safety ile paylaşılan taş-atak setleri).
+    AttackEval r = attack_eval_impl(b);
+    mg = r.thr_mg;
+    eg = r.thr_eg;
 }
 
 void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
@@ -283,12 +361,12 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     mg += pmg;
     eg += peg;
 
-    // Mobility + king safety TEK GEÇİŞTE (paylaşılan at/fil/kale/vezir atak setleri
-    // yeniden üretilmez). mob_mg/eg mobility, ks_mg king safety (eg 0). Ayrı ayrı
-    // mobility()+king_safety() çağırmakla BİREBİR aynı toplam (int, sıra bağımsız).
-    AttackEval aks = mobility_king_safety_impl(b);
-    mg += aks.mob_mg + aks.ks_mg;
-    eg += aks.mob_eg;
+    // Mobility + king safety + threats TEK GEÇİŞTE (paylaşılan at/fil/kale/vezir atak
+    // setleri yeniden üretilmez). mob_mg/eg mobility, ks_mg king safety (eg 0),
+    // thr_mg/eg threats. Ayrı ayrı wrapper çağırmakla BİREBİR aynı toplam.
+    AttackEval aks = attack_eval_impl(b);
+    mg += aks.mob_mg + aks.ks_mg + aks.thr_mg;
+    eg += aks.mob_eg + aks.thr_eg;
 
     // Bishop pair katkısı.
     int bmg = 0, beg = 0;

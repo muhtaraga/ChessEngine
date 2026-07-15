@@ -94,6 +94,21 @@ inline constexpr int RookOpenEg = 15;
 inline constexpr int RookSemiMg = 12;
 inline constexpr int RookSemiEg = 8;
 
+// --- Threats / hanging ağırlıkları (santipiyon, MG/EG ayrı; tapered) ---
+// Rakip taşlara yönelen tehditler (piyon/minör/kale saldırısı + savunmasız taş).
+// Bonuslar yalnız tehdit VARKEN uygulanır -> dengeli pozisyonda renkler arası ~iptal.
+// Modest tutulur (eval-ölçek ↔ arama-marjı bağı: cp-kalibre RFP/futility/null marjları
+// dondurulmuş; ölçeği kaydıran değişiklik onları bozar). Değerler ilk elle-seçim,
+// E7 SPSA/Texel adayı; net Elo SPRT ile doğrulanır.
+inline constexpr int ThreatByPawnMg  = 40;  // piyon vuruşu altındaki rakip N/B/R/Q
+inline constexpr int ThreatByPawnEg  = 30;
+inline constexpr int ThreatByMinorMg = 25;  // at/fil atağı altındaki rakip R/Q (minör → majör)
+inline constexpr int ThreatByMinorEg = 20;
+inline constexpr int ThreatByRookMg  = 20;  // kale atağı altındaki rakip Q (kale → vezir)
+inline constexpr int ThreatByRookEg  = 15;
+inline constexpr int HangingMg       = 25;  // vurulmuş + savunmasız rakip N/B/R/Q
+inline constexpr int HangingEg       = 25;
+
 // --- King safety ağırlıkları (YALNIZ orta oyun; EG=0 -> taper ile solar) ---
 // Oyun sonunda şah merkeze/aktifliğe yönelir (KingCentralizedInEndgame), güvenlik
 // önemsizleşir; bu yüzden king_safety yalnız MG'ye katkı verir (eg her zaman 0).
@@ -319,6 +334,12 @@ struct EvalParams {
     int rook_open_mg,  rook_open_eg;             // kale açık sütun
     int rook_semi_mg,  rook_semi_eg;             // kale yarı-açık sütun
 
+    // Threats / hanging (tunable; frozen sınırın önünde -> tune edilir).
+    int threat_by_pawn_mg,  threat_by_pawn_eg;   // piyon vuruşu altındaki rakip taş
+    int threat_by_minor_mg, threat_by_minor_eg;  // minör atağı altındaki rakip majör
+    int threat_by_rook_mg,  threat_by_rook_eg;   // kale atağı altındaki rakip vezir
+    int hanging_mg,         hanging_eg;          // vurulmuş + savunmasız rakip taş
+
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
@@ -368,6 +389,11 @@ void bishop_pair(const Board& b, int& mg, int& eg);
 
 // Kale açık/yarı-açık sütun katkısı, BEYAZ − SİYAH, MG/EG ayrı.
 void rook_on_file(const Board& b, int& mg, int& eg);
+
+// Threats / hanging katkısı (rakip taşlara piyon/minör/kale tehditleri + savunmasız
+// taş), BEYAZ − SİYAH, MG/EG ayrı (tapered). evaluate() akümülatörlerine ekler;
+// izole test edilebilir. Atak setleri mobility/king_safety ile TEK GEÇİŞTE paylaşılır.
+void threats(const Board& b, int& mg, int& eg);
 
 // King safety katkısı (piyon kalkanı + şah bölgesi saldırıları), BEYAZ − SİYAH.
 // eg her zaman 0 (yalnız orta oyun terimi); mg negatif = beyaz şahı daha güvensiz.
