@@ -760,9 +760,37 @@ doğal olarak ıraksarlar, ana thread raporlar. Gereksinimler:
       Elo veriyor (nps ölçeklemesi ≠ Elo idi; ölçüldü, doğrulandı). **FAZ 2D TAMAM.**
       **2→4 thread ölçekleme de GEÇTİ H1: Elo +75.5 ± 22.3, LOS %100, LLR 2.95 TAM
       KABUL (505 oyun, 190-233-82).** Ölçekleme sürüyor (1→2 +88.7, 2→4 +75.5; azalan
-      getiri beklenen/sağlıklı, kümülatif 1→4 ~+164 Elo mertebesi). Kalan thread-safe
-      TT rafinesi (prefetch, 4-yollu bucket) ve Lazy SMP iyileştirmeleri (depth-skipping
-      ile daha iyi ıraksama) ileride aday; ilk sıradaki iş NNUE cherry-pick borcu + Faz 3.
+      getiri beklenen/sağlıklı, kümülatif 1→4 ~+164 Elo mertebesi).
+
+- [x] **SMP iyileştirme paketi (2026-07-15): TT prefetch + 4-yollu bucket KABUL,
+      depth-skipping RAFA. YENİ BASELINE `1f497dc`.** Üç aday tek pakette denendi,
+      ikili SPRT ayrıştırdı:
+      - `01853a0` **TT prefetch** (`_mm_prefetch`, EXACT): çocuk düğümün TT cluster'ı
+        do_move sonrası çektirilir (negamax + qsearch). Davranış-koruyan (startpos d13
+        780013 / Kiwipete d12 488482 birebir kanıtlandı). ~%1-3 nps.
+      - `ee266e5` **4-yollu set-associative TT** (heuristik): 1 yuva/index → 4 yuvalı
+        cluster (Bucket 16B ×4 = 64B = tam cache line). probe 4 yuva tarar; store
+        aynı-key güncelle (depth-preferred) ya da victim `depth - kReplaceAgePenalty
+        (8)*yaş` en düşük. Lockless-XOR yuva-içi korunur. Tek-thread node-equality
+        BİLİNÇLE kalktı (heuristik); doğruluk: perft birebir + `FourWayAssociativity`
+        testi + sağlama (d13 609707 e2e4, TT retention iyileşti).
+      - `466b6f6` **depth-skipping** (Stockfish SkipSize/SkipPhase, yardımcı staggering)
+        → **RAFA (`1f497dc` revert)**. Tek-thread'te INERT (thread_idx daima 0, EXACT).
+      - **İKİLİ SPRT (ders):** paket 1v1'de **H1 (pozitif)**, 4v4'te **NÖTR**. depth-skip
+        1 thread'te inert olduğundan **1v1 H1 tamamen prefetch+4-way'e ait** → o ikisi
+        kanıtlandı, kabul. depth-skip yalnız çok-thread'te etkir; orada paket nötr ve
+        depth-skip tek başına da (466b6f6) daha önce 4v4'te düzdü (+3.5 ± 48.9) →
+        hiçbir thread sayısında kanıtlanmış kazanç yok, ölü ağırlık + fork yükü →
+        kaldırıldı. **DERS: 1-thread kazancı N-thread'te yıkanabilir (motor zaten
+        güçlü + SMP gürültüsü); "nötr" ≠ regresyon. Bir bileşen bir thread sayısında
+        inert ise, o koşuyu diğer bileşenlere ATFETMEK için kullan (paketi ayrıştırır).**
+      - 142 test (LazySmpSkip çıktı, FourWayAssociativity kaldı). Fork: prefetch+4-way
+        N4'ten önce NNUE'ya cherry-pick edilecek. İleride yüksek çekirdek (8/12/14)
+        için depth-skip yeniden aday (kolay re-add).
+
+Kalan opsiyonel ileri: TT prefetch mesafesi/derinliği ince ayarı, `kReplaceAgePenalty`
+tuning (Blok 4/16), yüksek-çekirdek depth-skip retry; ilk sıradaki iş NNUE cherry-pick
+borcu + Faz 3.
 
 ### Faz 3 — NNUE'ya Geçiş
 
@@ -782,9 +810,15 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-13): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
-Klasik motorun tamamı bitti — sıradaki büyük iş NNUE (ayrı repo, Faz 3).** FAZ 2D
-(Lazy SMP) dört commit (hepsi main): `19d4a04` thread-safe TT (lockless XOR, tek-thread
+**Güncel durum (2026-07-15): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
+Klasik motorun tamamı bitti — sıradaki büyük iş NNUE (ayrı repo, Faz 3).**
+**SON: SMP iyileştirme paketi — TT prefetch (`01853a0`, EXACT) + 4-yollu bucket TT
+(`ee266e5`, heuristik) KABUL (ikili SPRT: 1v1 H1 → depth-skip 1 thread'te inert
+olduğundan prefetch+4-way'e atfedildi); depth-skipping (`466b6f6`) RAFA (`1f497dc`
+revert; 4v4 nötr, ölü ağırlık). YENİ BASELINE `1f497dc`, 142 test. DERS: 1-thread
+kazancı N-thread'te yıkanabilir; bir bileşen bir thread sayısında inert ise o koşuyu
+diğerlerine atfetmek için kullan. Fork: prefetch+4-way N4'ten önce NNUE'ya cherry-pick.**
+FAZ 2D (Lazy SMP) dört commit (hepsi main): `19d4a04` thread-safe TT (lockless XOR, tek-thread
 EXACT), `a967672` SMP orchestrator + per-thread tablolar + Threads option (threads=1
 EXACT), `e810a9a` tools/sprt Threads desteği, `36cb6d5`+GUI guard düzeltmesi. 141 test.
 threads=1 düğüm eşitliği baseline `aaaec37` ile birebir (startpos d13 780013, Kiwipete
