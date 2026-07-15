@@ -7,6 +7,7 @@
 #include "engine/tt.hpp"
 
 #include <bit>
+#include <xmmintrin.h>  // _mm_prefetch (MSVC/x86)
 
 namespace engine {
 
@@ -84,6 +85,12 @@ bool TranspositionTable::probe(std::uint64_t key, TTEntry& out) const {
     e.key = key;
     out   = e;
     return true;
+}
+
+void TranspositionTable::prefetch(std::uint64_t key) const {
+    if (table_)
+        _mm_prefetch(reinterpret_cast<const char*>(&table_[key & mask_]),
+                     _MM_HINT_T0);
 }
 
 void TranspositionTable::store(std::uint64_t key, int depth, int score,

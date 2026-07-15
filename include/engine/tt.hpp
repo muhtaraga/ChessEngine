@@ -92,6 +92,11 @@ public:
     // çağıran mat düzeltmesini kendisi yapar.
     bool probe(std::uint64_t key, TTEntry& out) const;
 
+    // key'in düşeceği yuvayı belleğe önceden çektir (prefetch). Saf donanım hint'i:
+    // arama sonucuna SIFIR etki (davranış-koruyan), yalnız probe'un cache-miss
+    // beklemesini gizler. Çocuk düğüme inmeden önce çağrılır.
+    void prefetch(std::uint64_t key) const;
+
     // Girişi saklar (derinlik-tercihli + yaş temelli değiştirme). eval, düğümün
     // HAM statik eval'i (çekteyken kEvalNone); rafine edilmiş değer verilmemeli.
     void store(std::uint64_t key, int depth, int score, Bound bound, Move move,

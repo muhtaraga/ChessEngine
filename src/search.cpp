@@ -759,6 +759,10 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         // Budama kararları geçildi: ancak ŞİMDİ çocuk tahtayı kur.
         Board next = b;
         next.do_move(m);
+        // Çocuğun TT yuvasını erken çektir: aşağıdaki negamax(next,...) ilk işi
+        // TT.probe olduğundan, aradaki iş (singular doğrulama, stack güncelleme)
+        // sırasında bellek gelsin (davranış-koruyan hint).
+        TT.prefetch(next.key);
 
         // History malus: aranan quiet hamleyi kaydet (kesme olursa bunlardan
         // kesmeyi yapan ödül, kalanlar ceza alır).
@@ -1023,6 +1027,7 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
 
         Board next = b;
         next.do_move(todo.moves[i]);
+        TT.prefetch(next.key);  // çocuğun TT yuvasını erken çektir (davranış-koruyan)
         int score = -quiescence(next, -beta, -alpha, ply + 1);
 
         if (aborted)
