@@ -190,14 +190,6 @@ AttackEval attack_eval_impl(const Board& b) {
 
         Bitboard queens = b.pieces[QUEEN] & own;
         while (queens) { Square s = pop_lsb(queens); add(QUEEN, queen_attacks(s, occ)); }
-
-        // Piyon king-ring saldırısı: bu rengin piyon vuruşları (by_pawn, önden hesaplı;
-        // mobility döngüsünde piyon yok) rakip şah halkasında tuttuğu kare sayısı ×
-        // ağırlık units'e eklenir -> nonlinear SafetyTable üzerinden birleşir. Piyon
-        // storm / piyon-destekli saldırının hızlandırıcısı: taş baskısıyla birlikte
-        // tablo indeksini dikleşen bölgeye iter. (KingAttackWeight[PAWN] artık > 0.)
-        enemy_units += g_eval.king_attack_weight[PAWN] *
-                       popcount(by_pawn[c] & enemy_king_zone);
     }
 
     // --- Piyon kalkanı + SafetyTable: her şah için (atak setlerinden bağımsız) ---
