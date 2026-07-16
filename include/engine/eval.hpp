@@ -109,6 +109,32 @@ inline constexpr int ThreatByRookEg  = 15;
 inline constexpr int HangingMg       = 25;  // vurulmuş + savunmasız rakip N/B/R/Q
 inline constexpr int HangingEg       = 25;
 
+// --- Outpost ağırlıkları (santipiyon, MG/EG ayrı; tapered) ---
+// Outpost = dost piyonla DESTEKLENEN + rakip piyonun (kendi sütununda ilerleyerek)
+// KOVAMAYACAĞI ileri kare. Eval'de bugüne dek ne piyon-desteği ne kovulabilirlik
+// sayılıyordu (PST yalnız merkezîliği, mobility yalnız kare sayısını verir) ->
+// ortogonal sinyal: ileri bir minörün KALICILIĞI.
+//
+// At > fil (2:1): at kısa menzilli, kalıcı-korunan kare uzağa baskının tek yolu;
+// fil zaten diyagonalden çalışır -> fil için sinyalin çoğu PST/mobility'de.
+//
+// MG > EG: outpost bir ORTA OYUN kavramı — kalıcı ileri karedeki at, tahtada taş
+// varken rakip pozisyona baskı yayar; oyun sonunda belirleyici olan şah aktifliği ve
+// geçer piyonlardır. Bu bir satranç gerekçesi, ölçüm değil; ağırlıklar E7 (Texel/SPSA)
+// adayı.
+//
+// ÇÜRÜTÜLEN BEKLENTİ (ölçüldü, geçici enstrümantasyon — commit'te yok): tasarımda
+// "kovulamaz koşulu oyun sadeleştikçe bedavaya doğru olur -> terim EG'de şişer, o yüzden
+// EG ağırlığı kısılmalı" deniyordu. YANLIŞ: at başına ateşleme oranı fazlar arası DÜZ
+// (%2.49 orta oyun / %2.70 oyun sonu). Sebep: rakip piyon azalınca kovulabilirlik
+// gerçekten gevşiyor (rank_ok %27 -> %52) ama AYNI anda dost piyon desteği zorlaşıyor
+// (support_ok %47 -> %20) -> iki etki birbirini götürüyor. Destek koşulu terimi kendi
+// kendine sınırlıyor; EG'de ölçek kayması riski yok.
+inline constexpr int OutpostKnightMg = 25;
+inline constexpr int OutpostKnightEg = 15;
+inline constexpr int OutpostBishopMg = 12;
+inline constexpr int OutpostBishopEg = 8;
+
 // --- King safety ağırlıkları (YALNIZ orta oyun; EG=0 -> taper ile solar) ---
 // Oyun sonunda şah merkeze/aktifliğe yönelir (KingCentralizedInEndgame), güvenlik
 // önemsizleşir; bu yüzden king_safety yalnız MG'ye katkı verir (eg her zaman 0).
@@ -340,6 +366,12 @@ struct EvalParams {
     int threat_by_rook_mg,  threat_by_rook_eg;   // kale atağı altındaki rakip vezir
     int hanging_mg,         hanging_eg;          // vurulmuş + savunmasız rakip taş
 
+    // Outpost (tunable; frozen sınırın önünde). İsimli skaler — dizi ([PIECE_TYPE_NB])
+    // olsaydı 12 param giderdi, 8'i yapısal ölü ağırlık (piyon/kale/vezir/şah outpost
+    // almaz); threats bloğu da isimli skaler.
+    int outpost_knight_mg, outpost_knight_eg;    // desteklenen + kovulamayan at
+    int outpost_bishop_mg, outpost_bishop_eg;    // desteklenen + kovulamayan fil
+
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
@@ -394,6 +426,12 @@ void rook_on_file(const Board& b, int& mg, int& eg);
 // taş), BEYAZ − SİYAH, MG/EG ayrı (tapered). evaluate() akümülatörlerine ekler;
 // izole test edilebilir. Atak setleri mobility/king_safety ile TEK GEÇİŞTE paylaşılır.
 void threats(const Board& b, int& mg, int& eg);
+
+// Outpost katkısı (dost piyonla desteklenen + rakip piyonun kendi sütununda
+// ilerleyerek kovamayacağı ileri karedeki at/fil), BEYAZ − SİYAH, MG/EG ayrı
+// (tapered). evaluate() akümülatörlerine ekler; izole test edilebilir. Hesap
+// mobility/king_safety/threats ile TEK GEÇİŞTE (attack_eval_impl) yapılır.
+void outpost(const Board& b, int& mg, int& eg);
 
 // King safety katkısı (piyon kalkanı + şah bölgesi saldırıları), BEYAZ − SİYAH.
 // eg her zaman 0 (yalnız orta oyun terimi); mg negatif = beyaz şahı daha güvensiz.

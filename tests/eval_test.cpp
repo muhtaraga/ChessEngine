@@ -298,3 +298,90 @@ TEST(Eval, ThreatsSymmetry) {
     EXPECT_EQ(eg, 0);
     EXPECT_EQ(evaluate(b), 0);
 }
+
+// --- Outpost testleri (outpost() yardımcısıyla; PST/materyal gürültüsü yok) ---
+
+// Beyaz at d5: c4 piyonu destekliyor, göreli 5. sırada, siyahın d5'in ÖNÜNDEKİ komşu
+// sütunlarında (c6/c7, e6/e7) piyonu yok -> kovulamaz, tam bonus.
+//
+// İKİNCİ TAHTA ANTİ-VACUITY TESTİ, DİŞLİ: siyah piyon e4 d5'in ARKASINDA. Piyon yalnız
+// ileri gider -> e4 asla d5'i vuramaz -> outpost BOZULMAMALI. Öne-kısıtını unutan naif
+// implementasyon (AdjacentFileMask & enemy_pawns) burada 0 döner; doğrusu tam bonus.
+// Bu iki implementasyonu ayıran TEK test.
+TEST(Eval, OutpostKnightBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/3N4/2P5/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    outpost(b, mg, eg);
+    EXPECT_EQ(mg, OutpostKnightMg);
+    EXPECT_EQ(eg, OutpostKnightEg);
+
+    Board behind;  // siyah piyon e4: d5'in arkasında, asla vuramaz
+    ASSERT_TRUE(behind.set_fen("4k3/8/8/3N4/2P1p3/8/8/4K3 w - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    outpost(behind, mg2, eg2);
+    EXPECT_EQ(mg2, OutpostKnightMg);
+    EXPECT_EQ(eg2, OutpostKnightEg);
+}
+
+// Kovulabilirlik kapısı iki biçimde: (a) e7 piyonu e6'ya ilerleyip d5'i vurabilir;
+// (b) c6 piyonu d5'i ZATEN vuruyor. İkisinde de sıra + destek kapıları SAĞLANIYOR
+// (c4 piyonu destekliyor, göreli sıra 5) -> yalnız kovulabilirlik eliyor, boş geçmez.
+TEST(Eval, OutpostDeniedByEnemyPawn) {
+    Board can_advance;
+    ASSERT_TRUE(can_advance.set_fen("4k3/4p3/8/3N4/2P5/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    outpost(can_advance, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+
+    Board attacks_now;
+    ASSERT_TRUE(attacks_now.set_fen("4k3/8/2p5/3N4/2P5/8/8/4K3 w - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    outpost(attacks_now, mg2, eg2);
+    EXPECT_EQ(mg2, 0);
+    EXPECT_EQ(eg2, 0);
+}
+
+// Fil AYNI outpost karesinde at'tan farklı (daha küçük) ağırlık alır.
+TEST(Eval, OutpostBishopWeight) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/3B4/2P5/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    outpost(b, mg, eg);
+    EXPECT_EQ(mg, OutpostBishopMg);
+    EXPECT_EQ(eg, OutpostBishopEg);
+    EXPECT_LT(OutpostBishopMg, OutpostKnightMg);  // at > fil (tasarım kararı)
+}
+
+// Kalan iki kapı ayrı ayrı, her biri diğer ikisi sağlanırken düşer:
+// (a) d5 atı desteksiz (piyon yok); (b) d3 atı c2 piyonuyla DESTEKLİ + kovulamaz
+// (rakip piyon yok) ama göreli 3. sırada -> sıra kapısı eler.
+TEST(Eval, OutpostRequiresSupportAndRank) {
+    Board unsupported;
+    ASSERT_TRUE(unsupported.set_fen("4k3/8/8/3N4/8/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    outpost(unsupported, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+
+    Board too_shallow;
+    ASSERT_TRUE(too_shallow.set_fen("4k3/8/8/8/8/3N4/2P5/4K3 w - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    outpost(too_shallow, mg2, eg2);
+    EXPECT_EQ(mg2, 0);
+    EXPECT_EQ(eg2, 0);
+}
+
+// Renk simetrisi: beyaz Nd5+Pc4 ile siyah nd4+pc5 tam dikey ayna (d5^56==d4,
+// c4^56==c5). İki taraf da outpost alır (rakip piyon aynı sırada -> "önde" değil,
+// kovamaz) -> katkı tam sıfır, evaluate() de 0.
+TEST(Eval, OutpostSymmetry) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/2pN4/2Pn4/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    outpost(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+}

@@ -40,6 +40,8 @@ EvalParams make_default_eval_params() {
     p.threat_by_minor_mg = ThreatByMinorMg; p.threat_by_minor_eg = ThreatByMinorEg;
     p.threat_by_rook_mg  = ThreatByRookMg;  p.threat_by_rook_eg  = ThreatByRookEg;
     p.hanging_mg         = HangingMg;        p.hanging_eg         = HangingEg;
+    p.outpost_knight_mg  = OutpostKnightMg;  p.outpost_knight_eg  = OutpostKnightEg;
+    p.outpost_bishop_mg  = OutpostBishopMg;  p.outpost_bishop_eg  = OutpostBishopEg;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
@@ -124,6 +126,8 @@ struct AttackEval {
     int ks_mg  = 0;  // king safety (eg her zaman 0; taper ile EG'de solar)
     int thr_mg = 0;  // threats / hanging (tapered: mg/eg ayrı)
     int thr_eg = 0;
+    int out_mg = 0;  // outpost (desteklenen + kovulamayan ileri at/fil; tapered)
+    int out_eg = 0;
 };
 
 // Bir rengin tüm piyon vuruş karelerinin birleşimi (LERF yön shift'leri; kenar
@@ -164,6 +168,7 @@ AttackEval attack_eval_impl(const Board& b) {
         const Bitboard own             = b.colors[c];
         const int      sign            = (c == WHITE) ? 1 : -1;
         const Bitboard enemy_king_zone = (c == WHITE) ? bzone : wzone;
+        const Bitboard enemy_pawns     = b.pieces[PAWN] & b.colors[~c];
         int&           enemy_units     = (c == WHITE) ? units_black : units_white;
 
         auto add = [&](PieceType pt, Bitboard attacks) {
@@ -179,11 +184,38 @@ AttackEval attack_eval_impl(const Board& b) {
             else if (pt == ROOK)              by_rook[c]  |= attacks;
         };
 
+        // Outpost: dost piyonla DESTEKLENEN + rakip piyonun KOVAMAYACAĞI ileri karedeki
+        // at/fil. `add`'den ayrı tutuldu: `add`'in işi "bu atak setini aggregate'e ekle",
+        // outpost ise bir YERLEŞİM terimi (sıfır atak biti okur) -> `add`'e kare parametresi
+        // eklemek kale/veziri ölü argümanla kirletirdi.
+        auto add_outpost = [&](PieceType pt, Square s) {
+            const int rr = (c == WHITE) ? rank_of(s) : 7 - rank_of(s);
+            if (rr < 3 || rr > 5) return;          // göreli sıra 4-6 dışı
+            if (!test_bit(by_pawn[c], s)) return;  // dost piyon desteklemiyor
+
+            // Kovulabilirlik: s'yi bir gün vurabilecek rakip piyonun durabileceği kareler
+            // = KOMŞU sütunlar × s'nin ÖNÜ (rakip piyon yalnız bize doğru ilerler, geri
+            // dönemez). PassedMask komşu + KENDİ sütununu "kesin önde" verir;
+            // AdjacentFileMask kendi sütununu eler -> tam olarak o küme. Yeni tablo yok.
+            //
+            // NOT: "kovamaz" = KENDİ SÜTUNUNDA İLERLEYEREK kovamaz. Rakip piyon vuruş
+            // yapıp sütun değiştirerek sonradan kovabilir (d7 piyonu c6'ya vurup d5'i
+            // tehdit eder). Stockfish'in pawn_attacks_span tanımı da vuruşları saymaz —
+            // bilinçli sadeleştirme.
+            if ((PassedMask[c][s] & AdjacentFileMask[file_of(s)] & enemy_pawns) != 0)
+                return;
+
+            r.out_mg += sign * (pt == KNIGHT ? g_eval.outpost_knight_mg
+                                             : g_eval.outpost_bishop_mg);
+            r.out_eg += sign * (pt == KNIGHT ? g_eval.outpost_knight_eg
+                                             : g_eval.outpost_bishop_eg);
+        };
+
         Bitboard knights = b.pieces[KNIGHT] & own;
-        while (knights) { Square s = pop_lsb(knights); add(KNIGHT, knight_attacks(s)); }
+        while (knights) { Square s = pop_lsb(knights); add(KNIGHT, knight_attacks(s)); add_outpost(KNIGHT, s); }
 
         Bitboard bishops = b.pieces[BISHOP] & own;
-        while (bishops) { Square s = pop_lsb(bishops); add(BISHOP, bishop_attacks(s, occ)); }
+        while (bishops) { Square s = pop_lsb(bishops); add(BISHOP, bishop_attacks(s, occ)); add_outpost(BISHOP, s); }
 
         Bitboard rooks = b.pieces[ROOK] & own;
         while (rooks) { Square s = pop_lsb(rooks); add(ROOK, rook_attacks(s, occ)); }
@@ -323,6 +355,14 @@ void threats(const Board& b, int& mg, int& eg) {
     eg = r.thr_eg;
 }
 
+void outpost(const Board& b, int& mg, int& eg) {
+    // İzole test için ince sarmalayıcı; gerçek hesap tek geçişli impl'de
+    // (at/fil döngüleri mobility ile paylaşılır).
+    AttackEval r = attack_eval_impl(b);
+    mg = r.out_mg;
+    eg = r.out_eg;
+}
+
 void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     // Orta oyun ve oyun sonu puanları ayrı biriktirilir (beyaz bakışıyla).
     int mg = 0;
@@ -361,12 +401,13 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     mg += pmg;
     eg += peg;
 
-    // Mobility + king safety + threats TEK GEÇİŞTE (paylaşılan at/fil/kale/vezir atak
-    // setleri yeniden üretilmez). mob_mg/eg mobility, ks_mg king safety (eg 0),
-    // thr_mg/eg threats. Ayrı ayrı wrapper çağırmakla BİREBİR aynı toplam.
+    // Mobility + king safety + threats + outpost TEK GEÇİŞTE (paylaşılan at/fil/kale/
+    // vezir atak setleri yeniden üretilmez). mob_mg/eg mobility, ks_mg king safety
+    // (eg 0), thr_mg/eg threats, out_mg/eg outpost. Ayrı ayrı wrapper çağırmakla
+    // BİREBİR aynı toplam.
     AttackEval aks = attack_eval_impl(b);
-    mg += aks.mob_mg + aks.ks_mg + aks.thr_mg;
-    eg += aks.mob_eg + aks.thr_eg;
+    mg += aks.mob_mg + aks.ks_mg + aks.thr_mg + aks.out_mg;
+    eg += aks.mob_eg + aks.thr_eg + aks.out_eg;
 
     // Bishop pair katkısı.
     int bmg = 0, beg = 0;
