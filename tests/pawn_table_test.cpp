@@ -102,4 +102,39 @@ TEST(PawnTable, CachedEqualsRaw) {
     PAWN_TABLE.clear();
 }
 
+// Pawn hash cache YALNIZ piyon-saf terimleri saklayabilir: pawn_key yalnız PİYON
+// dizilimini içerir -> aynı piyonlara sahip iki FARKLI pozisyon AYNI girişi paylaşır.
+// Bu test, piyon-DIŞI duruma bağlı bir terimin (blockade / şah mesafesi /
+// rook-behind-passer gibi — bkz. CLAUDE.md Blok E3 tuzağı) pawn_structure'a sızmasını
+// yakalar: sızarsa ikinci pozisyon birincinin BAYAT piyon skorunu alır ve cache'li
+// sonuç ham sonuçtan sapar.
+// CachedEqualsRaw bunu YAKALAYAMAZ — orada her FEN'den önce cache temizleniyor, yani
+// giriş paylaşımı hiç test edilmiyor.
+TEST(PawnTable, SamePawnsDifferentPiecesNotStale) {
+    // Aynı piyonlar (beyaz c4 + d5), farklı at karesi -> aynı pawn_key, FARKLI eval.
+    // At kareleri KÖŞE vs MERKEZ seçildi: at PST'si sol-sağ simetrik olduğundan
+    // b6/g6 gibi aynalı kareler BİREBİR aynı değerlenir ve test boş geçerdi.
+    Board a, c;
+    ASSERT_TRUE(a.set_fen("4k2n/8/8/3P4/2P5/8/8/4K3 w - - 0 1"));   // siyah at h8 (köşe)
+    ASSERT_TRUE(c.set_fen("4k3/8/8/3P4/2Pn4/8/8/4K3 w - - 0 1"));   // siyah at d4 (merkez)
+    ASSERT_EQ(a.pawn_key, c.pawn_key);  // ön koşul: giriş gerçekten paylaşılıyor
+
+    const bool saved = g_pawn_cache_enabled;
+
+    g_pawn_cache_enabled = false;
+    const int raw_a = evaluate(a);
+    const int raw_c = evaluate(c);
+    // Test boş geçmesin: iki pozisyon gerçekten farklı değerlenmeli (at PST + mobility).
+    ASSERT_NE(raw_a, raw_c);
+
+    // Cache açık ve ARADA TEMİZLİK YOK: a'nın sakladığı girişi c de kullanır.
+    g_pawn_cache_enabled = true;
+    PAWN_TABLE.clear();
+    EXPECT_EQ(evaluate(a), raw_a);
+    EXPECT_EQ(evaluate(c), raw_c);  // bayat piyon skoru alırsa burada patlar
+
+    g_pawn_cache_enabled = saved;
+    PAWN_TABLE.clear();
+}
+
 }  // namespace

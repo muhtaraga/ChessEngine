@@ -73,6 +73,18 @@ inline constexpr int DoubledPenaltyEg = -20;
 inline constexpr int PassedBonusMg[8] = {0, 5, 10, 15, 25, 40, 60, 0};
 inline constexpr int PassedBonusEg[8] = {0, 10, 20, 35, 60, 90, 120, 0};
 
+// Korunan geçer piyon (protected passer): dost bir piyonun VURDUĞU karede duran geçer
+// piyon. Yukarıdaki PassedBonus yalnız SIRAYA bakar — geçer piyonun korunup korunmadığı
+// eval'de hiçbir yerde sayılmıyor -> ortogonal sinyal. Korunan geçer piyon rakip için
+// çok daha zor: taşla alınırsa piyon geri alır, bu yüzden ancak ablukayla durdurulabilir.
+// PIYON-SAF (yalnız piyon dizilimine bağlı) -> pawn hash cache'li pawn_structure İÇİNE
+// girer; blockade / şah mesafesi / rook-behind-passer ise piyon-DIŞI duruma bağlı
+// olduğundan cache'e GİREMEZ (bkz. CLAUDE.md Blok E3 tuzağı).
+// Sıra ölçeklemesi PassedBonus[r]'de zaten var -> bu bonus DÜZ tutuldu (E7 tuning adayı).
+// EG > MG: geçer piyonun kendisi gibi (piyon yapısı oyun sonunda belirleyici).
+inline constexpr int ProtectedPasserMg = 10;
+inline constexpr int ProtectedPasserEg = 18;
+
 // --- Mobility ağırlıkları (santipiyon, MG/EG ayrı; taş türü başına) ---
 // Taşın ulaşabildiği (dost taşla dolu OLMAYAN) kare sayısına doğrusal bonus.
 // Piyon ve şah hariç: piyon yapısı ayrı ele alınır, şah "mobilitesi" güvenlikle
@@ -353,6 +365,7 @@ struct EvalParams {
     int isolated_mg, isolated_eg;                // izole piyon cezası
     int doubled_mg,  doubled_eg;                 // çift piyon cezası
     int passed_mg[8], passed_eg[8];              // geçer piyon bonusu (rank index)
+    int protected_passer_mg, protected_passer_eg;  // dost piyonla korunan geçer piyon
 
     int mobility_mg[PIECE_TYPE_NB], mobility_eg[PIECE_TYPE_NB];  // mobility ağırlığı
 

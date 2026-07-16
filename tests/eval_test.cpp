@@ -299,6 +299,46 @@ TEST(Eval, ThreatsSymmetry) {
     EXPECT_EQ(evaluate(b), 0);
 }
 
+// --- Korunan geçer piyon (protected passer) testleri ---
+
+// Piyon zinciri c4-d5: ikisi de geçer (siyahta piyon yok), d5 c4 tarafından KORUNUYOR
+// (c4 b5+d5'i vurur) -> d5 ayrıca korunan-geçer bonusu alır. c4 korunmuyor (kendi
+// piyonlarından hiçbiri c4'ü vurmuyor). İkisi de izole değil (komşu sütunlar dolu).
+TEST(Eval, ProtectedPasserBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/3P4/2P5/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    pawn_structure(b, mg, eg);
+    // c4 -> rank index 3, d5 -> rank index 4; korunan-geçer yalnız d5'e.
+    EXPECT_EQ(mg, PassedBonusMg[3] + PassedBonusMg[4] + ProtectedPasserMg);
+    EXPECT_EQ(eg, PassedBonusEg[3] + PassedBonusEg[4] + ProtectedPasserEg);
+}
+
+// Falanks c5-d5 (yan yana, zincir DEĞİL): ikisi de geçer ama HİÇBİRİ diğerini vurmuyor
+// (c5 -> b6/d6, d5 -> c6/e6) -> korunan-geçer bonusu YOK. Aynı sıra + komşu sütun, yani
+// yalnız "koruma" koşulu düşüyor (geçerlik ve izole-olmama aynen sağlanıyor) -> boş geçmez.
+TEST(Eval, PasserNotProtectedInPhalanx) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/2PP4/8/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    pawn_structure(b, mg, eg);
+    EXPECT_EQ(mg, 2 * PassedBonusMg[4]);  // korunan-geçer katkısı yok
+    EXPECT_EQ(eg, 2 * PassedBonusEg[4]);
+}
+
+// Renk simetrisi: beyaz c4-d5 zinciri ile siyah c5-d4 zinciri tam dikey ayna
+// (c4^56==c5, d5^56==d4). Beyazda yalnız d5 geçer+korunan (c4'ün önünde siyah c5 var ->
+// c4 geçer değil), siyahta aynalı olarak yalnız d4. Katkı tam sıfır, evaluate() de 0.
+TEST(Eval, ProtectedPasserSymmetry) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/2pP4/2Pp4/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    pawn_structure(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+}
+
 // --- Outpost testleri (outpost() yardımcısıyla; PST/materyal gürültüsü yok) ---
 
 // Beyaz at d5: c4 piyonu destekliyor, göreli 5. sırada, siyahın d5'in ÖNÜNDEKİ komşu

@@ -29,6 +29,7 @@ std::vector<int*> flat_param_pointers(EvalParams& p) {
     v.push_back(&p.doubled_mg);  v.push_back(&p.doubled_eg);
     for (int i = 0; i < 8; ++i) v.push_back(&p.passed_mg[i]);
     for (int i = 0; i < 8; ++i) v.push_back(&p.passed_eg[i]);
+    v.push_back(&p.protected_passer_mg); v.push_back(&p.protected_passer_eg);
     // 5) mobility
     for (int i = 0; i < PIECE_TYPE_NB; ++i) v.push_back(&p.mobility_mg[i]);
     for (int i = 0; i < PIECE_TYPE_NB; ++i) v.push_back(&p.mobility_eg[i]);
@@ -71,6 +72,7 @@ const std::vector<std::string>& flat_param_names() {
         n.push_back("doubled_mg");  n.push_back("doubled_eg");
         for (int i = 0; i < 8; ++i) n.push_back(idx("passed_mg", i));
         for (int i = 0; i < 8; ++i) n.push_back(idx("passed_eg", i));
+        n.push_back("protected_passer_mg"); n.push_back("protected_passer_eg");
         for (int i = 0; i < PIECE_TYPE_NB; ++i) n.push_back(idx("mobility_mg", i));
         for (int i = 0; i < PIECE_TYPE_NB; ++i) n.push_back(idx("mobility_eg", i));
         n.push_back("bishop_pair_mg"); n.push_back("bishop_pair_eg");
@@ -91,12 +93,12 @@ const std::vector<std::string>& flat_param_names() {
 }
 
 int eval_frozen_start() {
-    // material(6) + pst_mg(384) + pst_eg(384) + pawn(20) + mobility(12) +
-    // bishop_pair(2) + rook_file(4) + threats(8) + outpost(4) = 824. King safety
+    // material(6) + pst_mg(384) + pst_eg(384) + pawn(22) + mobility(12) +
+    // bishop_pair(2) + rook_file(4) + threats(8) + outpost(4) = 826. King safety
     // bundan sonra başlar.
     return PIECE_TYPE_NB                       // material
          + 2 * PIECE_TYPE_NB * SQUARE_NB       // pst_mg + pst_eg
-         + 2 + 2 + 8 + 8                        // pawn
+         + 2 + 2 + 8 + 8 + 2                    // pawn (izole/çift/geçer/korunan-geçer)
          + 2 * PIECE_TYPE_NB                    // mobility
          + 2 + 4                                // bishop pair + rook file
          + 8                                    // threats / hanging
