@@ -941,6 +941,10 @@ rafineleri, outpost, rook-on-7th) — kategori kanıtı (EN KRİTİK DERS) bunla
 king-safety rafinelerinin ÖNÜNE koyuyor: yeni eksene bilgi ekliyorlar, dondurulmuş
 alt-sisteme enjeksiyon değiller. Mobility quality (orta güven) ve E7 king-safety
 joint tuning sonraya.
+**DURUM (2026-07-16): outpost (E4) KOŞULLU KABUL EDİLDİ -> `47fada6` (koşullu baseline,
+157 test); EN KRİTİK DERS'in ortogonal-sınıf öngörüsü bir kez daha tuttu (+4.7 ± 5.0,
+LOS %96.8). Kalan somut iş: E3 passed-pawn rafineleri + E4 bad-bishop/rook-on-7th, sonra
+BUNDLE SPRT (`9c4f6d1` vs blok-sonu HEAD) — bkz. "SUB-5 TERİM STRATEJİSİ" aşağıda.**
 
 *Blok E3 — Piyon yapısı derinleştirme (E1 pawn hash sonrası):*
 - [ ] **Passed pawn rafineleri** (ayrı commit'ler): blockade, şah mesafesi
@@ -954,10 +958,90 @@ joint tuning sonraya.
 - [ ] **Backward pawns**. **Connected / phalanx pawns**. Her biri +5-15.
 
 *Blok E4 — Taş-yerleşim terimleri:*
-- [ ] **Knight/bishop outpost** (desteklenen, kovulamayan ileri kare).
+- [~] **Knight/bishop outpost — KOŞULLU KABUL (SPRT KARARSIZ, pozitif eğilim), commit
+      `47fada6`, 157 test. BASELINE `47fada6` KOŞULLU (H1 DEĞİL).**
+      **SPRT final (base `9c4f6d1` vs new `47fada6`, 1-thread, 5+0.05, elo0=0/elo1=5):
+      10.000 oyun TAVAN, W-D-L 2749-4638-2613, Elo +4.7 ± 5.0, LOS %96.8, LLR 1.72
+      (üst sınır 2.94'ün %58'i, YÜKSELİYORDU), beraberlik %46.4, renk dağılımı 5000/5000.**
+      Kabul kullanıcı kararı — istatistiksel kesinlik DEĞİL, güçlü eğilim (**king safety
+      `7eea85f` emsali: o da LLR 1.46 / LOS %99.9 ile sınıra ulaşmadan kullanıcı kararıyla
+      kabul edilmişti; buradaki LLR 1.72 ondan yüksek, LOS düşük**).
+      - **KUSUR TEST TASARIMINDA, TERİMDE DEĞİL:** `elo0=0/elo1=5` "bu ≥5 mi?" diye sorar;
+        gerçek etki ~+4.7 ise dürüst cevap "hayır" ama terim yine de pozitif. Blok 1/3
+        Ders 3 bunu zaten söylüyordu (sub-5 için daha sıkı sınır ya da sabit-N gerekir),
+        sınırlar yine de 0/5 bırakıldı. **Blok bitince BUNDLE SPRT ile certify edilecek
+        (`9c4f6d1` vs blok-sonu HEAD) — kullanıcı kararı, aşağıya bak.**
+      - **SABIR DERSİ (LMP emsali doğrulandı):** 1319 oyunda tablo −0.3 ± 13.9 / LOS %48.5
+        / LLR −0.276 idi ve "nötr çıkacak" görünüyordu. Beklenti bandı (+3-12) hata payının
+        (±13.9) TAMAMEN içindeydi -> o koşu hipotezi test bile etmemişti. 10k'da +4.7 ± 5.0
+        / LOS %96.8. **Erken kareye göre karar VERME**; kabul edilmiş emsaller: delta
+        pruning +7.8 -> 7192 oyun, countermove +10.4 -> 4602, LMP 247 oyunda düz görünüp
+        +34.5 bitti.
+      - **Mekanik:** üç kapı — göreli sıra 4-6, dost piyon desteği (`by_pawn[c]`, E1'in
+        birleşik attack-pass'inde zaten var), kovulabilirlik. `attack_eval_impl`'in mevcut
+        at/fil döngülerine ayrı `add_outpost` lambda'sı (`add`'e DOKUNULMADI: `add`'in işi
+        "atak setini aggregate'e ekle", outpost yerleşim terimi -> `add`'e kare parametresi
+        kale/veziri ölü argümanla kirletirdi). `enemy_pawns` renk döngüsüne hoist.
+      - **Maske YENİ TABLO İSTEMEDİ:** `PassedMask[c][s] & AdjacentFileMask[file_of(s)]` =
+        komşu sütunlar × s'nin önü = Stockfish'in `pawn_attacks_span`'i. Kaba kuvvetle
+        bağımsız ground-truth'a karşı 128 (renk,kare) çiftinde **0 uyumsuzluk**.
+        NOT: "kovamaz" = KENDİ SÜTUNUNDA İLERLEYEREK kovamaz (piyon vuruş yapıp sütun
+        değiştirip sonradan kovabilir; SF de vuruşları saymaz — bilinçli sadeleştirme).
+        İSİM TUZAĞI: `eval.cpp`'de zaten `pawn_attack_span` var ve FARKLI şey demek
+        (tek adımlık vuruşlar) -> maske inline yazıldı.
+      - **YENİ TEKNİK — ağırlık=0 hilesi (sezgisel eval terimi için yan-etki + nps kapısı):**
+        outpost ağırlıkları EvalFile ile 0 -> eval baseline ile SAYISAL ÖZDEŞ -> ağaç da
+        özdeş olmalı. Çıktı: startpos d13 = 962829 (cp 35, e2e4), Kiwipete d12 = 714878
+        (cp −62, e2a6), PV dahil `9c4f6d1` ile BİREBİR => **terim yalnız ağırlıkları
+        üzerinden etki ediyor** (sezgisel terimde normalde düğüm-eşitliği kapısı YOKTUR).
+        Aynı hile nps'i de kurtardı: normal ölçüm −%4.8 diyordu ama KİRLİ (ağaç değişmiş,
+        düğüm +%16); sabit ağaçta gerçek maliyet **~%1.5**. Genelleme: sezgisel eval
+        teriminde nps'i ağırlık=0 ile ölç. Perft birebir.
+      - **Enstrümantasyon (SPRT öncesi kapı) SAĞLIKLI:** 5 gerçek orta oyun × d12 ->
+        eval'lerin %9.40'ında ateşliyor (no-op değil), `abs/call` 2.02 cp, `sum/call`
+        0.68 cp (ölçek kaydırmıyor), fil/at ateşleme oranı 0.36 -> at-ağırlıklı (paket
+        fil-dominant DEĞİL -> H0'da ayrışma sorunu olmazdı).
+      - **ÇÜRÜTÜLEN TAHMİN (ölçüldü):** planda "kovulamaz koşulu EG'de bedavaya doğru olur
+        -> terim EG'de şişer, EG ağırlığı kısılmalı" YANLIŞ — at başına ateşleme fazlar
+        arası DÜZ (%2.49 orta oyun / %2.70 oyun sonu). Sebep: rakip piyon azalınca
+        kovulabilirlik gevşiyor (rank_ok %27->%52) ama AYNI anda dost piyon desteği
+        zorlaşıyor (support_ok %47->%20) -> götürüyor. **Destek koşulu terimi kendi kendine
+        sınırlıyor.** MG>EG artık satranç gerekçesine dayanıyor (outpost orta oyun kavramı),
+        ölçek korkusuna değil.
+      - At 25/15, fil 12/8 (at>fil 2:1: at kısa menzilli, kalıcı-korunan kare uzağa baskının
+        tek yolu). 4 skaler frozen sınır ÖNÜNE, `eval_frozen_start` 820->824, FrozenBoundary
+        -> "outpost_bishop_eg". At+fil TEK COMMIT: threats emsali + kodda zaten
+        `mobility_mg[PIECE_TYPE_NB]`/`king_attack_weight[PIECE_TYPE_NB]` emsali (tek terim,
+        taş-türü başına sabit); Blok 1/3 yasağı BAĞIMSIZ mekanizmaları hedefler, burada tek
+        predicate + iki sabit var. 5 test (152->157; OutpostKnightBonus'un 2. tahtası
+        ANTI-VACUITY: siyah piyon d5'in ARKASINDA -> bonus bozulmamalı; öne-kısıtını unutan
+        naif implementasyonu yakalayan TEK test). NNUE cherry-pick ADAYI (bundle H1 sonrası).
 - [ ] **Bad bishop** (kendi renginde piyon sayısı).
-- [ ] **Rook on 7th / connected rooks / rook trapped by king**.
+- [ ] **Rook on 7th / connected rooks / rook trapped by king**. **DİKKAT (kategori):** kale
+      PST'si ZATEN 7. sıranın tamamına +10 veriyor (`RawPST[ROOK]` satır 2) -> kısmen
+      "yeniden-ifade" sınıfı; outpost bu yüzden bilinçle ÖNE alındı. Denenecekse gate
+      klasik olmalı (rakip şah 8.'de / rakip piyonlar 7.'de), yoksa PST'yi tekrarlar.
 - [ ] **Bishop pair zıt-kare rafinesi** (mevcut basit ≥2 sayımı). Her biri +3-12.
+
+**SUB-5 TERİM STRATEJİSİ — BUNDLE SPRT (kullanıcı kararı, 2026-07-16).** Faz 3'ün kalan
+eval terimlerinin ÇOĞU +3-15 bandında bekleniyor; outpost (+4.7 ± 5.0, LOS %96.8, LLR 1.72
+@10k tavan) sub-5 bir etkinin `elo0=0/elo1=5` ile TEK BAŞINA certify EDİLEMEYECEĞİNİ
+kanıtladı (improving-revize `2ce0352` +1.2 ± 5.3 aynı desen). **Yeni akış:**
+1. Her terim ayrı commit + ayrı SPRT + enstrümantasyon + yan-etki kapısı (mevcut disiplin
+   AYNEN korunur).
+2. SPRT kararsız ama POZİTİF eğilimliyse (LOS belirgin >%50, nokta tahmini +) terim
+   **KOŞULLU** tutulur ve **"H1 KABUL" DİYE ETİKETLENMEZ** (kaydın dürüstlüğü bu reponun
+   en değerli varlığı — EN KRİTİK DERS'in gücü 10+ veri noktasının gerçekten ölçülmüş
+   olmasından geliyor). H0/negatif eğilimli terim koşullu TUTULMAZ, anında revert edilir
+   (kategori kuralı geçerli: sabit düzeltip retry ETME).
+3. Blok bitince biriken TÜM terimler bloğun BAŞLANGIÇ baseline'ına karşı **TEK BUNDLE
+   SPRT**'ye sokulur (E3/E4 için base `9c4f6d1`). Birkaç +3-5 terimin toplamı +12-15 ->
+   rahat certify eder. Bundle H1 -> koşullu etiketler kalkar, blok sağlam baseline olur.
+**Paketleme yasağını (Blok 1/3) İHLAL ETMEZ:** o yasak *tanı koymayı* korur (improving'de
+üç bağımsız kaplama tek SPRT'de H0 verince hangisi zararlı ayrışmadı); burada her terim
+ZATEN tek tek ölçülüyor, bundle yalnız TOPLAMI doğruluyor. **Risk (dürüstçe):** bundle H0
+çıkarsa hangi terimin battığı ayrışmaz -> tek tek geri çıkmak gerekir; bu yüzden bundle'a
+yalnız pozitif eğilimli terimler girer.
 
 *Blok E5 — Endgame ölçekleme (HAFİF; kullanıcı kararı — tam KPK/KBNK bilgisi HARİÇ):*
 - [ ] **Scaling factor altyapısı**: `evaluate()` sonunda eg skoruna `[0, SCALE_NORMAL]`
@@ -1000,10 +1084,26 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 **Güncel durum (2026-07-16): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
 Klasik motorun arama/movegen/SMP tarafı bitti. FAZ 3 (klasik) — Eval Güçlendirme
 DEVAM: BLOK E1 (altyapı+hız) TAM TAMAM, BLOK E2 Commit 1 (threats/hanging) KABUL
-(baseline `9c4f6d1`, 152 test). BLOK E2 king-safety rafineleri E7 JOINT TUNING'e
-ERTELENDİ (iki deneme H0/nötr, kategori kanıtı aleyhte). **SIRADAKİ İŞ: E3/E4 ORTOGONAL
-terimleri (passed-pawn rafineleri, outpost, rook-on-7th) — bkz. EN KRİTİK DERS +
-SIRADAKİ İŞ pivot notu.** NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+(H1, baseline `9c4f6d1`), BLOK E2 king-safety rafineleri E7 JOINT TUNING'e ERTELENDİ
+(iki deneme H0/nötr, kategori kanıtı aleyhte). **BLOK E4 outpost KOŞULLU KABUL ->
+KOŞULLU BASELINE `47fada6`, 157 test** (SPRT 10k tavan: +4.7 ± 5.0, LOS %96.8, LLR 1.72
+— H1 DEĞİL, kullanıcı kararı; king safety `7eea85f` erken-kabul emsali). **SIRADAKİ İŞ:
+E3 passed-pawn rafineleri + E4 bad-bishop/rook-on-7th (ORTOGONAL terimler), sonra BUNDLE
+SPRT `9c4f6d1` vs blok-sonu HEAD — bkz. "SUB-5 TERİM STRATEJİSİ" (kullanıcı kararı:
+sub-5 terimler tek tek certify edilemez, blok sonunda toplu doğrulanır).** NNUE bu
+repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+**SON (2026-07-16): Blok E4 outpost `47fada6` KOŞULLU KABUL. SPRT base `9c4f6d1`:
+10.000 oyun TAVAN, W-D-L 2749-4638-2613, Elo +4.7 ± 5.0, LOS %96.8, LLR 1.72 (2.94'ün
+%58'i, yükseliyordu), beraberlik %46.4, renk 5000/5000. SABIR DERSİ: 1319 oyunda tablo
+−0.3 ± 13.9 / LOS %48.5 idi ve "nötr" görünüyordu — ama beklenti bandı (+3-12) hata
+payının TAMAMEN içindeydi, yani hipotez test edilmemişti; 10k'da +4.7/LOS %96.8 (LMP
+emsali: 247 oyunda düz, +34.5 bitti). YENİ TEKNİK: **ağırlık=0 hilesi** — sezgisel eval
+teriminin ağırlıklarını EvalFile ile 0 yap -> eval baseline ile sayısal özdeş -> düğüm
+BİREBİR çıkmalı (962829/714878 birebir çıktı) => yan-etki kapısı + temiz nps ölçümü
+(kirli −%4.8 yerine gerçek ~%1.5). ÇÜRÜTÜLEN TAHMİN: "terim EG'de şişer" YANLIŞ —
+ateşleme fazlar arası düz (%2.49/%2.70), çünkü kovulabilirlik gevşerken (rank_ok
+%27->%52) piyon desteği zorlaşıyor (support_ok %47->%20). Rook-on-7th kategori gereği
+ERTELENDİ (kale PST'si zaten 7. sıraya +10 -> kısmen yeniden-ifade).**
 **EN KRİTİK DERS (2026-07-16): ORTOGONAL sinyal GEÇER; zaten-yakalanan sinyalin
 YENİDEN-İFADESİ ya da FROZEN kalibre alt-sisteme (SafetyTable / cp marjları) enjeksiyon
 KALIR. Yeni terimde ÖNCE sor: "bu sinyal başka yerde sayılıyor mu / kalibre-dondurulmuş
