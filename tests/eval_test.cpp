@@ -426,6 +426,75 @@ TEST(Eval, RookBehindPasserSymmetry) {
     EXPECT_EQ(eg2, -eg1);
 }
 
+// --- Kötü fil (bad bishop) ---
+
+// Beyaz fil e4 (AÇIK kare); iki beyaz piyon b3 + g4 aynı renkte (açık) ve BLOKSUZ
+// (önlerindeki b4/g5 boş). Taban ceza piyon başına, bloke yok. Ceza filin sahibinin
+// (beyaz) skorunu DÜŞÜRÜR -> negatif.
+TEST(Eval, BadBishopPenalty) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/8/4B1P1/1P6/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    bad_bishop(b, mg, eg);
+    EXPECT_EQ(mg, -2 * BadBishopMg);  // 2 açık-kare piyon, bloke yok
+    EXPECT_EQ(eg, -2 * BadBishopEg);
+    EXPECT_LT(eg, 0);
+}
+
+// Bloke ek cezası: beyaz fil c4 (açık), beyaz piyon e4 (açık, filin rengi) ve önündeki
+// e5 SİYAH piyonla dolu -> e4 BLOKELİ. Taban + bloke ek ceza uygulanır.
+TEST(Eval, BadBishopBlockedExtra) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("k7/8/8/4p3/2B1P3/8/8/K7 w - - 0 1"));
+    int mg = 0, eg = 0;
+    bad_bishop(b, mg, eg);
+    EXPECT_EQ(mg, -(BadBishopMg + BadBishopBlockedMg));
+    EXPECT_EQ(eg, -(BadBishopEg + BadBishopBlockedEg));
+    EXPECT_LT(BadBishopMg, BadBishopMg + BadBishopBlockedMg);  // bloke ceza EK
+}
+
+// Filin KARŞI rengindeki dost piyonlar sayılmaz: fil e4 (açık), beyaz piyonlar d4 + b2
+// (ikisi de KOYU) -> ceza yok.
+TEST(Eval, BadBishopIgnoresOppositeColorPawns) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/8/3PB3/8/1P6/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    bad_bishop(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+}
+
+// Yalnız KENDİ piyonları: fil e4 (açık), fil renginde (açık) piyonlar c6 + g6 ama
+// hepsi SİYAH (rakip) -> beyazın piyonu yok -> ceza yok.
+TEST(Eval, BadBishopIgnoresEnemyPawns) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/2p3p1/8/4B3/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    bad_bishop(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+}
+
+// Renk simetrisi (dikey ayna + renk takası): beyaz Be4 + Pb3 -> −w. ^56 aynası fil VE
+// piyonu BİRLİKTE koyu kareye taşır (aynı-renk ilişkisi korunur) -> siyah be5 + pb6 ->
+// +w. İki ayrı tahta (anti-vacuity: eg1 != 0), siyah tahta beyazın tam negatifi.
+TEST(Eval, BadBishopSymmetry) {
+    Board white_side;
+    ASSERT_TRUE(white_side.set_fen("4k3/8/8/8/4B3/1P6/8/4K3 w - - 0 1"));
+    int mg1 = 0, eg1 = 0;
+    bad_bishop(white_side, mg1, eg1);
+    EXPECT_EQ(mg1, -BadBishopMg);
+    EXPECT_EQ(eg1, -BadBishopEg);
+    EXPECT_LT(eg1, 0);
+
+    Board black_side;
+    ASSERT_TRUE(black_side.set_fen("4k3/8/1p6/4b3/8/8/8/4K3 b - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    bad_bishop(black_side, mg2, eg2);
+    EXPECT_EQ(mg2, -mg1);
+    EXPECT_EQ(eg2, -eg1);
+}
+
 // --- Outpost testleri (outpost() yardımcısıyla; PST/materyal gürültüsü yok) ---
 
 // Beyaz at d5: c4 piyonu destekliyor, göreli 5. sırada, siyahın d5'in ÖNÜNDEKİ komşu

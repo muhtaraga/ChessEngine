@@ -44,6 +44,8 @@ EvalParams make_default_eval_params() {
     p.outpost_bishop_mg  = OutpostBishopMg;  p.outpost_bishop_eg  = OutpostBishopEg;
     p.passer_king_escort_eg = PasserKingEscortEg;
     p.rook_behind_passer_eg = RookBehindPasserEg;
+    p.bad_bishop_mg         = BadBishopMg;         p.bad_bishop_eg         = BadBishopEg;
+    p.bad_bishop_blocked_mg = BadBishopBlockedMg;  p.bad_bishop_blocked_eg = BadBishopBlockedEg;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
@@ -141,6 +143,8 @@ struct AttackEval {
     int thr_eg = 0;
     int out_mg = 0;  // outpost (desteklenen + kovulamayan ileri at/fil; tapered)
     int out_eg = 0;
+    int bb_mg  = 0;  // kötü fil (fil-renginde dost piyonlar + blokeli ek; tapered)
+    int bb_eg  = 0;
 };
 
 // Bir rengin tüm piyon vuruş karelerinin birleşimi (LERF yön shift'leri; kenar
@@ -224,11 +228,30 @@ AttackEval attack_eval_impl(const Board& b) {
                                              : g_eval.outpost_bishop_eg);
         };
 
+        // Kötü fil: filin durduğu karenin RENGİNDEKİ dost piyonlar. Taban ceza piyon
+        // başına; BLOKELİ olanlara (önündeki kare -renk yönünde- dolu) ek ceza (mobility'nin
+        // hafife aldığı kalıcı yapısal zaafiyet). Ceza o rengin skorunu düşürür.
+        const Bitboard own_pawns = b.pieces[PAWN] & own;
+        auto add_bad_bishop = [&](Square s) {
+            const Bitboard color_mask = SquareColorMask[(file_of(s) + rank_of(s)) & 1];
+            const Bitboard same       = own_pawns & color_mask;
+            if (!same) return;
+            // Bloke: piyonun önündeki kare (beyaz +8, siyah −8) herhangi bir taşla dolu.
+            // occ'u ilerleme yönünün TERSİNE kaydır -> dolu-önlü piyon bitleri hizalanır.
+            const Bitboard blocked = same & (c == WHITE ? (occ >> 8) : (occ << 8));
+            const int pen_mg = g_eval.bad_bishop_mg * popcount(same)
+                             + g_eval.bad_bishop_blocked_mg * popcount(blocked);
+            const int pen_eg = g_eval.bad_bishop_eg * popcount(same)
+                             + g_eval.bad_bishop_blocked_eg * popcount(blocked);
+            r.bb_mg += -sign * pen_mg;
+            r.bb_eg += -sign * pen_eg;
+        };
+
         Bitboard knights = b.pieces[KNIGHT] & own;
         while (knights) { Square s = pop_lsb(knights); add(KNIGHT, knight_attacks(s)); add_outpost(KNIGHT, s); }
 
         Bitboard bishops = b.pieces[BISHOP] & own;
-        while (bishops) { Square s = pop_lsb(bishops); add(BISHOP, bishop_attacks(s, occ)); add_outpost(BISHOP, s); }
+        while (bishops) { Square s = pop_lsb(bishops); add(BISHOP, bishop_attacks(s, occ)); add_outpost(BISHOP, s); add_bad_bishop(s); }
 
         Bitboard rooks = b.pieces[ROOK] & own;
         while (rooks) { Square s = pop_lsb(rooks); add(ROOK, rook_attacks(s, occ)); }
@@ -490,6 +513,14 @@ void outpost(const Board& b, int& mg, int& eg) {
     eg = r.out_eg;
 }
 
+void bad_bishop(const Board& b, int& mg, int& eg) {
+    // İzole test için ince sarmalayıcı; gerçek hesap tek geçişli impl'de
+    // (fil döngüsü mobility/outpost ile paylaşılır).
+    AttackEval r = attack_eval_impl(b);
+    mg = r.bb_mg;
+    eg = r.bb_eg;
+}
+
 void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     // Orta oyun ve oyun sonu puanları ayrı biriktirilir (beyaz bakışıyla).
     int mg = 0;
@@ -531,13 +562,13 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     mg += pmg;
     eg += peg;
 
-    // Mobility + king safety + threats + outpost TEK GEÇİŞTE (paylaşılan at/fil/kale/
-    // vezir atak setleri yeniden üretilmez). mob_mg/eg mobility, ks_mg king safety
-    // (eg 0), thr_mg/eg threats, out_mg/eg outpost. Ayrı ayrı wrapper çağırmakla
-    // BİREBİR aynı toplam.
+    // Mobility + king safety + threats + outpost + bad bishop TEK GEÇİŞTE (paylaşılan
+    // at/fil/kale/vezir atak setleri yeniden üretilmez). mob_mg/eg mobility, ks_mg king
+    // safety (eg 0), thr_mg/eg threats, out_mg/eg outpost, bb_mg/eg kötü fil. Ayrı ayrı
+    // wrapper çağırmakla BİREBİR aynı toplam.
     AttackEval aks = attack_eval_impl(b);
-    mg += aks.mob_mg + aks.ks_mg + aks.thr_mg + aks.out_mg;
-    eg += aks.mob_eg + aks.thr_eg + aks.out_eg;
+    mg += aks.mob_mg + aks.ks_mg + aks.thr_mg + aks.out_mg + aks.bb_mg;
+    eg += aks.mob_eg + aks.thr_eg + aks.out_eg + aks.bb_eg;
 
     // Bishop pair katkısı.
     int bmg = 0, beg = 0;

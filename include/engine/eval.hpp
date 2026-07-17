@@ -213,6 +213,44 @@ inline constexpr int PasserKingEscortEg = 8;
 // (SPRT öncesi kapı) + E7 tuning adayı.
 inline constexpr int RookBehindPasserEg = 20;
 
+// --- KÖTÜ FİL (bad bishop; tapered, EG daha ağır) ---
+// Bir fil, kendi kare-renginde (aynı renk) duran dost piyonlar tarafından
+// "kötüleştirilir": bu piyonlar filin diyagonallerini tıkar, fil onları asla
+// savunamaz/geçemez. Fil başına ceza:
+//   pen = BadBishop{Mg,Eg} * (#fil-renginde dost piyon)
+//       + BadBishopBlocked{Mg,Eg} * (#bunlardan BLOKELİ olan; önündeki kare dolu)
+// Ceza o rengin skorunu düşürür (king_safety danger deseni: += -sign*pen).
+//
+// TAPERED, EG DAHA AĞIR (kullanıcı kararı): kötü fil hem orta oyun hem oyun sonu
+// kavramı, en çok oyun sonunda (piyonlar sabit, fil kalitesi belirleyici). tempo
+// (−18.6, ÜNİFORM kayma) aksine bu pozisyona-bağlı ve kabaca simetrik -> ortalama
+// static_eval'i neredeyse hiç kaydırmaz -> frozen MG marj (RFP/null/futility) kaplin
+// riski düşük (outpost/bishop_pair/threats de tapered ve geçtiler).
+//
+// BLOKELİ piyon AĞIR TARTILIR (kullanıcı kararı — ortogonallik): mobility filin ANLIK
+// tıkalı diyagonallerini zaten sayar (soru 2 riski); bloke piyon ise mobility'nin
+// (tek-ply snapshot) hafife aldığı KALICI yapısal zaafiyet -> en keskin ortogonal sinyal.
+//
+// ÜÇ SORU (bkz. EN KRİTİK DERS): (1) adıyla sayılmıyor — hiçbir terim piyon-fil-rengi
+// ilişkisini saymaz; (2) sonucuyla KISMİ örtüşme (mobility anlık blok) -> bloke-ağırlık
+// bunu azaltır (elle-kontrol: aynı yapıda iyi-renk vs kötü-renk fil pozisyonlarını mevcut
+// eval yalnız ~2 cp ayırıyor, işareti bile ters [PST]; sinyal yeni); (3) işaret DAİMA
+// negatif (fil renginde çok piyon her zaman kötü), tek predicate -> blockade-tarzı
+// işaret-tutarsızlığı yapısal olarak yok.
+//
+// AĞIRLIK ÖLÇÜLEREK KISILDI (SPRT öncesi kapı, geçici enstrümantasyon — commit'te YOK):
+// ilk değer 2/3/3/5 idi -> NET |katkı|/çağrı orta oyunda mg 7.0 / eg 11.0 cp (escort 1.3,
+// outpost 2.0'ın 3-5 katı) ve fil'lerin %99.99'unda ateşliyordu (ortalama 3.77 aynı-renk
+// piyon = NORMAL fil de cezalanıyor). NET işaretli/çağrı ≈ 0 (renk-simetrik -> ölçek
+// KAYMIYOR; tempo/tune-all failure mode'u yapısal yok). Yine de büyüklük yüksek + ayrımcı
+// değil -> modest banda ~yarıya çekildi: 1/2/2/3 (NET |katkı|/çağrı ~mg 3.9 / eg 2.7).
+// Bloke hâlâ ağır (blocked_mg 2>base 1, blocked_eg 3>base 2), EG hâlâ ağır. E7 joint
+// tuning weights'i geri yukarı çıkarabilir (kalibre ile).
+inline constexpr int BadBishopMg        = 1;
+inline constexpr int BadBishopEg        = 2;
+inline constexpr int BadBishopBlockedMg = 2;
+inline constexpr int BadBishopBlockedEg = 3;
+
 // --- King safety ağırlıkları (YALNIZ orta oyun; EG=0 -> taper ile solar) ---
 // Oyun sonunda şah merkeze/aktifliğe yönelir (KingCentralizedInEndgame), güvenlik
 // önemsizleşir; bu yüzden king_safety yalnız MG'ye katkı verir (eg her zaman 0).
@@ -401,6 +439,18 @@ constexpr std::array<std::array<Bitboard, SQUARE_NB>, COLOR_NB> make_passed_mask
     return t;
 }
 
+// Kare rengi maskeleri: koyu kareler (file+rank çift; a1 = koyu = 0), açık kareler
+// tümleyeni. Bad bishop terimi: filin durduğu karenin rengindeki dost piyonları saymak
+// için. [0] = koyu, [1] = açık -> index (file_of(sq)+rank_of(sq))&1 ile seçilir.
+constexpr std::array<Bitboard, 2> make_square_color_masks() {
+    std::array<Bitboard, 2> t{};
+    for (int sq = 0; sq < SQUARE_NB; ++sq) {
+        int f = sq & 7, r = sq >> 3;
+        t[(f + r) & 1] |= Bitboard{1} << sq;
+    }
+    return t;
+}
+
 }  // namespace detail
 
 // Beyaz bakışıyla orta oyun / oyun sonu PST. Siyah için dikey ayna: [pt][sq ^ 56].
@@ -411,6 +461,9 @@ inline constexpr auto PstEg = detail::make_pst_eg();
 inline constexpr auto FileMask         = detail::make_file_masks();
 inline constexpr auto AdjacentFileMask = detail::make_adjacent_file_masks();
 inline constexpr auto PassedMask       = detail::make_passed_masks();
+
+// Kare rengi maskeleri (bad bishop): [0] = koyu kareler, [1] = açık kareler.
+inline constexpr auto SquareColorMask  = detail::make_square_color_masks();
 
 // --- Tunable eval parametreleri (Blok 4: Texel tuning) ---
 // Yukarıdaki elle-seçilmiş constexpr sabitler artık yalnız VARSAYILAN kaynağı;
@@ -457,6 +510,11 @@ struct EvalParams {
     // Kale kendi geçer piyonunun arkasında (tunable). YALNIZ EG. PIYON-SAF DEĞİL
     // (kaleye bağlı) -> pawn cache'e girmez; geçer piyon KÜMESİ cache'ten gelir.
     int rook_behind_passer_eg;                   // eg += w (passer başına, temiz hat)
+
+    // Kötü fil (tunable; frozen sınırın önünde; tapered). PIYON-DIŞI occupancy'ye
+    // (bloke testi) bağlı -> pawn cache'e GİRMEZ (attack_eval_impl'de hesaplanır).
+    int bad_bishop_mg,         bad_bishop_eg;     // fil-renginde dost piyon başına ceza
+    int bad_bishop_blocked_mg, bad_bishop_blocked_eg;  // bunlardan BLOKELİ olana EK ceza
 
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
@@ -544,6 +602,11 @@ void threats(const Board& b, int& mg, int& eg);
 // (tapered). evaluate() akümülatörlerine ekler; izole test edilebilir. Hesap
 // mobility/king_safety/threats ile TEK GEÇİŞTE (attack_eval_impl) yapılır.
 void outpost(const Board& b, int& mg, int& eg);
+
+// Kötü fil katkısı (fil-renginde dost piyonlar + bunlardan blokeli olanlara ek ceza),
+// BEYAZ − SİYAH, MG/EG ayrı (tapered). Negatif = filin sahibi için ceza. Hesap
+// mobility/king_safety/threats/outpost ile TEK GEÇİŞTE (attack_eval_impl); izole test.
+void bad_bishop(const Board& b, int& mg, int& eg);
 
 
 // King safety katkısı (piyon kalkanı + şah bölgesi saldırıları), BEYAZ − SİYAH.
