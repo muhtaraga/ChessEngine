@@ -360,6 +360,72 @@ TEST(Eval, PasserKingEscortSymmetry) {
     EXPECT_GT(eg2, 0);
 }
 
+// --- Kale kendi geçer piyonunun arkasında testleri (yalnız EG; mg her zaman 0) ---
+
+// Beyaz Rd1, beyaz Pd5 (geçer, göreli sıra 5), d2-d4 boş (temiz hat) -> kale piyonun
+// arkasında ve ilerleyişi destekliyor -> eg = RookBehindPasserEg. mg DAİMA 0.
+TEST(Eval, RookBehindPasserBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/3P4/8/8/8/3RK3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    rook_behind_passer(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, RookBehindPasserEg);
+    EXPECT_GT(eg, 0);
+}
+
+// İki eleme: (a) araya taş (Nd3) girince between_bb hattı BLOKLU -> bonus yok; (b) kale
+// piyonun ÖNÜNDE (Rd7, daha yüksek sıra) -> "arkada" değil -> bonus yok. Naif "sütunda
+// dost kale var" implementasyonu ikisinde de yanlışlıkla verirdi; bu testler ayırır.
+TEST(Eval, RookBehindPasserBlockedOrInFront) {
+    Board blocked;
+    ASSERT_TRUE(blocked.set_fen("4k3/8/8/3P4/8/3N4/8/3RK3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    rook_behind_passer(blocked, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+
+    Board in_front;
+    ASSERT_TRUE(in_front.set_fen("4k3/3R4/8/3P4/8/8/8/4K3 w - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    rook_behind_passer(in_front, mg2, eg2);
+    EXPECT_EQ(mg2, 0);
+    EXPECT_EQ(eg2, 0);
+}
+
+// Kapsam kararının testi: RAKİP kale (Rd1 siyah) bizim geçer piyonumuzun (Pd5) arkasında.
+// Option A yalnız KENDİ kaleyi sayar -> beyazın kalesi yok -> etki YOK. (Rakip-kale
+// alt-terimi bilinçle dışarıda: rook_on_file yarı-açık örtüşmesi.)
+TEST(Eval, RookBehindPasserIgnoresEnemyRook) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/3P4/8/8/8/3rK3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    rook_behind_passer(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+}
+
+// Renk simetrisi (dikey ayna + renk takası): beyaz Rb1+Pb5 -> +w; ^56 aynası
+// siyah Rb8+pb4 -> −w. Her iki tahta da terimi ATEŞLER (anti-vacuity: eg1 != 0), ve
+// siyah tahta beyazın tam negatifini vermeli. (Aynı sütunda dikey ayna kale hattını
+// bloklardığından tek tahtada iptal kurgusu vacuous olurdu -> iki ayrı tahta kullanıldı.)
+TEST(Eval, RookBehindPasserSymmetry) {
+    Board white_side;
+    ASSERT_TRUE(white_side.set_fen("4k3/8/8/1P6/8/8/8/1R2K3 w - - 0 1"));
+    int mg1 = 0, eg1 = 0;
+    rook_behind_passer(white_side, mg1, eg1);
+    EXPECT_EQ(mg1, 0);
+    EXPECT_EQ(eg1, RookBehindPasserEg);
+    EXPECT_GT(eg1, 0);
+
+    Board black_side;
+    ASSERT_TRUE(black_side.set_fen("1r2k3/8/8/8/1p6/8/8/4K3 b - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    rook_behind_passer(black_side, mg2, eg2);
+    EXPECT_EQ(mg2, 0);
+    EXPECT_EQ(eg2, -eg1);
+}
+
 // --- Outpost testleri (outpost() yardımcısıyla; PST/materyal gürültüsü yok) ---
 
 // Beyaz at d5: c4 piyonu destekliyor, göreli 5. sırada, siyahın d5'in ÖNÜNDEKİ komşu

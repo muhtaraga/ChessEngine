@@ -182,6 +182,37 @@ inline constexpr int PasserKingEscortEg = 8;
 // (pawn_structure_full + PawnBucket.passed_w/passed_b) — şah mesafesi ve
 // rook-behind-passer için hazır, EXACT ve maliyeti ölçülmüş ~0.
 
+// --- KALE KENDİ GEÇER PİYONUNUN ARKASINDA (rook-behind-passer; YALNIZ oyun sonu) ---
+// Tarrasch kuralı: kaleler geçer piyonun ARKASINA aittir. Kendi kalemiz kendi geçer
+// piyonumuzun DURAK yönünün tersinde (arkasında), aynı sütunda, ARADA taş olmadan
+// (temiz hat) duruyorsa piyonun ilerleyişini destekler:
+//   eg += RookBehindPasserEg   (passer başına en fazla bir kez)
+//
+// YALNIZ EG (mg her zaman 0; escort/king_safety aynası): rook-behind-passer bir oyun
+// sonu kavramı — geçer piyonun terfi yarışı oyun sonunda belirleyicidir; orta oyunda
+// kale aktivitesi/güvenlik baskındır. Yan fayda: frozen MG arama-marjları (RFP/futility/
+// null/razor) kaymaz -> eval-ölçek ↔ arama-marjı bağı sorunu doğmaz.
+//
+// YALNIZ ROOK (vezir değil): sinyali terim adıyla hizalı + temiz tut (vezir mobil,
+// "arkada bekleme" değeri zayıf; Stockfish de güçlü bonusu kaleye verir).
+//
+// KAPSAM = yalnız KENDİ kale (kullanıcı kararı 2026-07-17). Rakip kalenin bizim
+// passer'ımızın arkasında olması (Tarrasch'ın diğer yarısı) bilinçle DIŞARIDA: o alt-terim
+// rakibin rook_on_file YARI-AÇIK bonusuyla kısmen örtüşürdü (soru-2 riski). Escort'un
+// "tek-yönlü max(0,)" disiplininin aynısı: en temiz sinyalle başla.
+//
+// ÜÇ SORU (bkz. EN KRİTİK DERS): (1) adıyla sayılmıyor — rook_on_file yalnız o sütunda
+// dost piyon YOKKEN ateşler; kendi passer'ımızın arkasındaki kale için dost piyon o
+// sütunda VAR -> rook_on_file = 0, sıfır örtüşme. (2) sonucuyla sayılmıyor — aynı piyon
+// yapısı + arkada kale var/yok iki pozisyonu mevcut eval ÖZDEŞ puanlar (kale PST ~düz,
+// rook_on_file kapalı, passed_eg piyon-saf). (3) işaret — tek predicate (kendi kale),
+// daima + (bonus); blockade'in işaret-tutarsızlığı yapısal olarak yok.
+//
+// Göreli sıra >= 3 kapısı (escort ile tutarlı): yalnız ilerlemiş passer'lar (2-3.
+// sırada kale-arkada marjinal). AĞIRLIK ilk elle-seçim, enstrümantasyonla doğrulanır
+// (SPRT öncesi kapı) + E7 tuning adayı.
+inline constexpr int RookBehindPasserEg = 20;
+
 // --- King safety ağırlıkları (YALNIZ orta oyun; EG=0 -> taper ile solar) ---
 // Oyun sonunda şah merkeze/aktifliğe yönelir (KingCentralizedInEndgame), güvenlik
 // önemsizleşir; bu yüzden king_safety yalnız MG'ye katkı verir (eg her zaman 0).
@@ -423,6 +454,10 @@ struct EvalParams {
     // (şah yerine bağlı) -> pawn cache'e girmez; geçer piyon KÜMESİ cache'ten gelir.
     int passer_king_escort_eg;                   // eg += w * max(0, d_rakip − d_kendi)
 
+    // Kale kendi geçer piyonunun arkasında (tunable). YALNIZ EG. PIYON-SAF DEĞİL
+    // (kaleye bağlı) -> pawn cache'e girmez; geçer piyon KÜMESİ cache'ten gelir.
+    int rook_behind_passer_eg;                   // eg += w (passer başına, temiz hat)
+
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
@@ -478,6 +513,15 @@ void passer_king_escort(const Board& b, int& mg, int& eg);
 
 // Asıl sürüm: geçer piyon kümeleri dışarıdan (pawn cache'ten) verilir.
 void passer_king_escort_with(const Board& b, Bitboard passed_w, Bitboard passed_b,
+                             int& mg, int& eg);
+
+// Kale kendi geçer piyonunun arkasında katkısı, BEYAZ − SİYAH. mg HER ZAMAN 0 (yalnız
+// oyun sonu). PIYON-SAF DEĞİL (kaleye bağlı) -> pawn cache'e girmez; geçer piyon kümesi
+// cache'ten gelir (_with sürümü). Bu sarmalayıcı kümeyi kendisi üretir -> YALNIZ izole test.
+void rook_behind_passer(const Board& b, int& mg, int& eg);
+
+// Asıl sürüm: geçer piyon kümeleri dışarıdan (pawn cache'ten) verilir.
+void rook_behind_passer_with(const Board& b, Bitboard passed_w, Bitboard passed_b,
                              int& mg, int& eg);
 
 // Mobility katkısı (at/fil/kale/vezir ulaşılabilir kare sayısı), BEYAZ − SİYAH,

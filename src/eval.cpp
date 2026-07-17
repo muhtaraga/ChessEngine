@@ -43,6 +43,7 @@ EvalParams make_default_eval_params() {
     p.outpost_knight_mg  = OutpostKnightMg;  p.outpost_knight_eg  = OutpostKnightEg;
     p.outpost_bishop_mg  = OutpostBishopMg;  p.outpost_bishop_eg  = OutpostBishopEg;
     p.passer_king_escort_eg = PasserKingEscortEg;
+    p.rook_behind_passer_eg = RookBehindPasserEg;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
@@ -376,6 +377,59 @@ void passer_king_escort(const Board& b, int& mg, int& eg) {
     passer_king_escort_with(b, pw, pb, mg, eg);
 }
 
+void rook_behind_passer_with(const Board& b, Bitboard passed_w, Bitboard passed_b,
+                             int& mg, int& eg) {
+    mg = 0;  // YALNIZ oyun sonu terimi (taper ile orta oyunda solar)
+    eg = 0;
+
+    const Bitboard occ = b.occupancy();
+    const Bitboard wr  = b.pieces[ROOK] & b.colors[WHITE];
+    const Bitboard br  = b.pieces[ROOK] & b.colors[BLACK];
+
+    // Passer başına: aynı sütunda, ARKADA, arada taş OLMADAN dost kale var mı?
+    // "Arkada" = piyonun ilerleyiş yönünün TERSİ (beyaz: daha düşük sıra; siyah:
+    // daha yüksek sıra). between_bb temiz-hat testini verir -> istiflenmiş kalede
+    // yalnız yakın olan (arası boş) sayılır, passer başına en fazla bir bonus.
+    Bitboard w = passed_w;
+    while (w) {
+        Square s = pop_lsb(w);
+        if (rank_of(s) < 3) continue;  // göreli sıra < 4 -> kale-arkada marjinal
+        Bitboard rooks = wr & FileMask[file_of(s)];
+        while (rooks) {
+            Square r = pop_lsb(rooks);
+            if (rank_of(r) >= rank_of(s)) continue;      // önde ya da aynı -> arkada değil
+            if ((between_bb(r, s) & occ) == 0) {         // temiz hat
+                eg += g_eval.rook_behind_passer_eg;
+                break;                                   // passer başına bir kez
+            }
+        }
+    }
+
+    Bitboard bb = passed_b;
+    while (bb) {
+        Square s = pop_lsb(bb);
+        if (7 - rank_of(s) < 3) continue;
+        Bitboard rooks = br & FileMask[file_of(s)];
+        while (rooks) {
+            Square r = pop_lsb(rooks);
+            if (rank_of(r) <= rank_of(s)) continue;      // siyah "arkada" = daha yüksek sıra
+            if ((between_bb(r, s) & occ) == 0) {
+                eg -= g_eval.rook_behind_passer_eg;
+                break;
+            }
+        }
+    }
+}
+
+void rook_behind_passer(const Board& b, int& mg, int& eg) {
+    // İzole test için ince sarmalayıcı: kümeyi kendisi üretir (aramada bu yol
+    // KULLANILMAZ — orada küme pawn cache'ten gelir).
+    int      pmg = 0, peg = 0;
+    Bitboard pw = 0, pb = 0;
+    pawn_structure_full(b, pmg, peg, pw, pb);
+    rook_behind_passer_with(b, pw, pb, mg, eg);
+}
+
 void bishop_pair(const Board& b, int& mg, int& eg) {
     mg = 0;
     eg = 0;
@@ -503,6 +557,11 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     passer_king_escort_with(b, passed_w, passed_b, kdmg, kdeg);
     eg += kdeg;
 
+    // Kale kendi geçer piyonunun arkasında: escort gibi kaleye bağlı (cache'e giremez)
+    // ama geçer piyon kümesi yukarıda cache'ten geldi -> yeniden üretim yok. mg katkısı hep 0.
+    int rbmg = 0, rbeg = 0;
+    rook_behind_passer_with(b, passed_w, passed_b, rbmg, rbeg);
+    eg += rbeg;
 
     mg_white = mg;
     eg_white = eg;
