@@ -1227,7 +1227,39 @@ kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı d
         predicate + iki sabit var. 5 test (152->157; OutpostKnightBonus'un 2. tahtası
         ANTI-VACUITY: siyah piyon d5'in ARKASINDA -> bonus bozulmamalı; öne-kısıtını unutan
         naif implementasyonu yakalayan TEK test). NNUE cherry-pick ADAYI (bundle H1 sonrası).
-- [ ] **Bad bishop** (kendi renginde piyon sayısı).
+- [~] **Bad bishop (kendi renginde piyon sayısı) — KOŞULLU KABUL (SPRT sub-5 pozitif,
+      certify EDİLMEDİ), commit `75a5f17`, 172 test. BASELINE `167ade2` KOŞULLU (H1 DEĞİL).**
+      **SPRT base `167ade2` vs new `75a5f17` (1-thread, 5+0.05, elo0=0/elo1=5): 10779 oyun,
+      W-D-L 3022-4863-2894, Elo +4 ± 4.9, LOS %94.7, LLR 1.22 (2.94'e sürünüyordu, kullanıcı
+      durdurdu).** OUTPOST DESENİNİN BİREBİR AYNISI (outpost +4.7 ± 5.0, LOS %96.8, LLR 1.72
+      @10k) -> sub-5 etki 0/5 sınırında tek başına certify EDİLEMEZ (Blok 1/3 Ders 3).
+      Koşullu tutuldu (LOS %94.7 > %50 + nokta tahmini +); blok sonu BUNDLE SPRT'ye
+      (base `9c4f6d1`) girer. "H1 KABUL" DİYE ETİKETLENMEDİ (kayıt dürüstlüğü, king safety
+      `7eea85f` / outpost emsali).
+      - **Mekanik:** tapered (EG-ağır), E1'in birleşik attack-pass'ine fold (`attack_eval_impl`
+        `bb_mg/bb_eg`; fil döngüsünde `add_bad_bishop` lambda, own/sign/occ paylaşır). Fil
+        başına ceza: `BadBishop{Mg,Eg} * (#fil-renginde dost piyon) + BadBishopBlocked{Mg,Eg}
+        * (#bunlardan blokeli)`, `+= -sign*pen` (king_safety danger deseni). Yeni
+        `SquareColorMask` constexpr (koyu/açık). 4 skaler frozen sınır ÖNÜNE (tunable;
+        `eval_frozen_start` 826->830, FrozenBoundary son-tunable "bad_bishop_blocked_eg").
+      - **Kullanıcı kararları:** (a) tapered EG-ağır (outpost/threats gibi; pozisyona-bağlı +
+        renk-simetrik -> tempo/tune-all ölçek-kayması failure mode'u yapısal yok); (b) blocked
+        ağır tartılır (mobility'nin -tek-ply snapshot- hafife aldığı KALICI yapısal zaafiyet).
+      - **ÜÇ SORU DA GEÇTİ:** (1) adıyla sayılmıyor; (2) already-priced elle-kontrol: aynı
+        yapıda iyi-renk vs kötü-renk fil pozisyonlarını mevcut eval yalnız ~2 cp ayırıyor
+        (işareti bile ters, PST) -> sinyal YENİ, mobility yeniden-ifadesi değil; (3) işaret
+        daima negatif, tek predicate -> blockade işaret-tutarsızlığı yok.
+      - **AĞIRLIK ENSTRÜMANTASYONLA KISILDI (SPRT öncesi kapı):** ilk 2/3/3/5 -> NET |katkı|/
+        çağrı orta oyun mg 7.0 / eg 11.0 cp (escort 1.3 / outpost 2.0'ın 3-5 katı) + fil'lerin
+        %99.99'unda ateşliyor (ort 3.77 aynı-renk piyon = normal fil de cezalanıyor). NET
+        işaretli/çağrı ≈ 0 (renk-simetrik -> ölçek kaymıyor). Modest banda çekildi: **1/2/2/3**
+        (NET ~mg 3.9 / eg 2.7; blocked hâlâ ağır 2>1, 3>2; EG hâlâ ağır). Kısılmış ağırlık
+        aramayı baseline'a çok yakın tuttu (startpos d13 default 1202491 vs baseline 1121128,
+        +%7, bestmove b1c3 AYNI; 2/3/3/5 -%30 + farklı bestmove veriyordu). E7 joint tuning adayı.
+      - Kapılar: 167->172 test (BadBishopPenalty / BlockedExtra / IgnoresOppositeColor /
+        IgnoresEnemyPawns / Symmetry; Debug+Release geçti). Perft birebir. Ağırlık=0 düğüm-
+        eşitliği: EvalFile ile dört ağırlık 0 -> startpos d13 1121128/cp27/PV = `167ade2`
+        birebir (sıfır yan-etki). NNUE cherry-pick ADAYI (bundle H1 sonrası).
 - [ ] **Rook on 7th / connected rooks / rook trapped by king**. **DİKKAT (kategori):** kale
       PST'si ZATEN 7. sıranın tamamına +10 veriyor (`RawPST[ROOK]` satır 2) -> kısmen
       "yeniden-ifade" sınıfı; outpost bu yüzden bilinçle ÖNE alındı. Denenecekse gate
@@ -1299,12 +1331,28 @@ DEVAM: BLOK E1 (altyapı+hız) TAM TAMAM, BLOK E2 Commit 1 (threats/hanging) KAB
 (iki deneme H0/nötr, kategori kanıtı aleyhte). **BLOK E3 rook-behind-passer (kale geçer
 piyon arkasında) KABUL -> YENİ BASELINE `167ade2`, 167 test** (SPRT H1 TAM KABUL: +7.5 ±
 5.7, LOS %99.5, LLR 2.97/7741 oyun — E3'ün İKİNCİ geçen terimi; +7.5 > elo1 -> tek başına
-certify). Öncesi BLOK E3 şah eskortu KABUL -> `8b60653` (+6.3 ± 5.0, LOS %99.4). Öncesi
-BLOK E4 outpost KOŞULLU KABUL -> `47fada6`, 157 test (SPRT 10k tavan: +4.7 ± 5.0, LOS
-%96.8, LLR 1.72 — H1 DEĞİL). **SIRADAKİ İŞ: E4 bad-bishop + connected-rooks (ORTOGONAL
-terimler), sonra koşullu outpost için BUNDLE SPRT `9c4f6d1` vs blok-sonu HEAD — bkz.
-"SUB-5 TERİM STRATEJİSİ" (escort + rook-behind sınırın üstünde çıkıp tek başına certify
-etti, bundle'a girmez).** NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+certify). Öncesi BLOK E3 şah eskortu KABUL -> `8b60653` (+6.3 ± 5.0, LOS %99.4). **BLOK E4
+bad bishop KOŞULLU KABUL (sub-5 pozitif, certify EDİLMEDİ) -> commit `75a5f17`, 172 test;
+HEAD koşullu (baseline yine `167ade2`).** SPRT base `167ade2` vs new `75a5f17`: 10779 oyun,
+Elo +4 ± 4.9, LOS %94.7, LLR 1.22 (kullanıcı durdurdu) — OUTPOST DESENİ (sub-5, 0/5'te tek
+certify olmaz). Öncesi BLOK E4 outpost KOŞULLU KABUL -> `47fada6`, 157 test (10k tavan:
++4.7 ± 5.0, LOS %96.8, LLR 1.72 — H1 DEĞİL). **SIRADAKİ İŞ: E4 connected-rooks (son ORTOGONAL
+E4 terimi), sonra koşullu outpost+bad-bishop için BUNDLE SPRT `9c4f6d1` vs blok-sonu HEAD —
+bkz. "SUB-5 TERİM STRATEJİSİ" (escort + rook-behind sınırın üstünde çıkıp tek başına certify
+etti, bundle'a girmez; outpost + bad-bishop koşullu -> bundle'da certify).** NNUE bu repoda
+YOK, ayrı repoda (`../ChessEngineNNUE`).**
+**SON (2026-07-18): Blok E4 bad bishop (kötü fil) KOŞULLU KABUL. SPRT base `167ade2` vs new
+`75a5f17`: 10779 oyun, W-D-L 3022-4863-2894, Elo +4 ± 4.9, LOS %94.7, LLR 1.22 (2.94'e
+sürünüyordu, kullanıcı durdurdu). OUTPOST DESENİNİN BİREBİR AYNISI (+4.7/LOS %96.8/LLR 1.72
+@10k) -> sub-5 etki 0/5 sınırında certify EDİLEMEZ (Blok 1/3 Ders 3). Koşullu tutuldu, "H1
+KABUL" DEĞİL; HEAD `75a5f17`, baseline yine `167ade2`; blok sonu BUNDLE SPRT'ye (base
+`9c4f6d1`) girer. Tapered EG-ağır, fil-renginde dost piyon başına ceza + blokeli ek; E1
+attack-pass'ine fold; yeni SquareColorMask; 4 skaler frozen sınır önüne (826->830). ÜÇ SORU
+DA GEÇTİ (already-priced elle-kontrol: iyi-renk vs kötü-renk fil mevcut evalde yalnız ~2 cp,
+işaret ters -> sinyal yeni). AĞIRLIK ENSTRÜMANTASYONLA 2/3/3/5 -> 1/2/2/3'e kısıldı (NET
+|katkı|/çağrı mg 7->3.9 / eg 11->2.7; sum/çağrı ≈0 -> ölçek kaymıyor; %99.99 fil ateşliyordu).
+Kapılar: 172 test, perft birebir, ağırlık=0 düğüm-eşitliği (startpos d13 1121128/cp27 =
+`167ade2`). NNUE cherry-pick ADAYI (bundle H1 sonrası). Ayrıntı: Blok E4 bad bishop girişi.**
 **SON (2026-07-17): Blok E3 rook-behind-passer (kale kendi geçer piyonunun arkasında) KABUL.
 SPRT base `8b60653` vs new `167ade2`: 7741 oyun, W-D-L 2172-3564-2005, Elo +7.5 ± 5.7, LOS
 %99.5, LLR 2.97 (2.94'ü GEÇTİ) TAM KABUL -> YENİ BASELINE `167ade2`, 167 test. E3'ün İKİNCİ
