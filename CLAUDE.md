@@ -830,6 +830,22 @@ denemek yerine ya ORTOGONAL bir terime geç ya da o alt-sistemi joint tune et (E
 Emsal-genişletme: H0 çıkan bir terimi "sabiti düzeltip" retry etme (capture-history:
 node-pozitif yapıldı, Elo yine −16 — sorun sabit değil KATEGORİ).
 
+**DERSİN RAFİNESİ (2026-07-17, protected passer −22.1'den): sinyali ADIYLA değil
+SONUCUYLA ara.** Protected passer'da kategori testi uygulandı ve "korunan geçer piyonu
+bilen bir terim yok" diye GEÇTİ — cevap doğruydu ama SORU yanlıştı. Doğru soru: **"bu
+özelliğin SONUCU zaten fiyatlanmış mı?"** Korunan geçer piyon inşa gereği asla izole
+değildir -> izole terimi o yapıyı zaten +30 EG ödüllendiriyordu; terim bunu %60 büyüttü
+ve −22 verdi. **Korelasyonlu vekil terimler de "zaten sayılıyor" demektir**; farklı
+isimli bir terim aynı sinyali taşıyor olabilir. Yeni terimde: aynı yapıya sahip iki
+pozisyonu elle eval'leyip mevcut eval'in onları ZATEN ne kadar ayırdığını hesapla —
+ayrım zaten büyükse terim yeniden-ifadedir.
+**İKİ KAPI DA GEREKLİ AMA HİÇBİRİ YETERLİ DEĞİL:** (a) enstrümantasyon (ateşleme/
+büyüklük) ORTOGONALLİĞE KÖRDÜR — protected passer'da "SAĞLIKLI" dedi (%20 ateşleme,
+2.14 cp) ve terim −22 verdi; (b) ağırlık=0 düğüm-eşitliği yalnız YAN ETKİ yokluğunu
+kanıtlar, terimin DOĞRU şeyi ölçtüğünü değil. **ANOMALİ SİNYALİ: ortalama katkısı ~2 cp
+olan bir terim −22 Elo veremez — veriyorsa sinyal zaten sayılıyordur.** Bu oran (etki
+büyüklüğü vs Elo hasarı) tutarsızsa kategoriyi yeniden sorgula.
+
 **Metodoloji (mevcut disiplin): her terim ayrı commit + ayrı SPRT.** Kabul kapısı
 Elo; düğüm sayısı Elo proxy'si DEĞİL (Blok 2/6 dersi). Bağımsız sezgiselleri tek
 SPRT'de PAKETLEME (Blok 1/3 dersi). Mütevazı terim = çok oyun ister (razoring/LMP
@@ -941,12 +957,62 @@ rafineleri, outpost, rook-on-7th) — kategori kanıtı (EN KRİTİK DERS) bunla
 king-safety rafinelerinin ÖNÜNE koyuyor: yeni eksene bilgi ekliyorlar, dondurulmuş
 alt-sisteme enjeksiyon değiller. Mobility quality (orta güven) ve E7 king-safety
 joint tuning sonraya.
-**DURUM (2026-07-16): outpost (E4) KOŞULLU KABUL EDİLDİ -> `47fada6` (koşullu baseline,
-157 test); EN KRİTİK DERS'in ortogonal-sınıf öngörüsü bir kez daha tuttu (+4.7 ± 5.0,
-LOS %96.8). Kalan somut iş: E3 passed-pawn rafineleri + E4 bad-bishop/rook-on-7th, sonra
-BUNDLE SPRT (`9c4f6d1` vs blok-sonu HEAD) — bkz. "SUB-5 TERİM STRATEJİSİ" aşağıda.**
+**DURUM (2026-07-17): outpost (E4) KOŞULLU KABUL -> `47fada6` (koşullu baseline, 158 test);
+EN KRİTİK DERS'in ortogonal-sınıf öngörüsü tuttu (+4.7 ± 5.0, LOS %96.8). E3'ün ilk
+terimi (korunan geçer piyon) DENENDİ ve H0 TAM RED (−22.1 ± 12.6) -> RAFA; kök sebep
+YENİDEN-İFADE (izole terimi o yapıyı zaten ödüllendiriyor) -> bkz. "DERSİN RAFİNESİ"
+yukarıda. Kalan somut iş: E3 blockade / şah mesafesi / rook-behind-passer (ÖNCE geçer-piyon
+kare setini cache dışına taşıyan önkoşul commit'i; koruma testi `SamePawnsDifferentPieces
+NotStale` hazır) + E4 bad-bishop, sonra BUNDLE SPRT (`9c4f6d1` vs blok-sonu HEAD) —
+bkz. "SUB-5 TERİM STRATEJİSİ" aşağıda. **UYARI: kalan E3 terimlerinin de aynı
+yeniden-ifade tuzağına düşüp düşmediğini ÖNCE kontrol et** — özellikle "connected/phalanx
+pawns" ve "backward pawns" izole/çift terimleriyle örtüşme riski taşıyor (protected
+passer emsali: örtüşme İNŞA GEREĞİ olabilir, ölçümle değil muhakemeyle bulunur).**
 
 *Blok E3 — Piyon yapısı derinleştirme (E1 pawn hash sonrası):*
+- [~] **Korunan geçer piyon (protected passer) — DENENDİ, RAFA KALDIRILDI (SPRT H0 TAM
+      RED). `5e302b6` -> revert `f0a1c2d`; eval kaynakları `47fada6`'ya BİREBİR
+      (`git diff 47fada6 -- include/engine/eval.hpp src/eval.cpp src/eval_params.cpp
+      tests/eval_test.cpp` boş; düğüm birebir: startpos d13 = 1121128, cp 27, PV özdeş).**
+      **SPRT base `47fada6` vs new `5e302b6`: 1621 oyun, W-D-L 402-714-505, Elo −22.1 ±
+      12.6, LOS %0, LLR −2.96 TAM RED.** Dost piyonun vurduğu karedeki geçer piyona düz
+      bonus (10/18). Piyon-saf -> pawn cache'e girdi, sıfır altyapı.
+      - **KÖK SEBEP: YENİDEN-İFADE (kategori), sabit değil. Kanıt İNŞA GEREĞİ, ölçüm
+        değil: korunan geçer piyon TANIMI GEREĞİ ASLA İZOLE DEĞİLDİR** — koruyucu komşu
+        sütunda olmak zorunda (d5'i koruyan c4), yani `wp & AdjacentFileMask[file]` daima
+        dolu -> izole cezası zaten uygulanmıyor. Üstelik koruyucu piyonun kendisi de
+        genelde geçer -> kendi sıra bonusunu da alıyor. Sayıyla (EG, aynı iki piyon):
+        c4+d5 **zinciri** = passed[3] 35 + passed[4] 60 + izole cezası YOK = **95**;
+        a4+d5 **ayrık** = 35 + 60 − 15 − 15 = **65**. Yani eval "piyonlar birbirini
+        destekliyor" yapısını **zaten +30 EG ödüllendiriyordu** (izole terimi üzerinden);
+        +18 EG eklemek bu farkı %60 büyüttü, SIFIR yeni bilgiyle.
+      - **KATEGORİ TESTİ FAZLA DAR UYGULANDI (asıl ders, EN KRİTİK DERS'e işlendi):**
+        "korunan geçer piyonu bilen bir terim var mı?" diye soruldu, cevap doğru olarak
+        "yok"tu. Sorulması gereken: **"korunan olmanın SONUCU zaten fiyatlanmış mı?"**
+        Sinyal ADIYLA arandı, SONUCUYLA değil -> korelasyonlu vekil terim (izole) gözden
+        kaçtı. Bu, ölçüm hatası değil muhakeme hatası.
+      - **ENSTRÜMANTASYON KAPISI ORTOGONALLİĞE KÖR (gate tasarımı dersi):** ateşleme
+        oranı + büyüklük "no-op mu / dominant mı?" sorusunu cevaplar, "bu sinyal zaten
+        sayılıyor mu?" sorusunu CEVAPLAYAMAZ. Ölçüm "SAĞLIKLI" dedi (oyun sonu: %20
+        ateşleme, abs/çağrı 2.14 cp, sum/çağrı 0.79 cp; orta oyun: %3.70 / 0.38 cp) ve
+        terim yine −22 verdi. **Anomali erken uyarıydı ve kaçırıldı: ortalama katkısı
+        ~2 cp olan bir terim −22 Elo veremez — meğer sinyal zaten sayılıyor olmasın.**
+        Kapı gerekli ama YETERLİ DEĞİL; kategori muhakemesinin yerine geçmez.
+      - **İkincil katkı:** terim, İLERLEYİNCE YOK OLAN statik bir yapıyı ödüllendiriyor
+        (d5->d6 gidince c4 artık korumuyor -> −18) -> geçer piyonu itmeyi caydırıyor,
+        hem de en çok ateşlediği fazda (oyun sonu), yani itmenin oyun kazandığı yerde.
+      - **SABİT DÜZELTİP RETRY YOK** (kategori kuralı; capture-history emsali).
+        Ölçüm karakteri kayda değer: korunan/geçer oranı fazlar arası SABİT (%10.4 orta
+        oyun / %11.8 oyun sonu) — değişen şey geçer piyon SAYISI (0.38 -> 1.81/çağrı).
+      - **KORUNDU (latent, terime bağlı değil):** `tests/pawn_table_test.cpp`
+        **`SamePawnsDifferentPiecesNotStale`** — pawn_key yalnız PİYONları içerir, aynı
+        piyonlu iki FARKLI pozisyon AYNI cache girişini paylaşır; bu test piyon-DIŞI bir
+        terimin `pawn_structure`'a sızmasını (aşağıdaki TUZAK) yakalar. Mevcut
+        `CachedEqualsRaw` yakalayamaz (her FEN'den önce cache'i temizler -> giriş
+        paylaşımı hiç test edilmiyor). 157 -> 158 test. TUZAK (yaşandı): ilk FEN seçimi
+        (at b6 vs g6) BOŞ GEÇİYORDU — at PST'si sol-sağ simetrik, iki pozisyon birebir
+        aynı değerleniyordu (−13 vs −13); `ASSERT_NE` anti-vacuity guard'ı yakaladı,
+        kareler KÖŞE (h8) vs MERKEZ (d4) yapıldı.
 - [ ] **Passed pawn rafineleri** (ayrı commit'ler): blockade, şah mesafesi
       (dost+rakip), rook-behind-passer, connected/protected passer, unstoppable/free
       passer. Beklenti +10-25 dağınık. **TUZAK (pawn-hash-cache): blockade / şah-mesafesi
@@ -1092,7 +1158,20 @@ E3 passed-pawn rafineleri + E4 bad-bishop/rook-on-7th (ORTOGONAL terimler), sonr
 SPRT `9c4f6d1` vs blok-sonu HEAD — bkz. "SUB-5 TERİM STRATEJİSİ" (kullanıcı kararı:
 sub-5 terimler tek tek certify edilemez, blok sonunda toplu doğrulanır).** NNUE bu
 repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
-**SON (2026-07-16): Blok E4 outpost `47fada6` KOŞULLU KABUL. SPRT base `9c4f6d1`:
+**SON (2026-07-17): Blok E3 korunan geçer piyon (protected passer) DENENDİ, RAFA
+KALDIRILDI. SPRT base `47fada6` vs new `5e302b6`: 1621 oyun, W-D-L 402-714-505, Elo
+−22.1 ± 12.6, LOS %0, LLR −2.96 TAM RED -> eval kaynakları `47fada6`'ya birebir geri
+alındı (düğüm 1121128/cp27/PV özdeş); 158 test (cache koruma testi latent olarak KORUNDU).
+KÖK SEBEP YENİDEN-İFADE, sabit değil, ve kanıt İNŞA GEREĞİ: korunan geçer piyon TANIMI
+GEREĞİ asla izole değil (koruyucu komşu sütunda olmak zorunda) -> izole terimi o yapıyı
+zaten +30 EG ödüllendiriyordu (c4+d5 zinciri 95 vs a4+d5 ayrık 65, EG); +18 eklemek
+farkı %60 büyüttü, sıfır yeni bilgiyle. DERSİN RAFİNESİ (EN KRİTİK DERS'e işlendi):
+sinyali ADIYLA değil SONUCUYLA ara — "korunan geçer piyonu bilen terim var mı?" doğru
+cevaplandı ama YANLIŞ SORUYDU; doğrusu "korunan olmanın SONUCU zaten fiyatlanmış mı?".
+İKİ KAPI DA YETERSİZ: enstrümantasyon ortogonalliğe KÖR ("SAĞLIKLI" dedi: oyun sonu %20
+ateşleme / 2.14 cp; yine −22), ağırlık=0 düğüm-eşitliği yalnız yan-etki yokluğunu kanıtlar.
+ANOMALİ SİNYALİ (kaçırıldı): ~2 cp ortalama katkılı terim −22 Elo veremez.**
+**ÖNCESİ (2026-07-16): Blok E4 outpost `47fada6` KOŞULLU KABUL. SPRT base `9c4f6d1`:
 10.000 oyun TAVAN, W-D-L 2749-4638-2613, Elo +4.7 ± 5.0, LOS %96.8, LLR 1.72 (2.94'ün
 %58'i, yükseliyordu), beraberlik %46.4, renk 5000/5000. SABIR DERSİ: 1319 oyunda tablo
 −0.3 ± 13.9 / LOS %48.5 idi ve "nötr" görünüyordu — ama beklenti bandı (+3-12) hata

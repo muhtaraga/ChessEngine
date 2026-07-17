@@ -33,7 +33,6 @@ EvalParams make_default_eval_params() {
         p.passed_mg[i] = PassedBonusMg[i];
         p.passed_eg[i] = PassedBonusEg[i];
     }
-    p.protected_passer_mg = ProtectedPasserMg; p.protected_passer_eg = ProtectedPasserEg;
     p.bishop_pair_mg = BishopPairMg; p.bishop_pair_eg = BishopPairEg;
     p.rook_open_mg   = RookOpenMg;   p.rook_open_eg   = RookOpenEg;
     p.rook_semi_mg   = RookSemiMg;   p.rook_semi_eg   = RookSemiEg;
@@ -61,33 +60,12 @@ int game_phase(const Board& b) {
     return phase > MAX_PHASE ? MAX_PHASE : phase;
 }
 
-namespace {
-
-// Bir rengin tüm piyon vuruş karelerinin birleşimi (LERF yön shift'leri; kenar
-// sütun taşmasını FileMask ile önler). Beyaz yukarı-çapraz (<<7/<<9), siyah
-// aşağı-çapraz (>>9/>>7) vurur. pawn_structure (korunan geçer piyon) + attack_eval_impl
-// (threats/outpost) paylaşır -> ikisinden de ÖNCE tanımlı.
-Bitboard pawn_attack_span(Bitboard pawns, Color c) {
-    const Bitboard not_a = ~FileMask[0];
-    const Bitboard not_h = ~FileMask[7];
-    if (c == WHITE)
-        return ((pawns & not_a) << 7) | ((pawns & not_h) << 9);
-    return ((pawns & not_a) >> 9) | ((pawns & not_h) >> 7);
-}
-
-}  // namespace
-
 void pawn_structure(const Board& b, int& mg, int& eg) {
     mg = 0;
     eg = 0;
 
     const Bitboard wp = b.pieces[PAWN] & b.colors[WHITE];
     const Bitboard bp = b.pieces[PAWN] & b.colors[BLACK];
-
-    // Korunan geçer piyon testi için: her rengin kendi piyonlarının vurduğu kareler.
-    // PIYON-SAF -> pawn_structure saf kalır, pawn hash cache geçerliliğini korur.
-    const Bitboard w_atk = pawn_attack_span(wp, WHITE);
-    const Bitboard b_atk = pawn_attack_span(bp, BLACK);
 
     // --- Çift piyon (doubled): sütun başına sayılır (piyon başına değil, çift
     // sayımı önlemek için). Bir sütunda k piyon varsa (k-1) fazlalık cezalanır.
@@ -116,10 +94,6 @@ void pawn_structure(const Board& b, int& mg, int& eg) {
             int r = rank_of(sq);
             mg += g_eval.passed_mg[r];
             eg += g_eval.passed_eg[r];
-            if (test_bit(w_atk, sq)) {  // dost piyon koruyor -> korunan geçer piyon
-                mg += g_eval.protected_passer_mg;
-                eg += g_eval.protected_passer_eg;
-            }
         }
     }
 
@@ -134,10 +108,6 @@ void pawn_structure(const Board& b, int& mg, int& eg) {
             int r = 7 - rank_of(sq);  // siyah için sıra aynalanır
             mg -= g_eval.passed_mg[r];
             eg -= g_eval.passed_eg[r];
-            if (test_bit(b_atk, sq)) {  // siyahın korunan geçer piyonu -> beyaz −
-                mg -= g_eval.protected_passer_mg;
-                eg -= g_eval.protected_passer_eg;
-            }
         }
     }
 }
@@ -159,6 +129,17 @@ struct AttackEval {
     int out_mg = 0;  // outpost (desteklenen + kovulamayan ileri at/fil; tapered)
     int out_eg = 0;
 };
+
+// Bir rengin tüm piyon vuruş karelerinin birleşimi (LERF yön shift'leri; kenar
+// sütun taşmasını FileMask ile önler). Beyaz yukarı-çapraz (<<7/<<9), siyah
+// aşağı-çapraz (>>9/>>7) vurur.
+Bitboard pawn_attack_span(Bitboard pawns, Color c) {
+    const Bitboard not_a = ~FileMask[0];
+    const Bitboard not_h = ~FileMask[7];
+    if (c == WHITE)
+        return ((pawns & not_a) << 7) | ((pawns & not_h) << 9);
+    return ((pawns & not_a) >> 9) | ((pawns & not_h) >> 7);
+}
 
 AttackEval attack_eval_impl(const Board& b) {
     AttackEval r;
