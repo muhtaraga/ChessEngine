@@ -19,28 +19,41 @@
 namespace engine {
 
 // Lockless-XOR piyon yuvası (TT Bucket deseni). data düşük 32 bit'e mg|eg paketler
-// (her biri int16). key = pawn_key XOR data. Yırtık okumada (k ^ d) != pawn_key ->
-// miss (bozuk giriş kullanılmaz). Tek thread'te round-trip kayıpsız -> EXACT.
-struct alignas(16) PawnBucket {
+// (her biri int16); passed_w/passed_b her rengin geçer piyon KÜMESİ (bitboard).
+// key = pawn_key XOR data XOR passed_w XOR passed_b -> yırtık okumada
+// (k ^ d ^ pw ^ pb) != pawn_key -> miss (bozuk giriş kullanılmaz). Tek thread'te
+// round-trip kayıpsız -> EXACT.
+//
+// Geçer piyon kümesi NEDEN burada: passer rafineleri (blokaj, şah mesafesi,
+// rook-behind-passer) piyon-DIŞI duruma bağlı -> pawn_structure'a giremezler, ama
+// geçer piyon KÜMESİ piyon-saftır. Küme cache'te taşınmazsa her eval'de yeniden
+// üretilir; bu ÖLÇÜLDÜ: %3-5 nps (döviz kuruyla ~-10..-14 Elo) -> kabul edilemez.
+// Yuva 16 -> 32 bayt (2^16 x 32 = 2 MB); cache line'a 2 yuva.
+struct alignas(32) PawnBucket {
     std::atomic<std::uint64_t> key{0};
     std::atomic<std::uint64_t> data{0};
+    std::atomic<std::uint64_t> passed_w{0};
+    std::atomic<std::uint64_t> passed_b{0};
 };
 
 class PawnTable {
 public:
     PawnTable() { clear(); }
 
-    // pawn_key için giriş varsa mg/eg'yi doldurur ve true döner; yoksa false.
-    bool probe(std::uint64_t pawn_key, int& mg, int& eg) const;
+    // pawn_key için giriş varsa mg/eg + geçer piyon kümelerini doldurur ve true
+    // döner; yoksa false.
+    bool probe(std::uint64_t pawn_key, int& mg, int& eg,
+               std::uint64_t& passed_w, std::uint64_t& passed_b) const;
 
     // Girişi saklar (daima ezer; derinlik/yaş yok).
-    void store(std::uint64_t pawn_key, int mg, int eg);
+    void store(std::uint64_t pawn_key, int mg, int eg,
+               std::uint64_t passed_w, std::uint64_t passed_b);
 
     // Tüm girişleri sıfırlar (ucinewgame, eval param değişimi).
     void clear();
 
 private:
-    // 2'nin kuvveti yuva sayısı; index = pawn_key & kMask. 2^16 yuva x 16 bayt = 1 MB.
+    // 2'nin kuvveti yuva sayısı; index = pawn_key & kMask. 2^16 yuva x 32 bayt = 2 MB.
     static constexpr std::size_t kBits = 16;
     static constexpr std::size_t kCount = std::size_t(1) << kBits;
     static constexpr std::size_t kMask = kCount - 1;

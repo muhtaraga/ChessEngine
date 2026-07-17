@@ -55,20 +55,56 @@ TEST(PawnTable, ProbeStoreRoundtrip) {
     PAWN_TABLE.clear();
     const std::uint64_t k = 0x123456789abcdef0ULL;
     int mg = 0, eg = 0;
-    EXPECT_FALSE(PAWN_TABLE.probe(k, mg, eg));  // boş -> miss
-    PAWN_TABLE.store(k, -37, 128);
-    ASSERT_TRUE(PAWN_TABLE.probe(k, mg, eg));
+    std::uint64_t pw = 0, pb = 0;
+    EXPECT_FALSE(PAWN_TABLE.probe(k, mg, eg, pw, pb));  // boş -> miss
+    // Geçer piyon kümeleri de round-trip olmalı (lockless-XOR key onları da içerir).
+    const std::uint64_t set_w = 0x0000001008000000ULL;
+    const std::uint64_t set_b = 0x0000000000240000ULL;
+    PAWN_TABLE.store(k, -37, 128, set_w, set_b);
+    ASSERT_TRUE(PAWN_TABLE.probe(k, mg, eg, pw, pb));
     EXPECT_EQ(mg, -37);
     EXPECT_EQ(eg, 128);
+    EXPECT_EQ(pw, set_w);
+    EXPECT_EQ(pb, set_b);
 }
 
 TEST(PawnTable, ClearEmpties) {
     const std::uint64_t k = 0xdeadbeefcafef00dULL;
-    PAWN_TABLE.store(k, 10, -20);
+    PAWN_TABLE.store(k, 10, -20, 0xffULL, 0xff00ULL);
     int mg = 0, eg = 0;
-    ASSERT_TRUE(PAWN_TABLE.probe(k, mg, eg));
+    std::uint64_t pw = 0, pb = 0;
+    ASSERT_TRUE(PAWN_TABLE.probe(k, mg, eg, pw, pb));
     PAWN_TABLE.clear();
-    EXPECT_FALSE(PAWN_TABLE.probe(k, mg, eg));
+    EXPECT_FALSE(PAWN_TABLE.probe(k, mg, eg, pw, pb));
+}
+
+// Cache'ten dönen geçer piyon kümesi, ham hesapla BİREBİR aynı olmalı. (Blokaj terimi
+// bu kümeye güvenir: küme bozuksa blokaj sessizce yanlış pozisyonlarda ateşler ve
+// evaluate() farkı küçük olduğundan gözden kaçabilir.)
+TEST(PawnTable, CachedPassedSetsMatchRaw) {
+    const std::vector<std::string> fens = {
+        "8/2p2pk1/1p1n2p1/p2P3p/P1P4P/1P3NP1/5PK1/8 w - - 0 35",
+        "6k1/5ppp/8/8/8/8/1P6/6K1 w - - 0 1",
+        "4k3/8/8/3PP3/8/8/8/4K3 w - - 0 1",
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+    };
+    PAWN_TABLE.clear();
+    for (const auto& fen : fens) {
+        Board b;
+        ASSERT_TRUE(b.set_fen(fen));
+
+        int      raw_mg = 0, raw_eg = 0;
+        Bitboard raw_w = 0, raw_b = 0;
+        pawn_structure_full(b, raw_mg, raw_eg, raw_w, raw_b);
+
+        PAWN_TABLE.store(b.pawn_key, raw_mg, raw_eg, raw_w, raw_b);
+        int           mg = 0, eg = 0;
+        std::uint64_t pw = 0, pb = 0;
+        ASSERT_TRUE(PAWN_TABLE.probe(b.pawn_key, mg, eg, pw, pb)) << fen;
+        EXPECT_EQ(pw, raw_w) << fen;
+        EXPECT_EQ(pb, raw_b) << fen;
+    }
+    PAWN_TABLE.clear();
 }
 
 // EXACT: cache açık evaluate() == cache kapalı evaluate() (saf fonksiyon memoizasyonu).
