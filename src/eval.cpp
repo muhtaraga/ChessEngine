@@ -42,7 +42,6 @@ EvalParams make_default_eval_params() {
     p.hanging_mg         = HangingMg;        p.hanging_eg         = HangingEg;
     p.outpost_knight_mg  = OutpostKnightMg;  p.outpost_knight_eg  = OutpostKnightEg;
     p.outpost_bishop_mg  = OutpostBishopMg;  p.outpost_bishop_eg  = OutpostBishopEg;
-    p.blockade_mg        = BlockadeMg;       p.blockade_eg        = BlockadeEg;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
@@ -315,44 +314,6 @@ void mobility(const Board& b, int& mg, int& eg) {
     eg = r.mob_eg;
 }
 
-void passer_blockade_with(const Board& b, Bitboard passed_w, Bitboard passed_b,
-                          int& mg, int& eg) {
-    mg = 0;
-    eg = 0;
-
-    // Beyaz geçer piyonu: durak karesi (s+8) SİYAH taşla doluysa beyaz cezalanır.
-    // Piyon 8. sırada olamaz (promosyon) -> s+8 daima tahta içinde.
-    // Blokajcı asla piyon değildir: rakip piyon orada olsaydı piyonumuz geçer sayılmazdı
-    // (PassedMask kendi sütununun önünü de içerir) -> b.colors[BLACK] testi yeterli.
-    Bitboard w = passed_w;
-    while (w) {
-        Square s = pop_lsb(w);
-        if (test_bit(b.colors[BLACK], static_cast<Square>(static_cast<int>(s) + 8))) {
-            mg -= g_eval.blockade_mg;
-            eg -= g_eval.blockade_eg;
-        }
-    }
-
-    // Siyah geçer piyonu: durak karesi (s-8) BEYAZ taşla doluysa siyah cezalanır
-    // -> beyaz bakışında +. Piyon 1. sırada olamaz -> s-8 daima tahta içinde.
-    Bitboard bb = passed_b;
-    while (bb) {
-        Square s = pop_lsb(bb);
-        if (test_bit(b.colors[WHITE], static_cast<Square>(static_cast<int>(s) - 8))) {
-            mg += g_eval.blockade_mg;
-            eg += g_eval.blockade_eg;
-        }
-    }
-}
-
-void passer_blockade(const Board& b, int& mg, int& eg) {
-    // İzole test için ince sarmalayıcı: kümeyi kendisi üretir (aramada bu yol
-    // KULLANILMAZ — orada küme pawn cache'ten gelir).
-    int      pmg = 0, peg = 0;
-    Bitboard pw = 0, pb = 0;
-    pawn_structure_full(b, pmg, peg, pw, pb);
-    passer_blockade_with(b, pw, pb, mg, eg);
-}
 
 void bishop_pair(const Board& b, int& mg, int& eg) {
     mg = 0;
@@ -475,12 +436,6 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     mg += rmg;
     eg += reg;
 
-    // Geçer piyon blokajı: terim taş yerleşimine bağlı (cache'e giremez) ama geçer
-    // piyon kümesi yukarıda cache'ten geldi -> yeniden üretim yok.
-    int kmg = 0, keg = 0;
-    passer_blockade_with(b, passed_w, passed_b, kmg, keg);
-    mg += kmg;
-    eg += keg;
 
     mg_white = mg;
     eg_white = eg;

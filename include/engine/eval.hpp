@@ -135,22 +135,15 @@ inline constexpr int OutpostKnightEg = 15;
 inline constexpr int OutpostBishopMg = 12;
 inline constexpr int OutpostBishopEg = 8;
 
-// --- Geçer piyon blokajı (blockade) — ceza büyüklüğü (pozitif), MG/EG ayrı ---
-// Geçer piyonun DURAK KARESİNDE (bir ileri) rakip TAŞ duruyorsa piyon ilerleyemez.
-//
-// ORTOGONAL (sonuç-testi de geçer): passed[r] yalnız SIRAYA bakar; piyon mobilitesi
-// eval'de HİÇ YOK (mobility piyonu dışlar) -> "bu piyon takıldı" bilgisi hiçbir yerde
-// yok. Korelasyonlu vekil de yok: blokajcı at d6'da PST bonusunu d5'te beyaz piyon
-// OLSA DA OLMASA DA alır; hiçbir terim "bu taş bir geçer piyonu durduruyor" koşuluna
-// bağlı değil. Outpost ile örtüşmez (blokaj karesi rakip için göreli sıra 2-3, outpost
-// kapısı 4-6). (Protected passer −22.1 emsali: orada izole terimi vekildi — burada yok.)
-//
-// Blokajcı ASLA piyon olamaz: rakip piyon durak karesinde olsaydı piyonumuz zaten geçer
-// sayılmazdı (PassedMask kendi sütununun önünü de içerir) -> blokajcı hep N/B/R/Q/K.
-// Yalnız RAKİP blokajı cezalanır (kendi taşımız önümüzdeyse onu çekebiliriz).
-// Düz ceza (sıra ölçeklemesi passed[r]'de zaten var); E7 tuning adayı.
-inline constexpr int BlockadeMg = 10;
-inline constexpr int BlockadeEg = 20;
+// NOT (2026-07-17): geçer piyon blokajı (blockade) DENENDİ ve RAFA KALDIRILDI —
+// SPRT H0 TAM RED (−12.4 ± 9.8, LOS %0.7, LLR −2.95, 2544 oyun). Kök sebep
+// yeniden-ifade DEĞİL (sinyal gerçekten fiyatlanmamıştı) — predicate İŞARET-TUTARSIZ:
+// at/fil blokajı piyon sahibinin aleyhine ama kale/vezir blokajı muhtemelen LEHİNE
+// (kale pasifleşip piyona bağlanır), ve ölçüm oyun sonunda blokajların %84'ünün
+// kale/vezir olduğunu gösterdi. Ayrıntı + neden varyant denenmediği: CLAUDE.md Blok E3.
+// Bu commit'ten kalan LATENT ALTYAPI: pawn cache'in taşıdığı geçer piyon kümesi
+// (pawn_structure_full + PawnBucket.passed_w/passed_b) — şah mesafesi ve
+// rook-behind-passer için hazır, EXACT ve maliyeti ölçülmüş ~0.
 
 // --- King safety ağırlıkları (YALNIZ orta oyun; EG=0 -> taper ile solar) ---
 // Oyun sonunda şah merkeze/aktifliğe yönelir (KingCentralizedInEndgame), güvenlik
@@ -389,10 +382,6 @@ struct EvalParams {
     int outpost_knight_mg, outpost_knight_eg;    // desteklenen + kovulamayan at
     int outpost_bishop_mg, outpost_bishop_eg;    // desteklenen + kovulamayan fil
 
-    // Geçer piyon blokajı (tunable). PIYON-SAF DEĞİL (taş yerleşimine bağlı) ->
-    // pawn hash cache'li pawn_structure'a GİREMEZ, ayrı terim olarak hesaplanır.
-    int blockade_mg, blockade_eg;                // durak karesi rakip taşla dolu (ceza)
-
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
@@ -461,15 +450,6 @@ void threats(const Board& b, int& mg, int& eg);
 // mobility/king_safety/threats ile TEK GEÇİŞTE (attack_eval_impl) yapılır.
 void outpost(const Board& b, int& mg, int& eg);
 
-// Geçer piyon blokajı katkısı (durak karesinde rakip taş -> o tarafa ceza),
-// BEYAZ − SİYAH, MG/EG ayrı (tapered). PIYON-SAF DEĞİL -> pawn cache'e girmez;
-// ama geçer piyon KÜMESİ cache'ten gelir (aşağıdaki _with sürümü).
-// Bu sarmalayıcı kümeyi kendisi üretir -> yalnız izole test için.
-void passer_blockade(const Board& b, int& mg, int& eg);
-
-// Blokajın asıl sürümü: geçer piyon kümeleri dışarıdan (pawn cache'ten) verilir.
-void passer_blockade_with(const Board& b, Bitboard passed_w, Bitboard passed_b,
-                          int& mg, int& eg);
 
 // King safety katkısı (piyon kalkanı + şah bölgesi saldırıları), BEYAZ − SİYAH.
 // eg her zaman 0 (yalnız orta oyun terimi); mg negatif = beyaz şahı daha güvensiz.

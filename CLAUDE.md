@@ -846,6 +846,19 @@ kanıtlar, terimin DOĞRU şeyi ölçtüğünü değil. **ANOMALİ SİNYALİ: or
 olan bir terim −22 Elo veremez — veriyorsa sinyal zaten sayılıyordur.** Bu oran (etki
 büyüklüğü vs Elo hasarı) tutarsızsa kategoriyi yeniden sorgula.
 
+**ÜÇÜNCÜ HATA SINIFI (2026-07-17, blockade −12.4'ten): İŞARET-TUTARSIZ PREDICATE.**
+Ortogonal olmak YETMİYOR. Blockade kategori testini (adıyla + sonucuyla) GEÇTİ — sinyal
+gerçekten hiçbir yerde fiyatlanmamıştı — ve yine de −12.4 verdi, çünkü predicate **zıt
+işaretli iki alt-kümeyi tek sabitle** cezalandırıyordu (at blokajı piyon sahibinin
+aleyhine, kale blokajı LEHİNE: kale pasifleşip bağlanır). **Yeni terimde ÜÇÜNCÜ soru:
+"bu predicate'in ateşlediği TÜM durumlarda etkinin İŞARETİ aynı mı?"** Değilse tek sabit
+doğru olamaz. Pratik kapı: enstrümantasyona **alt-küme kırılımı** koy (blockade'de
+blokajcı taş türü) — ateşleme oranı ve büyüklük bunu göstermez, kırılım gösterir.
+**Kırılımı SPRT'den ÖNCE ölç ve riski ÖN-KAYIT ET:** blockade'de "%84 kale/vezir, işaret
+orada şüpheli" commit mesajına önceden yazıldı -> H0 gelince teşhis hazırdı, sonradan
+hikâye uydurulmadı. **Bonus: kırılım varyantı da eleyebilir** — blockade'de "minör-only"
+gate'i mevcut sayılardan hesaplandı (%1.36 MG / %0.03 EG -> no-op) ve EK SPRT'siz elendi.
+
 **Metodoloji (mevcut disiplin): her terim ayrı commit + ayrı SPRT.** Kabul kapısı
 Elo; düğüm sayısı Elo proxy'si DEĞİL (Blok 2/6 dersi). Bağımsız sezgiselleri tek
 SPRT'de PAKETLEME (Blok 1/3 dersi). Mütevazı terim = çok oyun ister (razoring/LMP
@@ -957,17 +970,24 @@ rafineleri, outpost, rook-on-7th) — kategori kanıtı (EN KRİTİK DERS) bunla
 king-safety rafinelerinin ÖNÜNE koyuyor: yeni eksene bilgi ekliyorlar, dondurulmuş
 alt-sisteme enjeksiyon değiller. Mobility quality (orta güven) ve E7 king-safety
 joint tuning sonraya.
-**DURUM (2026-07-17): outpost (E4) KOŞULLU KABUL -> `47fada6` (koşullu baseline, 158 test);
-EN KRİTİK DERS'in ortogonal-sınıf öngörüsü tuttu (+4.7 ± 5.0, LOS %96.8). E3'ün ilk
-terimi (korunan geçer piyon) DENENDİ ve H0 TAM RED (−22.1 ± 12.6) -> RAFA; kök sebep
-YENİDEN-İFADE (izole terimi o yapıyı zaten ödüllendiriyor) -> bkz. "DERSİN RAFİNESİ"
-yukarıda. Kalan somut iş: E3 blockade / şah mesafesi / rook-behind-passer (ÖNCE geçer-piyon
-kare setini cache dışına taşıyan önkoşul commit'i; koruma testi `SamePawnsDifferentPieces
-NotStale` hazır) + E4 bad-bishop, sonra BUNDLE SPRT (`9c4f6d1` vs blok-sonu HEAD) —
-bkz. "SUB-5 TERİM STRATEJİSİ" aşağıda. **UYARI: kalan E3 terimlerinin de aynı
-yeniden-ifade tuzağına düşüp düşmediğini ÖNCE kontrol et** — özellikle "connected/phalanx
-pawns" ve "backward pawns" izole/çift terimleriyle örtüşme riski taşıyor (protected
-passer emsali: örtüşme İNŞA GEREĞİ olabilir, ölçümle değil muhakemeyle bulunur).**
+**DURUM (2026-07-17): outpost (E4) KOŞULLU KABUL -> `47fada6` (koşullu baseline, 159 test);
+tek pozitif E3/E4 terimi bu (+4.7 ± 5.0, LOS %96.8). E3'ün İKİ terimi ard arda H0 TAM RED
+oldu — korunan geçer piyon (−22.1, YENİDEN-İFADE) ve blokaj (−12.4, İŞARET-TUTARSIZ
+PREDICATE). İkisi de FARKLI sebeplerden düştü, yani "passer ekseni tükendi" demek için
+erken; ama üç üst üste zorlanma kayda değer.
+**ALTYAPI HAZIR (blokajdan kalan latent kazanç): pawn cache geçer piyon KÜMESİNİ taşıyor**
+(`pawn_structure_full` + `PawnBucket.passed_w/passed_b`, EXACT, maliyet ~0) -> şah mesafesi
+ve rook-behind-passer artık SIFIR altyapı işiyle yazılabilir.
+Kalan somut iş: E3 şah mesafesi / rook-behind-passer + E4 bad-bishop, sonra BUNDLE SPRT
+(`9c4f6d1` vs blok-sonu HEAD) — bkz. "SUB-5 TERİM STRATEJİSİ" aşağıda.
+**YENİ TERİMDE ÜÇ SORUYU DA SOR (bu blokta üçü de ayrı ayrı ısırdı):** (1) sinyal ADIYLA
+sayılıyor mu? (2) SONUCU zaten fiyatlanmış mı — korelasyonlu vekil var mı (protected
+passer: izole terimi)? (3) predicate'in ateşlediği TÜM durumlarda etkinin İŞARETİ aynı mı
+(blockade: at vs kale blokajı zıt)? **UYARI: "connected/phalanx pawns" (2) tuzağına neredeyse
+kesin düşer** — bağlı piyonlar da inşa gereği izole değildir, yani izole terimi onları da
+zaten fiyatlıyor (protected passer'ın birebir aynısı). "Backward pawns" daha umutlu ama
+aynı hesabı ÖNCE yap. **Rook-behind-passer'da (3)'e dikkat**: kendi passer'ının arkasındaki
+kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı düşün.
 
 *Blok E3 — Piyon yapısı derinleştirme (E1 pawn hash sonrası):*
 - [~] **Korunan geçer piyon (protected passer) — DENENDİ, RAFA KALDIRILDI (SPRT H0 TAM
@@ -1013,7 +1033,50 @@ passer emsali: örtüşme İNŞA GEREĞİ olabilir, ölçümle değil muhakemeyl
         (at b6 vs g6) BOŞ GEÇİYORDU — at PST'si sol-sağ simetrik, iki pozisyon birebir
         aynı değerleniyordu (−13 vs −13); `ASSERT_NE` anti-vacuity guard'ı yakaladı,
         kareler KÖŞE (h8) vs MERKEZ (d4) yapıldı.
-- [ ] **Passed pawn rafineleri** (ayrı commit'ler): blockade, şah mesafesi
+- [~] **Geçer piyon blokajı (blockade) — DENENDİ, RAFA KALDIRILDI (SPRT H0 TAM RED).**
+      `af26f8f` -> revert; eval davranışı `47fada6`'ya BİREBİR (düğüm startpos d13 =
+      1121128, cp 27, PV özdeş — EvalFile'sız). **SPRT base `47fada6` vs new `af26f8f`:
+      2544 oyun, W-D-L 633-1187-724, Elo −12.4 ± 9.8, LOS %0.7, LLR −2.95 TAM RED.**
+      Geçer piyonun durak karesinde rakip taş varsa düz ceza (10/20).
+      - **YENİ HATA SINIFI: İŞARET-TUTARSIZ PREDICATE** (yeniden-ifade DEĞİL!). Kategori
+        testi bu kez DOĞRU uygulandı ve terim GEÇTİ: sinyal ne adıyla ne sonucuyla
+        fiyatlanmış — piyon mobilitesi eval'de HİÇ YOK, blokajcının PST'si önündeki
+        piyondan habersiz (at d6'da bonusu piyon olsa da olmasa da alır), outpost sıra
+        kapısıyla (4-6) örtüşmez (blokaj karesi rakip için göreli sıra 2-3). Sorun:
+        **predicate zıt işaretli iki alt-kümeyi tek sabitle cezalandırıyor.**
+        (a) at/fil blokajı -> piyon sahibinin AÇIKÇA aleyhine (minör blokaj karesinde
+            mutlu, kovulamaz); (b) kale/vezir blokajı -> muhtemelen LEHİNE (piyon durur
+            ama kale pasifleşir ve piyona bağlanır; Tarrasch: kaleler geçer piyonun
+            ARKASINA aittir, önüne değil).
+      - **ÖN-KAYITLI TEŞHİS DOĞRULANDI (metodoloji kazancı):** bu risk SPRT'den ÖNCE
+        commit mesajına yazılmıştı. Enstrümantasyon blokajcı tür dağılımını ölçmüştü:
+        orta oyunda minör baskın (6022 vs kale/vezir 4837), **oyun sonunda %84 kale/vezir
+        (9972 vs minör 29)** -> terim en çok ateşlediği fazda çoğunlukla YANLIŞ işareti
+        tam ağırlıkla uyguluyordu. Başarısızlık modunu testten önce yazmak, sonradan
+        hikâye uydurmayı engelledi.
+      - **VARYANT DENENMEDİ, ÇÜNKÜ ÖLÇÜM ONU DA ELEDİ (ek SPRT'siz):** "minör-only"
+        gate'i mevcut sayılardan hesaplandı — orta oyun 6022/441367 = **%1.36**, oyun
+        sonu 29/88208 = **%0.03** -> no-op eşiğinin (%1-2) ALTINDA. Yani işaret-tutarlı
+        alt-küme ÇOK NADİR, yaygın alt-kümenin işareti YANLIŞ => terim ölü.
+        Kategori kuralı korundu: sabit/varyant düzeltip retry EDİLMEDİ.
+      - **KORUNDU (latent altyapı, terime bağlı DEĞİL; check-extension'da see()
+        genelleştirmesinin korunması emsali):** **pawn cache artık geçer piyon KÜMESİNİ
+        taşıyor** — `PawnBucket` 16 -> 32 bayt (key/data/passed_w/passed_b), lockless-XOR
+        `key = pawn_key ^ data ^ pw ^ pb` (doğal genişleme, 2^16 x 32 = 2 MB);
+        `pawn_structure_full(b, mg, eg, passed_w, passed_b)` (eski 3-param imza ince
+        sarmalayıcı). **Şah mesafesi + rook-behind-passer bunu aynen kullanacak.**
+        EXACT (düğüm birebir) ve maliyeti ölçülmüş ~0. Testler: ProbeStoreRoundtrip +
+        ClearEmpties küme round-trip'ine genişletildi, `CachedPassedSetsMatchRaw` eklendi
+        (cache'ten dönen küme ham hesapla birebir). 158 -> 159 test.
+      - **ÖLÇÜM MİMARİ KARARI VERDİ (tahmin değil):** küme cache'te taşınmasaydı her
+        eval'de yeniden üretilecekti; ağırlık=0 ile (ağaç sabit, saf maliyet izole)
+        ölçüldü: **yeniden üretim %3.21 (startpos) / %5.49 (oyun sonu) nps** -> döviz
+        kuruyla `log2(0.965)x195` ≈ **−10..−14 Elo**, beklenen +5-10'luk terimi garantili
+        boğardı. Cache'e konunca: **−%0.73, gürültü içinde** (uzun koşu: startpos d16,
+        8.67M düğüm/~5 sn, 4'er koşu; bazı koşularda yeni build daha hızlı).
+        **METODOLOJİ: kısa benchmark −%1.96 diyordu, UZUN koşu −%0.73 dedi** — kısa
+        koşularda %13 yayılma var, nps farkı okunamıyor. nps iddiası = uzun koşu.
+- [ ] **Passed pawn rafineleri** (ayrı commit'ler): blockade (RAFA, yukarı bak), şah mesafesi
       (dost+rakip), rook-behind-passer, connected/protected passer, unstoppable/free
       passer. Beklenti +10-25 dağınık. **TUZAK (pawn-hash-cache): blockade / şah-mesafesi
       / rook-behind-passer piyon-DIŞI duruma (şah yeri, kale, blocker taşı) bağlıdır ->
@@ -1158,7 +1221,26 @@ E3 passed-pawn rafineleri + E4 bad-bishop/rook-on-7th (ORTOGONAL terimler), sonr
 SPRT `9c4f6d1` vs blok-sonu HEAD — bkz. "SUB-5 TERİM STRATEJİSİ" (kullanıcı kararı:
 sub-5 terimler tek tek certify edilemez, blok sonunda toplu doğrulanır).** NNUE bu
 repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
-**SON (2026-07-17): Blok E3 korunan geçer piyon (protected passer) DENENDİ, RAFA
+**SON (2026-07-17): Blok E3 geçer piyon blokajı (blockade) DENENDİ, RAFA KALDIRILDI.
+SPRT base `47fada6` vs new `af26f8f`: 2544 oyun, W-D-L 633-1187-724, Elo −12.4 ± 9.8,
+LOS %0.7, LLR −2.95 TAM RED -> terim geri alındı (eval `47fada6`'ya birebir: startpos
+d13 = 1121128/cp27/PV özdeş), 159 test. **YENİ (ÜÇÜNCÜ) HATA SINIFI: İŞARET-TUTARSIZ
+PREDICATE — ortogonal olmak yetmiyor.** Kategori testi (adıyla+sonucuyla) GEÇTİ (piyon
+mobilitesi eval'de yok, blokajcı PST'si piyondan habersiz, outpost'la örtüşmez) ama
+predicate zıt işaretli iki alt-kümeyi tek sabitle cezalandırıyordu: at blokajı piyon
+sahibinin aleyhine, KALE blokajı LEHİNE (kale pasifleşip piyona bağlanır — Tarrasch).
+ÖN-KAYITLI TEŞHİS DOĞRULANDI: risk SPRT'den ÖNCE yazılmıştı, enstrümantasyon oyun
+sonunda blokajların %84'ünün kale/vezir olduğunu ölçmüştü -> terim en çok ateşlediği
+fazda yanlış işareti uyguluyordu. VARYANT EK SPRT'SİZ ELENDİ: "minör-only" gate'i mevcut
+sayılardan %1.36 (MG) / %0.03 (EG) -> no-op eşiğinin altında => işaret-tutarlı alt-küme
+çok nadir, yaygın olanın işareti yanlış => terim ölü. KORUNDU (latent altyapı):
+**pawn cache artık geçer piyon KÜMESİNİ taşıyor** (PawnBucket 16->32 bayt, lockless-XOR
+doğal genişleme; pawn_structure_full) — şah mesafesi + rook-behind-passer bunu aynen
+kullanacak, EXACT ve maliyeti ~0. ÖLÇÜM MİMARİ KARARI VERDİ: küme yeniden üretilseydi
+%3.21/%5.49 nps (~−10..−14 Elo) -> cache'e konunca −%0.73 (gürültü içinde). METODOLOJİ:
+kısa benchmark −%1.96 diyordu, UZUN koşu (8.67M düğüm/~5 sn) −%0.73 dedi — nps iddiası
+uzun koşu ister.**
+**ÖNCESİ (2026-07-17): Blok E3 korunan geçer piyon (protected passer) DENENDİ, RAFA
 KALDIRILDI. SPRT base `47fada6` vs new `5e302b6`: 1621 oyun, W-D-L 402-714-505, Elo
 −22.1 ± 12.6, LOS %0, LLR −2.96 TAM RED -> eval kaynakları `47fada6`'ya birebir geri
 alındı (düğüm 1121128/cp27/PV özdeş); 158 test (cache koruma testi latent olarak KORUNDU).
