@@ -107,6 +107,6 @@ TEST(EvalParams, FrozenBoundary) {
     const auto& names = flat_param_names();
     ASSERT_LT(static_cast<std::size_t>(F), names.size());
     EXPECT_EQ(names[F], "shield_missing");              // ilk dondurulmuş
-    EXPECT_EQ(names[F - 1], "outpost_bishop_eg");       // son tunable (outpost bloğu sonu)
+    EXPECT_EQ(names[F - 1], "passer_king_escort_eg");   // son tunable (şah eskortu)
     EXPECT_EQ(names.back(), "safety_table.99");
 }

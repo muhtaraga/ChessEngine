@@ -42,6 +42,7 @@ EvalParams make_default_eval_params() {
     p.hanging_mg         = HangingMg;        p.hanging_eg         = HangingEg;
     p.outpost_knight_mg  = OutpostKnightMg;  p.outpost_knight_eg  = OutpostKnightEg;
     p.outpost_bishop_mg  = OutpostBishopMg;  p.outpost_bishop_eg  = OutpostBishopEg;
+    p.passer_king_escort_eg = PasserKingEscortEg;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
@@ -315,6 +316,66 @@ void mobility(const Board& b, int& mg, int& eg) {
 }
 
 
+namespace {
+
+// Şah mesafesi (Chebyshev / king-move mesafesi): iki kare arası şahın kaç hamlede
+// gideceği = max(|sütun farkı|, |sıra farkı|). Projede böyle bir yardımcı yoktu.
+int king_distance(Square a, Square b) {
+    int df = file_of(a) - file_of(b);
+    int dr = rank_of(a) - rank_of(b);
+    if (df < 0) df = -df;
+    if (dr < 0) dr = -dr;
+    return df > dr ? df : dr;
+}
+
+// Mesafe kırpma sınırı: 5'ten öteye pratikte fark yok (şah zaten yetişemez) ve terimi
+// sınırlar (Stockfish king_proximity de min(dist,5) yapar).
+constexpr int kKingDistCap = 5;
+
+}  // namespace
+
+void passer_king_escort_with(const Board& b, Bitboard passed_w, Bitboard passed_b,
+                             int& mg, int& eg) {
+    mg = 0;  // YALNIZ oyun sonu terimi (taper ile orta oyunda solar)
+    eg = 0;
+
+    const Square wk = b.king_square(WHITE);
+    const Square bk = b.king_square(BLACK);
+
+    auto cap = [](int d) { return d > kKingDistCap ? kKingDistCap : d; };
+
+    // Beyaz geçer piyonu: durak karesi s+8 (piyon 8. sırada olamaz -> tahta içinde).
+    // Yalnız KENDİ şahımız rakip şahtan daha yakınsa bonus (max(0,...)): normal durumda
+    // ceza YOK -> terim passed[r] ile kavga edemez (bkz. eval.hpp tasarım notu).
+    Bitboard w = passed_w;
+    while (w) {
+        Square s = pop_lsb(w);
+        if (rank_of(s) < 3) continue;  // göreli sıra < 4 -> şah mesafesi henüz anlamsız
+        Square stop = static_cast<Square>(static_cast<int>(s) + 8);
+        int    diff = cap(king_distance(bk, stop)) - cap(king_distance(wk, stop));
+        if (diff > 0) eg += g_eval.passer_king_escort_eg * diff;
+    }
+
+    // Siyah geçer piyonu: durak karesi s-8; göreli sıra 7 - rank_of(s).
+    Bitboard bb = passed_b;
+    while (bb) {
+        Square s = pop_lsb(bb);
+        if (7 - rank_of(s) < 3) continue;
+        Square stop = static_cast<Square>(static_cast<int>(s) - 8);
+        int    diff = cap(king_distance(wk, stop)) - cap(king_distance(bk, stop));
+        if (diff > 0) eg -= g_eval.passer_king_escort_eg * diff;
+    }
+}
+
+void passer_king_escort(const Board& b, int& mg, int& eg) {
+    // İzole test için ince sarmalayıcı: kümeyi kendisi üretir (aramada bu yol
+    // KULLANILMAZ — orada küme pawn cache'ten gelir).
+    int      pmg = 0, peg = 0;
+    Bitboard pw = 0, pb = 0;
+    pawn_structure_full(b, pmg, peg, pw, pb);
+    passer_king_escort_with(b, pw, pb, mg, eg);
+}
+
 void bishop_pair(const Board& b, int& mg, int& eg) {
     mg = 0;
     eg = 0;
@@ -435,6 +496,12 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     rook_on_file(b, rmg, reg);
     mg += rmg;
     eg += reg;
+
+    // Geçer piyon şah eskortu: terim şah yerine bağlı (cache'e giremez) ama geçer
+    // piyon kümesi yukarıda cache'ten geldi -> yeniden üretim yok. mg katkısı hep 0.
+    int kdmg = 0, kdeg = 0;
+    passer_king_escort_with(b, passed_w, passed_b, kdmg, kdeg);
+    eg += kdeg;
 
 
     mg_white = mg;

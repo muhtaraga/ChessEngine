@@ -299,6 +299,67 @@ TEST(Eval, ThreatsSymmetry) {
     EXPECT_EQ(evaluate(b), 0);
 }
 
+// --- Geçer piyon şah eskortu testleri (yalnız EG; mg her zaman 0) ---
+
+// Beyaz Pd5 (durak karesi d6), kendi şahı Kc5 yakın (Chebyshev 1), rakip şah Kh1 uzak
+// (max(4,5)=5) -> eskort BAŞARILI: eg = w * (5 - 1). mg DAİMA 0 (oyun sonu terimi).
+TEST(Eval, PasserKingEscortRewardsCloseOwnKing) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("8/8/8/2KP4/8/8/8/7k w - - 0 1"));
+    int mg = 0, eg = 0;
+    passer_king_escort(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, PasserKingEscortEg * (5 - 1));
+    EXPECT_GT(eg, 0);
+}
+
+// TEK YÖNLÜLÜK TESTİ (tasarımın çekirdeği): rakip şah Kd7 durak karesine yakın (1),
+// kendi şahımız Ka1 uzak (max(3,5)=5) -> fark NEGATİF ama CEZA YOK, terim 0.
+// Simetrik fark formu burada -16 verirdi; max(0,...) tabanı sıfırda tutar -> terim
+// passed[] ile kavga edemez (bkz. eval.hpp tasarım notu + ölçüm).
+TEST(Eval, PasserKingEscortNeverPenalizes) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("8/3k4/8/3P4/8/8/8/K7 w - - 0 1"));
+    int mg = 0, eg = 0;
+    passer_king_escort(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+}
+
+// Sıra kapısı: Pd3 geçer ve kendi şahı (Kc2, mesafe d4'e 1) rakip şahtan (h8, uzak)
+// çok daha yakın -> sıra kapısı OLMASAYDI ateşlerdi; göreli sıra 2 (< 3) olduğu için
+// terim hiç girmez -> boş geçmez.
+TEST(Eval, PasserKingEscortIgnoresEarlyRanks) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("7k/8/8/8/8/3P4/2K5/8 w - - 0 1"));
+    int mg = 0, eg = 0;
+    passer_king_escort(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+}
+
+// Renk simetrisi: beyaz Pd5+Kc6, siyah Pd4+kc3 tam dikey ayna (d5^56==d4, c6^56==c3).
+// KRİTİK: bu tahtada terim İKİ TARAFTA DA ATEŞLİYOR (her iki şah da kendi piyonunun
+// durak karesine 1, rakibinkine 3 -> ikisi de +8 alır) -> katkı sıfır ama BOŞ GEÇMİYOR.
+TEST(Eval, PasserKingEscortSymmetry) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("8/8/2K5/3P4/3p4/2k5/8/8 w - - 0 1"));
+    int mg = 0, eg = 0;
+    passer_king_escort(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+
+    // Anti-vacuity: aynı tahtada siyah şahı uzaklaştırınca beyaz eskortu AÇIĞA çıkar
+    // (yani yukarıdaki sıfır, "hiç ateşlemedi" değil "iki taraf da ateşledi ve iptal
+    // oldu" demek).
+    Board only_white;
+    ASSERT_TRUE(only_white.set_fen("8/8/2K5/3P4/8/8/8/7k w - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    passer_king_escort(only_white, mg2, eg2);
+    EXPECT_GT(eg2, 0);
+}
+
 // --- Outpost testleri (outpost() yardımcısıyla; PST/materyal gürültüsü yok) ---
 
 // Beyaz at d5: c4 piyonu destekliyor, göreli 5. sırada, siyahın d5'in ÖNÜNDEKİ komşu

@@ -135,6 +135,43 @@ inline constexpr int OutpostKnightEg = 15;
 inline constexpr int OutpostBishopMg = 12;
 inline constexpr int OutpostBishopEg = 8;
 
+// --- Geçer piyon ŞAH ESKORTU (YALNIZ oyun sonu; mg her zaman 0) ---
+// Kendi şahımız geçer piyonun DURAK KARESİNE rakip şahtan DAHA YAKINSA bonus:
+//   eg += PasserKingEscortEg * max(0, d_rakip − d_kendi)
+// Mesafe = Chebyshev (şah hamlesi), 5'e kırpılır (öteye pratik fark yok + terimi
+// sınırlar; Stockfish king_proximity de min(dist,5) yapar). Yalnız göreli sıra >= 3
+// (4. sıra ve ötesi): 2. sıradaki piyonda şah mesafesi henüz anlamsız (SF: > RANK_3).
+//
+// TEK YÖNLÜ (max(0, ...)) — KRİTİK TASARIM KARARI, ÖLÇÜMLE ZORUNLU KILINDI:
+// İlk tasarım simetrik fark formuydu (eg += w * (d_rakip − d_kendi)). SPRT ÖNCESİ
+// enstrümantasyon onu ELEDİ: `d_rakip − d_kendi` SIRA ile GÜÇLÜ NEGATİF KORELE, çünkü
+// durak karesi TANIMI GEREĞİ rakip sahasındadır -> rakip şah neredeyse daima daha yakın.
+// Ölçüm: orta oyunda kendi şahımız 25169 vakanın YALNIZ 5'inde (%0.02) daha yakındı;
+// beyaz sıra r'de: d_kendi ≈ r+1, d_rakip ≈ 6−(r+1) -> fark ≈ 4 − 2r (sıra 6'da −8).
+// Yani simetrik form, "geçer piyona sahip olmayı" sistematik cezalandırıp elle-kalibre
+// passed[r] bonusuyla KAVGA ediyordu (ölçüldü: sum/çağrı −5.0 cp oyun sonunda) —
+// tempo (−18.6) / tune-all (−110) mekanizmasının aynısı: kalibre sisteme sistematik
+// kayma enjekte etmek. max(0,...) tabanı SIFIRA sabitler: normal durumda ceza YOK,
+// yalnız eskort BAŞARILDIĞINDA bonus -> passed[] ile kavga edemez.
+//
+// YALNIZ EG (king_safety'nin tam aynası — o MG-only): orta oyunda şah piyon eskortuna
+// çıkmaz, güvenlik baskındır. Yan fayda: MG ölçek sorusu hiç doğmuyor.
+//
+// ÜÇ SORU (bkz. EN KRİTİK DERS): (1) adıyla sayılmıyor; (2) sonucuyla? EG şah PST'si
+// merkezîliği ödüllendirir -> MERKEZİ passer'da "şaha yakın" ile korele, ama KANAT
+// passer'ında TERSİNE döner (a5'e gitmek merkezden uzaklaşmak = PST cezası) -> kısmi,
+// işareti değişken örtüşme; ayrıca sıra-korelasyonu max(0,...) ile kesildi;
+// (3) işaret: terim yalnız TEK alt-kümede (kendi şah daha yakın) ateşler ve orada
+// işaret tartışmasız pozitif -> işaret-tutarsızlık (blockade −12.4) riski yapısal olarak
+// yok. Ağırlık E7 tuning adayı.
+//
+// AĞIRLIK ÖLÇÜLEREK SEÇİLDİ (SPRT öncesi kapı): ilk değer 4 idi -> oyun sonu abs/çağrı
+// 0.658 cp, sağlıklı bandın (2-6) altında (max(0,...) negatif yarıyı kestiği için
+// efektif büyüklük yarılanıyor). 8'e çıkarıldı -> ~1.3 cp. Tavan yine de 8*5 = 40 EG
+// (passer başına); Stockfish'in aynı terimi sıra-ölçekli ve ileri passer'da 10-20 kat
+// daha büyük -> bu değer hâlâ temkinli tarafta.
+inline constexpr int PasserKingEscortEg = 8;
+
 // NOT (2026-07-17): geçer piyon blokajı (blockade) DENENDİ ve RAFA KALDIRILDI —
 // SPRT H0 TAM RED (−12.4 ± 9.8, LOS %0.7, LLR −2.95, 2544 oyun). Kök sebep
 // yeniden-ifade DEĞİL (sinyal gerçekten fiyatlanmamıştı) — predicate İŞARET-TUTARSIZ:
@@ -382,6 +419,10 @@ struct EvalParams {
     int outpost_knight_mg, outpost_knight_eg;    // desteklenen + kovulamayan at
     int outpost_bishop_mg, outpost_bishop_eg;    // desteklenen + kovulamayan fil
 
+    // Geçer piyon şah eskortu (tunable). YALNIZ EG (mg yok). PIYON-SAF DEĞİL
+    // (şah yerine bağlı) -> pawn cache'e girmez; geçer piyon KÜMESİ cache'ten gelir.
+    int passer_king_escort_eg;                   // eg += w * max(0, d_rakip − d_kendi)
+
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
@@ -428,6 +469,16 @@ void pawn_structure(const Board& b, int& mg, int& eg);
 // üretim %3-5 nps). pawn_structure(b,mg,eg) bunun ince sarmalayıcısıdır.
 void pawn_structure_full(const Board& b, int& mg, int& eg,
                          Bitboard& passed_w, Bitboard& passed_b);
+
+// Geçer piyon şah eskortu katkısı, BEYAZ − SİYAH. mg HER ZAMAN 0 (yalnız oyun sonu
+// terimi; taper ile orta oyunda solar — king_safety'nin aynası). PIYON-SAF DEĞİL ->
+// pawn cache'e girmez; geçer piyon kümesi cache'ten gelir (_with sürümü).
+// Bu sarmalayıcı kümeyi kendisi üretir -> YALNIZ izole test için.
+void passer_king_escort(const Board& b, int& mg, int& eg);
+
+// Asıl sürüm: geçer piyon kümeleri dışarıdan (pawn cache'ten) verilir.
+void passer_king_escort_with(const Board& b, Bitboard passed_w, Bitboard passed_b,
+                             int& mg, int& eg);
 
 // Mobility katkısı (at/fil/kale/vezir ulaşılabilir kare sayısı), BEYAZ − SİYAH,
 // MG/EG ayrı out-param. evaluate() akümülatörlerine ekler; izole test edilebilir.
