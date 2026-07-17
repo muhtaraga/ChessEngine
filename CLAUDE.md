@@ -970,16 +970,19 @@ rafineleri, outpost, rook-on-7th) — kategori kanıtı (EN KRİTİK DERS) bunla
 king-safety rafinelerinin ÖNÜNE koyuyor: yeni eksene bilgi ekliyorlar, dondurulmuş
 alt-sisteme enjeksiyon değiller. Mobility quality (orta güven) ve E7 king-safety
 joint tuning sonraya.
-**DURUM (2026-07-17): outpost (E4) KOŞULLU KABUL -> `47fada6` (koşullu baseline, 159 test);
-tek pozitif E3/E4 terimi bu (+4.7 ± 5.0, LOS %96.8). E3'ün İKİ terimi ard arda H0 TAM RED
-oldu — korunan geçer piyon (−22.1, YENİDEN-İFADE) ve blokaj (−12.4, İŞARET-TUTARSIZ
-PREDICATE). İkisi de FARKLI sebeplerden düştü, yani "passer ekseni tükendi" demek için
-erken; ama üç üst üste zorlanma kayda değer.
-**ALTYAPI HAZIR (blokajdan kalan latent kazanç): pawn cache geçer piyon KÜMESİNİ taşıyor**
-(`pawn_structure_full` + `PawnBucket.passed_w/passed_b`, EXACT, maliyet ~0) -> şah mesafesi
-ve rook-behind-passer artık SIFIR altyapı işiyle yazılabilir.
-Kalan somut iş: E3 şah mesafesi / rook-behind-passer + E4 bad-bishop, sonra BUNDLE SPRT
-(`9c4f6d1` vs blok-sonu HEAD) — bkz. "SUB-5 TERİM STRATEJİSİ" aşağıda.
+**DURUM (2026-07-17): E3 şah eskortu (passer king escort) KABUL -> YENİ BASELINE `8b60653`,
+163 test.** SPRT base `47fada6` vs new `8b60653`: 10483 oyun, Elo +6.3 ± 5.0, LOS %99.4,
+LLR 2.96 (2.94'ü GEÇTİ) TAM KABUL — Blok E3'ün İLK geçen terimi. Blockade'den kalan
+pawn-cache passer-kümesi altyapısını doğruladı (sıfır ek altyapı). Öncesi: outpost (E4)
+KOŞULLU KABUL -> `47fada6` (+4.7 ± 5.0, LOS %96.8); E3'ün İKİ terimi ard arda H0 TAM RED —
+korunan geçer piyon (−22.1, YENİDEN-İFADE) ve blokaj (−12.4, İŞARET-TUTARSIZ PREDICATE).
+Şimdi 4 E3/E4 denemesinden 2 pozitif (escort tam-kabul, outpost koşullu), 2 red.
+**ALTYAPI HAZIR: pawn cache geçer piyon KÜMESİNİ taşıyor** (`pawn_structure_full` +
+`PawnBucket.passed_w/passed_b`, EXACT, maliyet ~0) -> escort bunu kullandı; rook-behind-passer
+da SIFIR altyapı işiyle yazılabilir.
+Kalan somut iş: E3 rook-behind-passer + E4 bad-bishop, sonra BUNDLE SPRT (koşullu outpost
+`9c4f6d1` bazına karşı) — bkz. "SUB-5 TERİM STRATEJİSİ" aşağıda. Escort tam-kabul olduğundan
+bundle'a girmez (kendi baseline'ı zaten `8b60653`).
 **YENİ TERİMDE ÜÇ SORUYU DA SOR (bu blokta üçü de ayrı ayrı ısırdı):** (1) sinyal ADIYLA
 sayılıyor mu? (2) SONUCU zaten fiyatlanmış mı — korelasyonlu vekil var mı (protected
 passer: izole terimi)? (3) predicate'in ateşlediği TÜM durumlarda etkinin İŞARETİ aynı mı
@@ -1076,8 +1079,51 @@ kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı d
         8.67M düğüm/~5 sn, 4'er koşu; bazı koşularda yeni build daha hızlı).
         **METODOLOJİ: kısa benchmark −%1.96 diyordu, UZUN koşu −%0.73 dedi** — kısa
         koşularda %13 yayılma var, nps farkı okunamıyor. nps iddiası = uzun koşu.
-- [ ] **Passed pawn rafineleri** (ayrı commit'ler): blockade (RAFA, yukarı bak), şah mesafesi
-      (dost+rakip), rook-behind-passer, connected/protected passer, unstoppable/free
+- [x] **Geçer piyon şah eskortu (passer king escort) — TAMAM, SPRT H1 TAM KABUL. `8b60653`,
+      YENİ BASELINE, 163 test.** Blok E3'ün İLK geçen terimi (protected passer + blockade
+      ard arda H0'dan sonra) ve blockade'den kalan pawn-cache passer-kümesi altyapısını
+      DOĞRULADI — başarısız denemeden kalan yatırım bir sonraki terimi geçirdi.
+      **SPRT base `47fada6` vs new `8b60653`: 10483 oyun, W-D-L 3012-4649-2822, Elo +6.3 ±
+      5.0, LOS %99.4, LLR 2.96 (üst sınır 2.94'ü GEÇTİ) TAM KABUL.** Not: +6.3 > elo1(5)
+      olduğundan LLR tavana tırmandı (outpost +4.7'de takılıp 10k'da kalmıştı — sub-5
+      bundle stratejisinin gerekçesi; bu terim sınırın az üstünde çıkıp tek başına
+      certify etti, bundle'a gerek kalmadı).
+      - **Mekanik:** EG-only (mg daima 0). Her geçer piyonun DURAK karesi (stop = önündeki
+        kare) için `eg += g_eval.passer_king_escort_eg(8) * max(0, d_rakip − d_kendi)`;
+        d = şahtan durak karesine Chebyshev (şah-hamle) mesafesi, kKingDistCap=5 ile
+        kırpılı. Sıra≥3 kapısı (yalnız ilerlemiş passer). Pawn cache'in verdiği passed_w/
+        passed_b kümelerini kullanır (`passer_king_escort_with(b, passed_w, passed_b, ...)`)
+        -> SIFIR ek altyapı (blockade'den kalan `pawn_structure_full`).
+      - **TASARIM HİKÂYESİ — enstrümantasyon ilk tasarımı SPRT'den ÖNCE öldürdü (S3 kapısı
+        çalıştı):** İlk form SİMETRİK farktı (`w × (d_rakip − d_kendi)`, max'sız). "d_e ≈
+        d_o ≈ 3, taban ~0" varsayımı GEOMETRİ yüzünden YANLIŞTI — durak karesi tanımı
+        gereği rakip sahasında, iki mesafe simetrik değil. Ölçüm: orta oyunda kendi şah
+        25169 vakanın yalnız **5'inde** (%0.02) kendi piyonuna daha yakın; `d_e − d_o`
+        sıra ile güçlü negatif korele (≈4−2r) -> terim kısmen **`passed[r]`'nin negatif
+        işaretli yeniden-ifadesi** oldu, `sum/çağrı = −5.006 cp` (tempo −18.6 mekanizması).
+        **Enstrümantasyon ALT-KÜME KIRILIMI (kendi-yakın vs rakip-yakın) bunu yakaladı** —
+        ateşleme oranı + büyüklük tek başına göstermezdi (blockade dersi: kırılım şart).
+      - **DÜZELTME — tek yönlü form (`max(0, …)`):** kullanıcı kararı (AskUserQuestion).
+        Tabanı sıfıra sabitler: eskort BAŞARILDIĞINDA (kendi şah daha yakın) bonus, aksi
+        halde 0 -> `passed[]` ile kavga edemez. Ölçüm: `sum/çağrı` EG −5.006 -> **+0.632
+        cp**; orta oyun ateşleme %6.69 -> %0.02 (tam no-op, doğru — orta oyunda şah
+        eskortu kavramı yok); oyun sonu %72.7 -> %13.35. Ağırlık ölçülerek 4 -> 8 (max(0,)
+        negatif yarıyı kestiğinden w=4 büyüklük bandın altında kalıyordu; w=8'de EG
+        abs/çağrı 1.476 cp).
+      - **ÜÇ SORU DA GEÇTİ** (bu blokta üçü de ayrı ayrı ısırmıştı): (1) adıyla sayılmıyor;
+        (2) sonucuyla kısmi örtüşme var ama işareti DEĞİŞKEN (kanat passer'ında ters
+        döner) — protected passer'daki *inşa gereği* zorunlu bağ gibi değil; (3) terim tek
+        alt-kümede (kendi şah yakın) ateşler, orada işaret tartışmasız pozitif —
+        blockade'in işaret-tutarsızlığı yapısal olarak yok.
+      - **Kapılar:** 159 -> 163 test (+4: RewardsCloseOwnKing, NeverPenalizes [tek-yön
+        çekirdek], IgnoresEarlyRanks, Symmetry [anti-vacuity 2. tahta]); perft birebir
+        (119060324); **ağırlık=0 düğüm-eşitliği vs `47fada6` BİREBİR** (startpos d13
+        1121128, cp 27, PV özdeş -> terim yalnız ağırlığı üzerinden etki eder, yan-etki
+        yok). `passer_king_escort_eg` EvalParams'a frozen sınır ÖNÜNE eklendi (tunable),
+        `eval_frozen_start` 824 -> 825, FrozenBoundary son-tunable "passer_king_escort_eg".
+      NNUE cherry-pick ADAYI.
+- [ ] **Passed pawn rafineleri** (ayrı commit'ler): blockade (RAFA), şah eskortu (KABUL,
+      yukarı bak), rook-behind-passer, connected/backward pawn, unstoppable/free
       passer. Beklenti +10-25 dağınık. **TUZAK (pawn-hash-cache): blockade / şah-mesafesi
       / rook-behind-passer piyon-DIŞI duruma (şah yeri, kale, blocker taşı) bağlıdır ->
       pawn-hash-cache'li `pawn_structure` İÇİNE GİREMEZ** (aynı piyon yapısı farklı taş
@@ -1214,14 +1260,36 @@ geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 Klasik motorun arama/movegen/SMP tarafı bitti. FAZ 3 (klasik) — Eval Güçlendirme
 DEVAM: BLOK E1 (altyapı+hız) TAM TAMAM, BLOK E2 Commit 1 (threats/hanging) KABUL
 (H1, baseline `9c4f6d1`), BLOK E2 king-safety rafineleri E7 JOINT TUNING'e ERTELENDİ
-(iki deneme H0/nötr, kategori kanıtı aleyhte). **BLOK E4 outpost KOŞULLU KABUL ->
-KOŞULLU BASELINE `47fada6`, 157 test** (SPRT 10k tavan: +4.7 ± 5.0, LOS %96.8, LLR 1.72
+(iki deneme H0/nötr, kategori kanıtı aleyhte). **BLOK E3 şah eskortu (passer king
+escort) KABUL -> YENİ BASELINE `8b60653`, 163 test** (SPRT H1 TAM KABUL: +6.3 ± 5.0,
+LOS %99.4, LLR 2.96/10483 oyun — E3'ün İLK geçen terimi). Öncesi BLOK E4 outpost
+KOŞULLU KABUL -> `47fada6`, 157 test (SPRT 10k tavan: +4.7 ± 5.0, LOS %96.8, LLR 1.72
 — H1 DEĞİL, kullanıcı kararı; king safety `7eea85f` erken-kabul emsali). **SIRADAKİ İŞ:
-E3 passed-pawn rafineleri + E4 bad-bishop/rook-on-7th (ORTOGONAL terimler), sonra BUNDLE
-SPRT `9c4f6d1` vs blok-sonu HEAD — bkz. "SUB-5 TERİM STRATEJİSİ" (kullanıcı kararı:
-sub-5 terimler tek tek certify edilemez, blok sonunda toplu doğrulanır).** NNUE bu
+E3 rook-behind-passer + E4 bad-bishop/connected-rooks (ORTOGONAL terimler), sonra koşullu
+outpost için BUNDLE SPRT `9c4f6d1` vs blok-sonu HEAD — bkz. "SUB-5 TERİM STRATEJİSİ"
+(kullanıcı kararı: sub-5 terimler tek tek certify edilemez, blok sonunda toplu
+doğrulanır; escort sınırın üstünde çıkıp tek başına certify etti).** NNUE bu
 repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
-**SON (2026-07-17): Blok E3 geçer piyon blokajı (blockade) DENENDİ, RAFA KALDIRILDI.
+**SON (2026-07-17): Blok E3 geçer piyon şah eskortu (passer king escort) KABUL. SPRT base
+`47fada6` vs new `8b60653`: 10483 oyun, W-D-L 3012-4649-2822, Elo +6.3 ± 5.0, LOS %99.4,
+LLR 2.96 (üst sınır 2.94'ü GEÇTİ) TAM KABUL -> YENİ BASELINE `8b60653`, 163 test. Blok
+E3'ün İLK geçen terimi (protected passer −22.1 + blockade −12.4 ard arda H0'dan sonra);
+blockade'den kalan pawn-cache passer-kümesi altyapısını (pawn_structure_full) DOĞRULADI —
+başarısız denemeden kalan yatırım bir sonraki terimi geçirdi. Mekanik: EG-only, her geçer
+piyonun durak karesi için `eg += 8 * max(0, d_rakip_şah − d_kendi_şah)` (Chebyshev, cap 5,
+sıra≥3), pawn-cache passed kümeleri. TASARIM HİKÂYESİ (S3 kapısı çalıştı): İLK simetrik
+form (`w × (d_rakip − d_kendi)`, max'sız) GEOMETRİ yüzünden sistematik yanlıydı — durak
+karesi rakip sahasında olduğundan kendi şah 25169 vakanın yalnız 5'inde (%0.02) daha yakın,
+`d_e − d_o` sıra ile negatif korele -> `passed[r]`'nin negatif işaretli yeniden-ifadesi,
+sum/çağrı −5.006 cp. Enstrümantasyon ALT-KÜME KIRILIMI (kendi-yakın vs rakip-yakın) bunu
+SPRT'den ÖNCE yakaladı (blockade dersi: kırılım şart). DÜZELTME (kullanıcı kararı): tek-yönlü
+`max(0,…)` -> taban sıfıra sabit, eskort BAŞARILDIĞINDA bonus, passed[] ile kavga etmez
+(sum/çağrı −5.006 -> +0.632 cp; orta oyun ateşleme %6.69 -> %0.02 no-op; ağırlık 4 -> 8).
+ÜÇ SORU DA GEÇTİ: (1) adıyla sayılmıyor; (2) işaret DEĞİŞKEN (kanat passer'ında ters, inşa
+gereği bağ değil); (3) tek alt-kümede ateşler, orada işaret tartışmasız. +6.3 > elo1(5)
+olduğundan LLR tavana tırmandı (outpost +4.7'de takıldı) -> bundle'a gerek kalmadı, tek
+başına certify. NNUE cherry-pick ADAYI.**
+**ÖNCESİ (2026-07-17): Blok E3 geçer piyon blokajı (blockade) DENENDİ, RAFA KALDIRILDI.
 SPRT base `47fada6` vs new `af26f8f`: 2544 oyun, W-D-L 633-1187-724, Elo −12.4 ± 9.8,
 LOS %0.7, LLR −2.95 TAM RED -> terim geri alındı (eval `47fada6`'ya birebir: startpos
 d13 = 1121128/cp27/PV özdeş), 159 test. **YENİ (ÜÇÜNCÜ) HATA SINIFI: İŞARET-TUTARSIZ
