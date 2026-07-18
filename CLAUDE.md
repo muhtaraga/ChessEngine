@@ -983,9 +983,12 @@ da vardı -> Debug'da `king_square()` array OOB (Release sessiz); şah eklenerek
 (ayrı commit `19b728c`, test-only). Öncesi: şah eskortu KABUL (`8b60653`, +6.3 ± 5.0). Şimdi
 5 E3/E4 denemesinden 3 pozitif (escort + rook-behind tam-kabul, outpost koşullu), 2 red
 (protected passer −22.1, blockade −12.4).
-Kalan somut iş: E4 bad-bishop + connected-rooks (ORTOGONAL), sonra BUNDLE SPRT (koşullu
-outpost `9c4f6d1` bazına karşı) — bkz. "SUB-5 TERİM STRATEJİSİ". Escort ve rook-behind
-tam-kabul olduğundan bundle'a girmez (baseline zaten `167ade2`). NNUE cherry-pick ADAYI.
+DURUM (2026-07-18, GÜNCEL): E3 + E4-rook-on-7th BİTTİ. E3/E4 bundle certified (`2122456`),
+sonra E4 kale-7.-sıra (gated) KABUL -> **YENİ BASELINE `8ada3d8`** (+7 ± 6.6, LOS %98.2,
+LLR 2.0, kullanıcı erken durdurdu; +7 > elo1 -> tek başına certify). Kalan E4: rook-on-7th
+rank-ölçekli/connected-rooks/rakip-kale-7. (hepsi rook-on-7th'in EK'i) VEYA bishop-pair
+zıt-kare (near-no-op riski). Sonraki blok adayı: **E5 endgame scaling** (ortogonal+güvenli,
+untapped — kullanıcı bir sonraki oturumda E4-kalanı mı E5 mi seçecek). NNUE cherry-pick ADAYI.
 **YENİ TERİMDE ÜÇ SORUYU DA SOR (bu blokta üçü de ayrı ayrı ısırdı):** (1) sinyal ADIYLA
 sayılıyor mu? (2) SONUCU zaten fiyatlanmış mı — korelasyonlu vekil var mı (protected
 passer: izole terimi)? (3) predicate'in ateşlediği TÜM durumlarda etkinin İŞARETİ aynı mı
@@ -1294,11 +1297,42 @@ kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı d
         IgnoresEnemyPawns / Symmetry; Debug+Release geçti). Perft birebir. Ağırlık=0 düğüm-
         eşitliği: EvalFile ile dört ağırlık 0 -> startpos d13 1121128/cp27/PV = `167ade2`
         birebir (sıfır yan-etki). NNUE cherry-pick ADAYI (bundle H1 sonrası).
-- [ ] **Rook on 7th / connected rooks / rook trapped by king**. **DİKKAT (kategori):** kale
-      PST'si ZATEN 7. sıranın tamamına +10 veriyor (`RawPST[ROOK]` satır 2) -> kısmen
-      "yeniden-ifade" sınıfı; outpost bu yüzden bilinçle ÖNE alındı. Denenecekse gate
-      klasik olmalı (rakip şah 8.'de / rakip piyonlar 7.'de), yoksa PST'yi tekrarlar.
+- [x] **Rook on 7th (gated) — TAMAM, SPRT KABUL (kullanıcı kararı, erken durdurma).
+      `8ada3d8`, YENİ BASELINE, 181 test.** SPRT base `2122456` vs new `8ada3d8`: 5988
+      oyun, W-D-L 1739-2635-1614, Elo +7 ± 6.6, LOS %98.2, LLR 2.0 (2.94'e yükseliyordu,
+      kullanıcı erken durdurdu). **+7 > elo1(5) -> tek başına certify** (escort +6.3 /
+      rook-behind +7.5 sınıfı; connected +9.1/LLR 2.26 erken-durdurma emsali) -> bundle'a
+      gerek yok. "H1 TAM KABUL" (LLR 2.94) DEĞİL (dürüst etiket) ama gerçek pozitif,
+      sub-5 koşullulardan (outpost/bad-bishop, LLR 1.2-1.7'de takılan) BİR SINIF YUKARI.
+      - **Mekanik:** izole helper `rook_on_seventh` (bishop_pair/rook_on_file deseni;
+        kendi kale döngüsü, attack_eval_impl'e girmez). Kale rakip 7. sırasında VE
+        (rakip şah 8.'de VEYA rakip piyon 7.'de) -> kale başına bonus (7.'de çift kale
+        doğal 2×; "pigs on 7th" ek mantıksız). BEYAZ−SİYAH, tapered **mg 15 / eg 20**.
+        `eval_accumulate`'te `rook_on_file`'dan hemen sonra çağrılır. Gate zorunlu:
+        `RawPST[ROOK]` 7. sıraya düz +10 verir -> naif form yeniden-ifade olurdu.
+      - **ÜÇ SORU DA GEÇTİ:** (1) ortogonal — PST düz +10 verir ama gate'i AYIRT ETMEZ;
+        (2) already-priced elle-eval (SPRT öncesi) — king-on-8th dalı: baseline eval iki
+        şah-yerleşimini (Rd7, siyah şah e8 vs g6) yalnız **−9 cp** ayırıyor (ters yönde)
+        -> dal yeniden-ifade DEĞİL, iki gate dalı da tutuldu; (3) tek predicate, daima
+        +sign (blockade işaret-tutarsızlığı yapısal yok).
+      - **ENSTRÜMANTASYON (geçici, söküldü):** midgame ateşleme **%0.36 (near-no-op)** ->
+        frozen midgame marjları YAPISAL güvende (tempo/tune-all tuzağı yok — term midgame
+        static_eval'i kaydırmıyor); endgame %53; gate-split sağlıklı (pawn-only %34,
+        both %57, king-only %8.5 -> iki dal da sinyal taşır). KALİBRASYON: ilk 20/25
+        endgame NET |eg|/call=13.3cp (bad_bishop pre-trim bandı) -> **15/20**'ye kısıldı;
+        eg proven-sibling `rook_behind_passer_eg=20`'ye çıpalandı (+7.5 geçmişti, ~aynı
+        per-fire 20cp / endgame firing).
+      - **Kapılar:** perft birebir (119060324 / 193690690); **ağırlık=0 düğüm-eşitliği**
+        (EvalFile ile term=0 -> baseline `2122456` ile BİREBİR: startpos d13 876562/cp31,
+        Kiwipete d12 528002/cp-44, PV dahil -> sıfır yan-etki); 4 test (177->181:
+        RookOnSeventhBonus [king-on-8th dalı], PawnGate [pawns-on-7th dalı], GateClosed
+        [ortogonallik], Symmetry [anti-vacuity]). `rook_on_seventh_eg` frozen sınır önüne
+        (`eval_frozen_start` 832->834, FrozenBoundary son-tunable "rook_on_seventh_eg").
+      - Ağırlık 15/20 enstrümantasyonla gerekçeli, E7 tuning adayı. NNUE cherry-pick ADAYI.
+      Ertelenen (ayrı commit adayı): connected-rooks (7.'de çift kale zaten 2× alıyor,
+      EK bonus ayrı terim), rook-trapped-by-king, rank-ölçekli bonus, RAKİP-kale 7.-sıra.
 - [ ] **Bishop pair zıt-kare rafinesi** (mevcut basit ≥2 sayımı). Her biri +3-12.
+      NOT: near-no-op adayı (2 fil ~%99.9 zıt-renk; yalnız nadir çift-promosyon farkı).
 
 **SUB-5 TERİM STRATEJİSİ — BUNDLE SPRT (kullanıcı kararı, 2026-07-16).** Faz 3'ün kalan
 eval terimlerinin ÇOĞU +3-15 bandında bekleniyor; outpost (+4.7 ± 5.0, LOS %96.8, LLR 1.72
@@ -1377,9 +1411,29 @@ BUNDLE SPRT TAM KABUL: base `9c4f6d1` (threats) vs `2122456` (HEAD): 2428 oyun, 
 Elo +18.8 ± 10.3, LOS %100, LLR 2.94 TAM H1 -> threats sonrası hayatta kalan 5 terimin (outpost +
 escort + rook-behind + bad-bishop + connected) KÜMÜLATİF etkisi certify; GRANDFATHERED BORÇ KAPANDI
 (outpost + bad-bishop artık bundle-certified), `2122456` TAM-CERTIFIED BASELINE.** **SIRADAKİ İŞ:
-BLOK E3 BİTTİ + eval bundle certified. Seçenekler: (a) E4 rook-on-7th gate'li VEYA bishop-pair
-zıt-kare rafinesi [kullanıcı: yeni oturumda a]; (b) E5 endgame scaling (ortogonal+güvenli, untapped).
-Kullanıcı kararı.** NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+BLOK E3 BİTTİ + eval bundle certified, sonra BLOK E4 rook-on-7th (gated) KABUL -> **YENİ
+BASELINE `8ada3d8`, 181 test**. SIRADAKİ (kullanıcı kararı): E4-kalanı (rook-on-7th rank-ölçekli
+/ connected-rooks / rakip-kale-7. — hepsi rook-on-7th'in EK'i; VEYA bishop-pair zıt-kare
+[near-no-op riski]) VEYA **E5 endgame scaling** (ortogonal+güvenli, untapped).** NNUE bu repoda
+YOK, ayrı repoda (`../ChessEngineNNUE`).**
+**SON (2026-07-18): Blok E4 kale 7. sırada (gated) KABUL (kullanıcı kararı, erken durdurma) ->
+YENİ BASELINE `8ada3d8`, 181 test. SPRT base `2122456` vs new `8ada3d8`: 5988 oyun, W-D-L
+1739-2635-1614, Elo +7 ± 6.6, LOS %98.2, LLR 2.0 (2.94'e yükseliyordu, kullanıcı erken durdurdu).
++7 > elo1(5) -> TEK BAŞINA CERTIFY (escort +6.3 / rook-behind +7.5 sınıfı; connected +9.1/LLR 2.26
+erken-durdurma emsali) -> bundle'a gerek yok. "H1 TAM KABUL" (LLR 2.94) DEĞİL (dürüst etiket) ama
+gerçek pozitif, sub-5 koşullulardan (outpost/bad-bishop, LLR 1.2-1.7'de takılan) BİR SINIF YUKARI.
+Mekanik: izole helper rook_on_seventh (kendi kale döngüsü), kale rakip 7.'sinde VE (rakip şah 8.'de
+VEYA rakip piyon 7.'de) -> kale başına bonus (çift kale 2×), tapered mg 15/eg 20; gate zorunlu
+(RawPST[ROOK] 7. sıraya düz +10 -> naif form yeniden-ifade). ÜÇ SORU DA GEÇTİ: (1) ortogonal (PST
+gate'i ayırt etmez); (2) already-priced elle-eval — king-on-8th dalı baseline'da yalnız −9 cp ayrım
+(ters yönde) -> re-expression DEĞİL; (3) tek predicate daima +. ENSTRÜMANTASYON (söküldü): midgame
+%0.36 near-no-op (frozen marjlar YAPISAL güvende), endgame %53, gate-split sağlıklı (pawn %34/both
+%57/king %8.5). KALİBRASYON: 20/25 -> 15/20 (eg rook_behind_passer=20'ye çıpalandı; ilk endgame NET
+|eg|/call 13.3cp bad_bishop pre-trim bandı). Kapılar: perft birebir, ağırlık=0 düğüm-eşitliği (term=0
+-> baseline `2122456` BİREBİR: d13 876562/cp31, Kiwipete d12 528002/cp-44), 4 test (177->181),
+FrozenBoundary son-tunable "rook_on_seventh_eg" (eval_frozen_start 832->834). NNUE cherry-pick ADAYI.
+DÜRÜST GÖZLEM: kod commit `8ada3d8` = terim; SPRT bu commit'e karşı koşuldu, kabul sonrası ayrı
+roadmap-commit ile kaydedildi. Kalan E4/E5 kullanıcı kararı.**
 **SON (2026-07-18): BLOK E3/E4 EVAL BUNDLE SPRT TAM KABUL (H1). base `9c4f6d1` (E2 threats baseline,
 tüm eval-güçlendirme işinin başı) vs new `2122456` (HEAD): 2428 oyun, W-D-L 741-1077-610, Elo +18.8
 ± 10.3, LOS %100, LLR 2.94 TAM H1. Threats sonrası HAYATTA KALAN 5 terimin (outpost + escort +
