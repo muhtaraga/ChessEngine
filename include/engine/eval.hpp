@@ -73,6 +73,21 @@ inline constexpr int DoubledPenaltyEg = -20;
 inline constexpr int PassedBonusMg[8] = {0, 5, 10, 15, 25, 40, 60, 0};
 inline constexpr int PassedBonusEg[8] = {0, 10, 20, 35, 60, 90, 120, 0};
 
+// Geri piyon (backward) — piyon başına ceza (tapered, EG daha ağır). Bir piyon
+// GERİ'dir eğer: (a) komşu sütun(lar)da dost piyon VAR (izole değil — ayrı terim)
+// ama hepsi ONDAN İLERİDE (onu geriden destekleyecek dost piyon yok), VE (b) durak
+// karesi (önündeki kare) bir rakip piyon tarafından kontrol ediliyor (güvenle
+// ilerleyemez). Saf-piyon -> pawn_structure cache'ine girer (isole/çift/geçer gibi).
+//
+// ÜÇ SORU (bkz. EN KRİTİK DERS): (1) adıyla sayılmıyor — izole (komşu YOK) / çift
+// (aynı sütun) / geçer farklı sinyaller; geri piyon "komşu VAR ama ileride + durak
+// tıkalı" = yeni eksen. (2) sonucuyla: mevcut hiçbir terim "ilerleyemeyen desteksiz
+// piyon"u fiyatlamaz (mobility piyonu saymaz; PST sıra-bazlı, tıkanmışlığı görmez)
+// -> ortogonal. (3) işaret DAİMA negatif (geri piyon zayıflıktır), tek predicate ->
+// işaret-tutarsızlık yok. Modest ilk elle-seçim (izole/çift emsali), E7 tuning adayı.
+inline constexpr int BackwardPenaltyMg = -8;
+inline constexpr int BackwardPenaltyEg = -12;
+
 // --- Mobility ağırlıkları (santipiyon, MG/EG ayrı; taş türü başına) ---
 // Taşın ulaşabildiği (dost taşla dolu OLMAYAN) kare sayısına doğrusal bonus.
 // Piyon ve şah hariç: piyon yapısı ayrı ele alınır, şah "mobilitesi" güvenlikle
@@ -516,6 +531,10 @@ struct EvalParams {
     int bad_bishop_mg,         bad_bishop_eg;     // fil-renginde dost piyon başına ceza
     int bad_bishop_blocked_mg, bad_bishop_blocked_eg;  // bunlardan BLOKELİ olana EK ceza
 
+    // Geri piyon (tunable; frozen sınırın önünde). SAF-PIYON -> pawn_structure cache'ine
+    // girer (izole/çift/geçer gibi).
+    int backward_mg, backward_eg;                // ilerleyemeyen + desteksiz piyon cezası
+
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
@@ -562,6 +581,11 @@ void pawn_structure(const Board& b, int& mg, int& eg);
 // üretim %3-5 nps). pawn_structure(b,mg,eg) bunun ince sarmalayıcısıdır.
 void pawn_structure_full(const Board& b, int& mg, int& eg,
                          Bitboard& passed_w, Bitboard& passed_b);
+
+// Geri piyon katkısı (ilerleyemeyen + geriden desteklenemeyen piyon), BEYAZ − SİYAH,
+// MG/EG ayrı (tapered). Negatif = o taraf için zayıflık. Saf-piyon -> pawn_structure_full
+// içinden çağrılır (cache'e girer); izole test için doğrudan da çağrılabilir.
+void backward_pawns(const Board& b, int& mg, int& eg);
 
 // Geçer piyon şah eskortu katkısı, BEYAZ − SİYAH. mg HER ZAMAN 0 (yalnız oyun sonu
 // terimi; taper ile orta oyunda solar — king_safety'nin aynası). PIYON-SAF DEĞİL ->
