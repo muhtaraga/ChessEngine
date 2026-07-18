@@ -1180,7 +1180,18 @@ kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı d
       escort/outpost bandında) -> muhtemelen KOŞULLU + blok sonu BUNDLE SPRT (base `9c4f6d1`).**
       Connected / phalanx pawns: DİKKAT protected-passer (soru-2) tuzağına düşer — bağlı
       piyonlar da inşa gereği izole değil, izole terimi onları zaten fiyatlıyor; ÖNCE elle-hesap.
-- [ ] **Connected / phalanx pawns** (yukarıdaki tuzak kontrol edilerek). Her biri +5-15.
+- [~] **Connected / phalanx pawns — KOD TAMAM, SPRT BEKLENİYOR (commit `7733d03`, 181 test).**
+      SIRA-ÖLÇEKLİ, YALNIZ İLERLEMİŞ varyant (protected-passer tuzağını kesmek için): connected =
+      phalanx (yatay komşu) VEYA supported (piyonca savunulan); bonus = weight × max(0, göreli_sıra−2),
+      2-3. sıra 0. Tapered EG-ağır 2/4. Saf-piyon -> `pawn_structure_full` (cache); `connected_pawns()`
+      izole helper. İki koruma: (1) rr>=3 gate -> izole'nin baskın olduğu düşük sıralarda susar;
+      (2) "phalanx∨supported" = "sadece izole-değil"den DAR. ENSTRÜMANTASYON: **ön-kayıtlı passed-örtüşme
+      RİSKİ REDDEDİLDİ** (passed-share orta oyun %0.1 / oyun sonu %6.2 -> ihmal edilebilir); netnz %33.4,
+      NET |katkı|/çağrı mg 0.73 eg 1.47 (escort/outpost bandı), sum/çağrı ~0 (ölçek kaymıyor), oyun sonu
+      eg 4.48 (ilerlemiş-ağırlıklı) -> 2/4 iyi kalibre. Kapılar: perft birebir, ağırlık=0 düğüm-eşitliği
+      (3 terim 0 -> d13 1121128/cp27 = `167ade2`), 5 test (IgnoresUnsupportedAdvanced = ortogonallik
+      kanıtı). PawnPassedBonus FEN d5+e5->d3+e3 (gate altı) taşındı. **SPRT: base `167ade2` vs `7733d03`;
+      sub-5 beklenir -> KOŞULLU + bundle.** NNUE cherry-pick ADAYI.
 
 *Blok E4 — Taş-yerleşim terimleri:*
 - [~] **Knight/bishop outpost — KOŞULLU KABUL (SPRT KARARSIZ, pozitif eğilim), commit
@@ -1350,14 +1361,27 @@ bad bishop KOŞULLU KABUL (sub-5 pozitif, certify EDİLMEDİ) -> commit `75a5f17
 HEAD koşullu (baseline yine `167ade2`).** SPRT base `167ade2` vs new `75a5f17`: 10779 oyun,
 Elo +4 ± 4.9, LOS %94.7, LLR 1.22 (kullanıcı durdurdu) — OUTPOST DESENİ (sub-5, 0/5'te tek
 certify olmaz). Öncesi BLOK E4 outpost KOŞULLU KABUL -> `47fada6`, 157 test (10k tavan:
-+4.7 ± 5.0, LOS %96.8, LLR 1.72 — H1 DEĞİL). **BLOK E3 backward pawns (geri piyon) KOD TAMAM,
-SPRT BEKLENİYOR -> commit `93321c9`, 176 test, HEAD.** (connected-rooks ORTOGONAL DEĞİL bulundu
-[rook_on_file 2× örtüşme + geri-sıra işaret-şüpheli], backward-pawns onun yerine seçildi —
-kullanıcı kararı 2026-07-18.) **SIRADAKİ İŞ: backward SPRT (base `167ade2` vs `93321c9`); sonra
-koşullu outpost+bad-bishop+backward için BUNDLE SPRT `9c4f6d1` vs blok-sonu HEAD — bkz. "SUB-5
-TERİM STRATEJİSİ" (escort + rook-behind tek başına certify etti, bundle'a girmez; outpost +
-bad-bishop + backward koşullu -> bundle'da certify).** NNUE bu repoda YOK, ayrı repoda
-(`../ChessEngineNNUE`).**
++4.7 ± 5.0, LOS %96.8, LLR 1.72 — H1 DEĞİL). **BLOK E3 backward pawns `93321c9` + connected/phalanx
+pawns `7733d03` KOD TAMAM, SPRT BEKLENİYOR (HEAD `7733d03`, 181 test; ikisi de bireysel SPRT
+ALMADI — kullanıcı ard arda kodladı).** (connected-rooks ORTOGONAL DEĞİL bulundu -> backward
+seçildi; connected/phalanx ise sıra-ölçekli ilerlemiş varyantla trap-2'den kaçırıldı — kullanıcı
+kararları 2026-07-18.) **SIRADAKİ İŞ (SPRT kararı kullanıcıya): 3 yeni koşullu terimi (bad-bishop +
+backward + connected) TEK BUNDLE ile certify et -> base `167ade2` (certified baseline) vs `7733d03`
+(HEAD); H1 -> üçü birden certify, `7733d03` yeni baseline. Alternatif: backward + connected'ı önce
+tek tek SPRT'le (negatif-değil doğrulaması) sonra bundle (daha çok compute). Not: outpost hâlâ
+9c4f6d1-bundle borcu [escort/rook-behind onun üstünde certify etti -> pratikte grandfathered].**
+NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+**SON (2026-07-18): Blok E3 connected/phalanx pawns (bağlı piyon) KOD TAMAM, SPRT BEKLENİYOR ->
+commit `7733d03`, 181 test. Sıra-ölçekli YALNIZ İLERLEMİŞ varyant (protected-passer trap-2'sini
+kesmek için): connected = phalanx (yatay komşu) VEYA supported (piyonca savunulan); bonus =
+weight × max(0, göreli_sıra−2), 2-3. sıra 0; tapered EG-ağır 2/4. Saf-piyon -> pawn_structure_full
+(cache); connected_pawns() izole helper. İki koruma: rr>=3 gate (düşük-sıra izole örtüşmesini keser)
++ "phalanx∨supported" ('sadece izole-değil'den dar). ENSTRÜMANTASYON: **ön-kayıtlı passed-örtüşme
+RİSKİ REDDEDİLDİ** (passed-share %0.1 orta oyun / %6.2 oyun sonu); netnz %33.4, NET |katkı|/çağrı
+mg 0.73 eg 1.47 (escort/outpost bandı), sum/çağrı ~0 (ölçek kaymıyor), oyun sonu eg 4.48 -> 2/4 iyi
+kalibre. Kapılar: perft birebir, ağırlık=0 düğüm-eşitliği (3 terim 0 -> d13 1121128/cp27 = `167ade2`),
+5 test (IgnoresUnsupportedAdvanced = ortogonallik kanıtı); PawnPassedBonus FEN gate-altına taşındı.
+NNUE cherry-pick ADAYI. Ayrıntı: Blok E3 connected girişi.**
 **SON (2026-07-18): Blok E3 backward pawns (geri piyon) KOD TAMAM, SPRT BEKLENİYOR -> commit
 `93321c9`, 176 test. Tapered −8/−12: komşu VAR ama hepsi ileride (geriden destek yok) + durak
 karesi rakip piyonca kontrol. Saf-piyon -> `pawn_structure_full` içinden çağrılır (cache'e girer);
