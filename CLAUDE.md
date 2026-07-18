@@ -1201,8 +1201,9 @@ kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı d
         `167ade2`'ye karşı bağımsız certify borcu opsiyonel 9c4f6d1-bundle'da kalır. NNUE cherry-pick ADAYI.
 
 *Blok E4 — Taş-yerleşim terimleri:*
-- [~] **Knight/bishop outpost — KOŞULLU KABUL (SPRT KARARSIZ, pozitif eğilim), commit
-      `47fada6`, 157 test. BASELINE `47fada6` KOŞULLU (H1 DEĞİL).**
+- [x] **Knight/bishop outpost — KOŞULLU KABUL (bireysel SPRT sub-5), sonra BUNDLE-CERTIFIED
+      (2026-07-18): `9c4f6d1` vs `2122456` bundle +18.8 LLR 2.94 H1 outpost'u da certify etti ->
+      grandfathered borç KAPANDI, artık kesin kabul. Commit `47fada6`, 157 test.**
       **SPRT final (base `9c4f6d1` vs new `47fada6`, 1-thread, 5+0.05, elo0=0/elo1=5):
       10.000 oyun TAVAN, W-D-L 2749-4638-2613, Elo +4.7 ± 5.0, LOS %96.8, LLR 1.72
       (üst sınır 2.94'ün %58'i, YÜKSELİYORDU), beraberlik %46.4, renk dağılımı 5000/5000.**
@@ -1259,8 +1260,9 @@ kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı d
         predicate + iki sabit var. 5 test (152->157; OutpostKnightBonus'un 2. tahtası
         ANTI-VACUITY: siyah piyon d5'in ARKASINDA -> bonus bozulmamalı; öne-kısıtını unutan
         naif implementasyonu yakalayan TEK test). NNUE cherry-pick ADAYI (bundle H1 sonrası).
-- [~] **Bad bishop (kendi renginde piyon sayısı) — KOŞULLU KABUL (SPRT sub-5 pozitif,
-      certify EDİLMEDİ), commit `75a5f17`, 172 test. BASELINE `167ade2` KOŞULLU (H1 DEĞİL).**
+- [x] **Bad bishop (kendi renginde piyon sayısı) — KOŞULLU KABUL (bireysel SPRT sub-5 +4),
+      sonra BUNDLE-CERTIFIED (2026-07-18): `9c4f6d1` vs `2122456` bundle +18.8 LLR 2.94 H1 bad-bishop'u
+      da certify etti -> grandfathered borç KAPANDI, artık kesin kabul. Commit `75a5f17`, 172 test.**
       **SPRT base `167ade2` vs new `75a5f17` (1-thread, 5+0.05, elo0=0/elo1=5): 10779 oyun,
       W-D-L 3022-4863-2894, Elo +4 ± 4.9, LOS %94.7, LLR 1.22 (2.94'e sürünüyordu, kullanıcı
       durdurdu).** OUTPOST DESENİNİN BİREBİR AYNISI (outpost +4.7 ± 5.0, LOS %96.8, LLR 1.72
@@ -1370,14 +1372,28 @@ Elo +4 ± 4.9, LOS %94.7, LLR 1.22 (kullanıcı durdurdu) — OUTPOST DESENİ (s
 certify olmaz). Öncesi BLOK E4 outpost KOŞULLU KABUL -> `47fada6`, 157 test (10k tavan:
 +4.7 ± 5.0, LOS %96.8, LLR 1.72 — H1 DEĞİL). **BLOK E3 backward pawns DENENDİ/RAFA (SPRT H0 −8.1,
 kod `2122456`'da söküldü). BLOK E3 connected/phalanx pawns KABUL (kullanıcı kararı, erken durdurma;
-+9.1 ± 7.5, LOS %99.1, LLR 2.26 yükseliyordu) -> YENİ BASELINE `2122456`, 177 test.** **SIRADAKİ İŞ:
-BLOK E3 esasen bitti (escort + rook-behind + connected KABUL; protected/blockade/backward RAFA).
-Seçenekler: (a) E4 rook-on-7th gate'li VEYA bishop-pair zıt-kare rafinesi; (b) E5 endgame scaling
-(ortogonal + güvenli, untapped); (c) 9c4f6d1-bundle ile outpost + bad_bishop bağımsız certify
-(grandfathered borcu kapatmak). Kullanıcı kararı.** NNUE bu repoda YOK, ayrı repoda
-(`../ChessEngineNNUE`).**
++9.1 ± 7.5, LOS %99.1, LLR 2.26 yükseliyordu) -> BASELINE `2122456`, 177 test.** **BLOK E3/E4 EVAL
+BUNDLE SPRT TAM KABUL: base `9c4f6d1` (threats) vs `2122456` (HEAD): 2428 oyun, W-D-L 741-1077-610,
+Elo +18.8 ± 10.3, LOS %100, LLR 2.94 TAM H1 -> threats sonrası hayatta kalan 5 terimin (outpost +
+escort + rook-behind + bad-bishop + connected) KÜMÜLATİF etkisi certify; GRANDFATHERED BORÇ KAPANDI
+(outpost + bad-bishop artık bundle-certified), `2122456` TAM-CERTIFIED BASELINE.** **SIRADAKİ İŞ:
+BLOK E3 BİTTİ + eval bundle certified. Seçenekler: (a) E4 rook-on-7th gate'li VEYA bishop-pair
+zıt-kare rafinesi [kullanıcı: yeni oturumda a]; (b) E5 endgame scaling (ortogonal+güvenli, untapped).
+Kullanıcı kararı.** NNUE bu repoda YOK, ayrı repoda (`../ChessEngineNNUE`).**
+**SON (2026-07-18): BLOK E3/E4 EVAL BUNDLE SPRT TAM KABUL (H1). base `9c4f6d1` (E2 threats baseline,
+tüm eval-güçlendirme işinin başı) vs new `2122456` (HEAD): 2428 oyun, W-D-L 741-1077-610, Elo +18.8
+± 10.3, LOS %100, LLR 2.94 TAM H1. Threats sonrası HAYATTA KALAN 5 terimin (outpost + escort +
+rook-behind + bad-bishop + connected; backward/protected/blockade RAFA) KÜMÜLATİF etkisini certify
+etti -> **GRANDFATHERED BORÇ KAPANDI**: outpost (+4.7 koşullu) + bad-bishop (+4 koşullu) hiç bağımsız
+certify olmamıştı, bundle ikisini de certify etti; `2122456` artık TAM-CERTIFIED BASELINE (koşullu
+caveat yok). DÜRÜST GÖZLEM: kümülatif +18.8, bireysel toplamdan (~+31.6) DÜŞÜK — normal (motor
+güçlendikçe azalan getiri + kısmi terim örtüşmesi; bireysel SPRT'ler daha zayıf tabana karşı ölçtüğü
+için şişer). SUB-5 BUNDLE STRATEJİSİ DOĞRULANDI: tek tek certify edilemeyen sub-5 terimler (outpost/
+bad-bishop) bundle'da certify oldu; bireysel SPRT'ler önce negatif terimi (backward −8.1) bundle'a
+girmeden eledi -> stratejinin iki yarısı da işledi. E3 BİTTİ; sıradaki E4 rook-on-7th/bishop-pair
+(kullanıcı: a) VEYA E5 endgame scaling.**
 **SON (2026-07-18): Blok E3 connected/phalanx pawns (bağlı piyon) KABUL (kullanıcı kararı, erken
-durdurma) -> YENİ BASELINE `2122456`, 177 test. SPRT base `75a5f17` (bad_bishop) vs new `2122456`
+durdurma) -> BASELINE `2122456`, 177 test. SPRT base `75a5f17` (bad_bishop) vs new `2122456`
 (bad_bishop + connected, connected'ı İZOLE eder): 4519 oyun, W-D-L 1287-2063-1169, Elo +9.1 ± 7.5,
 LOS %99.1, LLR 2.26 (2.94'e YÜKSELİYORDU, kullanıcı erken durdurdu). Sub-5 koşullulardan (bad-bishop
 +4/outpost +4.7, LLR ~1.2-1.7'de takılan) NİTELİKSEL FARKLI: +9.1 > elo1(5) -> LLR istikrarlı
