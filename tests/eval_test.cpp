@@ -128,62 +128,6 @@ TEST(Eval, PawnStructureSymmetry) {
     EXPECT_EQ(evaluate(b), 0);
 }
 
-// --- Geri piyon (backward) testleri (backward_pawns yardımcısıyla, izole) ---
-
-// Beyaz c3: komşusu d4 İLERİDE (geriden destek yok) + durak karesi c4 siyah d5
-// piyonunca kontrol -> geri. d4 komşusu c3 geride -> desteklenir, geri değil.
-// Siyah d5 izole -> geri değil (komşu yok). Yalnız c3 -> tam bir ceza.
-TEST(Eval, BackwardPawnPenalty) {
-    Board b;
-    ASSERT_TRUE(b.set_fen("4k3/8/8/3p4/3P4/2P5/8/4K3 w - - 0 1"));
-    int mg = 0, eg = 0;
-    backward_pawns(b, mg, eg);
-    EXPECT_EQ(mg, BackwardPenaltyMg);
-    EXPECT_EQ(eg, BackwardPenaltyEg);
-    EXPECT_LT(eg, 0);
-}
-
-// Geriden destek: b2 eklenince c3'ün geride komşusu olur -> desteklenebilir, geri
-// değil. (İzole terimiyle karışmasın diye: c3'ün komşusu daima var.)
-TEST(Eval, BackwardNotIfSupported) {
-    Board b;
-    ASSERT_TRUE(b.set_fen("4k3/8/8/3p4/3P4/2P5/1P6/4K3 w - - 0 1"));
-    int mg = 0, eg = 0;
-    backward_pawns(b, mg, eg);
-    EXPECT_EQ(mg, 0);
-    EXPECT_EQ(eg, 0);
-}
-
-// Durak karesi güvenli: siyah piyon d6'da (c4'ü vurmaz) -> c3 ilerleyebilir, geri
-// değil. Komşu (d4) + izole-değil koşulları hâlâ sağlanıyor -> yalnız durak koşulu eler.
-TEST(Eval, BackwardNotIfStopSafe) {
-    Board b;
-    ASSERT_TRUE(b.set_fen("4k3/8/3p4/8/3P4/2P5/8/4K3 w - - 0 1"));
-    int mg = 0, eg = 0;
-    backward_pawns(b, mg, eg);
-    EXPECT_EQ(mg, 0);
-    EXPECT_EQ(eg, 0);
-}
-
-// Renk simetrisi (dikey ayna + renk takası, iki tahta -> anti-vacuity): beyaz c3
-// geri -> −ceza; ^56 aynası siyah c6 geri -> +ceza (beyaz bakışıyla). Siyah tahta
-// beyazın tam negatifi.
-TEST(Eval, BackwardSymmetry) {
-    Board white_side;
-    ASSERT_TRUE(white_side.set_fen("4k3/8/8/3p4/3P4/2P5/8/4K3 w - - 0 1"));
-    int mg1 = 0, eg1 = 0;
-    backward_pawns(white_side, mg1, eg1);
-    EXPECT_EQ(mg1, BackwardPenaltyMg);
-    EXPECT_LT(eg1, 0);
-
-    Board black_side;
-    ASSERT_TRUE(black_side.set_fen("4k3/8/2p5/3p4/3P4/8/8/4K3 b - - 0 1"));
-    int mg2 = 0, eg2 = 0;
-    backward_pawns(black_side, mg2, eg2);
-    EXPECT_EQ(mg2, -mg1);
-    EXPECT_EQ(eg2, -eg1);
-}
-
 // --- Bağlı/falanks piyon (connected) testleri (izole) ---
 
 // Falanks: d5+e5 yan yana (aynı sıra), ikisi de göreli sıra 4 -> factor 2. Her ikisi

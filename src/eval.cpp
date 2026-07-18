@@ -46,7 +46,6 @@ EvalParams make_default_eval_params() {
     p.rook_behind_passer_eg = RookBehindPasserEg;
     p.bad_bishop_mg         = BadBishopMg;         p.bad_bishop_eg         = BadBishopEg;
     p.bad_bishop_blocked_mg = BadBishopBlockedMg;  p.bad_bishop_blocked_eg = BadBishopBlockedEg;
-    p.backward_mg           = BackwardPenaltyMg;   p.backward_eg           = BackwardPenaltyEg;
     p.connected_mg          = ConnectedBonusMg;    p.connected_eg          = ConnectedBonusEg;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
@@ -81,46 +80,6 @@ void pawn_structure(const Board& b, int& mg, int& eg) {
     // İzole test için ince sarmalayıcı; geçer piyon kümesi atılır.
     Bitboard pw = 0, pb = 0;
     pawn_structure_full(b, mg, eg, pw, pb);
-}
-
-void backward_pawns(const Board& b, int& mg, int& eg) {
-    mg = 0;
-    eg = 0;
-    const Bitboard wp   = b.pieces[PAWN] & b.colors[WHITE];
-    const Bitboard bp   = b.pieces[PAWN] & b.colors[BLACK];
-    const Bitboard watt = pawn_attack_span(wp, WHITE);  // beyaz piyonların vurduğu kareler
-    const Bitboard batt = pawn_attack_span(bp, BLACK);  // siyah piyonların vurduğu kareler
-
-    // Beyaz geri piyon: komşu sütunda dost piyon VAR ama hepsi İLERİDE (geriden
-    // destek yok), VE durak karesi (s+8) bir siyah piyonca kontrol ediliyor.
-    Bitboard w = wp;
-    while (w) {
-        Square   sq         = pop_lsb(w);
-        Bitboard neighbours = wp & AdjacentFileMask[file_of(sq)];
-        if (!neighbours) continue;                      // komşu yok -> izole (ayrı terim)
-        // PassedMask[WHITE][sq] = komşu+kendi sütun, sıra > r. neighbours zaten yalnız
-        // komşu sütunda -> onunla kesişim "ileride" komşular. ~ile "geride/hizada" olanlar;
-        // varsa geriden desteklenebilir -> geri DEĞİL.
-        if (neighbours & ~PassedMask[WHITE][sq]) continue;
-        if (test_bit(batt, Square(sq + 8))) {           // durak karesi siyah piyon kontrolünde
-            mg += g_eval.backward_mg;
-            eg += g_eval.backward_eg;
-        }
-    }
-
-    // Siyah geri piyon (ayna -> beyaz bakışına eksi). Siyah için "ileri" = düşük sıra;
-    // PassedMask[BLACK][sq] = sıra < r. Durak karesi s-8, beyaz piyonca kontrol.
-    Bitboard bb2 = bp;
-    while (bb2) {
-        Square   sq         = pop_lsb(bb2);
-        Bitboard neighbours = bp & AdjacentFileMask[file_of(sq)];
-        if (!neighbours) continue;
-        if (neighbours & ~PassedMask[BLACK][sq]) continue;
-        if (test_bit(watt, Square(sq - 8))) {
-            mg -= g_eval.backward_mg;
-            eg -= g_eval.backward_eg;
-        }
-    }
 }
 
 void connected_pawns(const Board& b, int& mg, int& eg) {
@@ -214,12 +173,6 @@ void pawn_structure_full(const Board& b, int& mg, int& eg,
             passed_b |= square_bb(sq);
         }
     }
-
-    // Geri piyon (saf-piyon -> cache'e giren pawn_structure sonucuna dahil).
-    int bwd_mg = 0, bwd_eg = 0;
-    backward_pawns(b, bwd_mg, bwd_eg);
-    mg += bwd_mg;
-    eg += bwd_eg;
 
     // Bağlı/falanks piyon (saf-piyon -> cache'e dahil).
     int con_mg = 0, con_eg = 0;
