@@ -985,10 +985,12 @@ da vardı -> Debug'da `king_square()` array OOB (Release sessiz); şah eklenerek
 (protected passer −22.1, blockade −12.4).
 DURUM (2026-07-18, GÜNCEL): E3 + E4-rook-on-7th BİTTİ. E3/E4 bundle certified (`2122456`),
 sonra E4 kale-7.-sıra (gated) KABUL -> **YENİ BASELINE `8ada3d8`** (+7 ± 6.6, LOS %98.2,
-LLR 2.0, kullanıcı erken durdurdu; +7 > elo1 -> tek başına certify). Kalan E4: rook-on-7th
-rank-ölçekli/connected-rooks/rakip-kale-7. (hepsi rook-on-7th'in EK'i) VEYA bishop-pair
-zıt-kare (near-no-op riski). Sonraki blok adayı: **E5 endgame scaling** (ortogonal+güvenli,
-untapped — kullanıcı bir sonraki oturumda E4-kalanı mı E5 mi seçecek). NNUE cherry-pick ADAYI.
+LLR 2.0, kullanıcı erken durdurdu; +7 > elo1 -> tek başına certify). **SIRADAKİ (KULLANICI
+KARARI, yeni oturum): E4-KALANI** — rook-on-7th EK'leri: rank-ölçekli bonus / connected-rooks
+(7.'de çift kale ek bonus) / rakip-kale-7. Bunlar rook-on-7th'in (`8ada3d8`) ORTOGONAL değil
+EK'i olduğundan tek tek ayrı commit + ayrı SPRT; DİKKAT (soru-2): rakip-kale-7. `rook_on_file`
+yarı-açık ile örtüşebilir (rook-behind'da bu yüzden yalnız-kendi-kale seçilmişti). bishop-pair
+zıt-kare ATLANIR (near-no-op). E5 endgame scaling sonraya. NNUE cherry-pick ADAYI.
 **YENİ TERİMDE ÜÇ SORUYU DA SOR (bu blokta üçü de ayrı ayrı ısırdı):** (1) sinyal ADIYLA
 sayılıyor mu? (2) SONUCU zaten fiyatlanmış mı — korelasyonlu vekil var mı (protected
 passer: izole terimi)? (3) predicate'in ateşlediği TÜM durumlarda etkinin İŞARETİ aynı mı
