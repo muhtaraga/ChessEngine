@@ -47,6 +47,7 @@ EvalParams make_default_eval_params() {
     p.bad_bishop_mg         = BadBishopMg;         p.bad_bishop_eg         = BadBishopEg;
     p.bad_bishop_blocked_mg = BadBishopBlockedMg;  p.bad_bishop_blocked_eg = BadBishopBlockedEg;
     p.connected_mg          = ConnectedBonusMg;    p.connected_eg          = ConnectedBonusEg;
+    p.rook_on_seventh_mg    = RookOnSeventhMg;     p.rook_on_seventh_eg    = RookOnSeventhEg;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
@@ -532,6 +533,39 @@ void rook_on_file(const Board& b, int& mg, int& eg) {
     }
 }
 
+void rook_on_seventh(const Board& b, int& mg, int& eg) {
+    mg = 0;
+    eg = 0;
+    const Bitboard pawns = b.pieces[PAWN];
+
+    for (Color c : {WHITE, BLACK}) {
+        const int sign    = (c == WHITE) ? 1 : -1;
+        // c'nin "7. sırası" = rakip taban sırasının bir önü (rank index).
+        const int seventh = (c == WHITE) ? 6 : 1;
+        const int eighth  = (c == WHITE) ? 7 : 0;  // rakip taban sırası
+
+        const Bitboard enemy_pawns = pawns & b.colors[~c];
+
+        // Gate (EITHER): rakip şah 8. sırada VEYA rakip piyon(lar) 7. sırada.
+        // Kale PST'si 7. sıraya bağlamdan bağımsız +10 verdiğinden gate şart:
+        // yalnız kale "iş yaparken" (şahı kesiyor / piyon kütlesine baskı) fiyatla.
+        const Bitboard seventh_bb   = 0xFFULL << (seventh * 8);  // LERF rank maskesi
+        const bool     king_on_back = rank_of(b.king_square(~c)) == eighth;
+        const bool     pawns_on_7th = (enemy_pawns & seventh_bb) != 0;
+        if (!king_on_back && !pawns_on_7th) continue;
+
+        // Gate açık: 7. sıradaki her kale için bonus (kale başına -> çift kale 2×).
+        Bitboard rooks = b.pieces[ROOK] & b.colors[c];
+        while (rooks) {
+            Square s = pop_lsb(rooks);
+            if (rank_of(s) == seventh) {
+                mg += sign * g_eval.rook_on_seventh_mg;
+                eg += sign * g_eval.rook_on_seventh_eg;
+            }
+        }
+    }
+}
+
 void king_safety(const Board& b, int& mg, int& eg) {
     // İzole test için ince sarmalayıcı; gerçek hesap tek geçişli impl'de
     // (mobility ile paylaşılan taş-atak setleri). eg her zaman 0.
@@ -624,6 +658,12 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     rook_on_file(b, rmg, reg);
     mg += rmg;
     eg += reg;
+
+    // Kale 7. sırada (gated) katkısı.
+    int r7mg = 0, r7eg = 0;
+    rook_on_seventh(b, r7mg, r7eg);
+    mg += r7mg;
+    eg += r7eg;
 
     // Geçer piyon şah eskortu: terim şah yerine bağlı (cache'e giremez) ama geçer
     // piyon kümesi yukarıda cache'ten geldi -> yeniden üretim yok. mg katkısı hep 0.

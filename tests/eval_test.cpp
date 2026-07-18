@@ -269,6 +269,62 @@ TEST(Eval, BishopRookSymmetry) {
     EXPECT_EQ(evaluate(b), 0);
 }
 
+// --- Kale 7. sırada (gated) testleri ---
+
+// Gate: rakip şah 8. sırada. Beyaz Re7, siyah şah a8 (8.'de) -> beyaz lehine bonus.
+// Siyah şah kale hattında değil (a8) -> yasadışı çek yok.
+TEST(Eval, RookOnSeventhBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("k7/4R3/8/8/8/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    rook_on_seventh(b, mg, eg);
+    EXPECT_EQ(mg, RookOnSeventhMg);
+    EXPECT_EQ(eg, RookOnSeventhEg);
+}
+
+// Gate'in İKİNCİ dalı (ortogonal olan): rakip piyon 7. sırada. Siyah şah 8.'de
+// DEĞİL (a4) -> king-on-8th dalı kapalı; siyah piyon b7 (7.'de) gate'i açar.
+TEST(Eval, RookOnSeventhPawnGate) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("8/1p2R3/8/8/k7/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    rook_on_seventh(b, mg, eg);
+    EXPECT_EQ(mg, RookOnSeventhMg);
+    EXPECT_EQ(eg, RookOnSeventhEg);
+}
+
+// Gate kapalı: kale 7.'de (Re7) ama rakip şah 8.'de DEĞİL (a4) + rakip piyon
+// 7.'de YOK -> bonus verilmez (ortogonallik/gate kanıtı; PST'nin düz +10'undan
+// ayrışır). PST katkısı burada ölçülmez (rook_on_seventh izole).
+TEST(Eval, RookOnSeventhGateClosed) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("8/4R3/8/8/k7/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    rook_on_seventh(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+}
+
+// Renk simetrisi + ANTI-VACUITY. Board A: yalnız beyaz ateşler (terim nonzero).
+// Board B: tam dikey ayna (Re7<->re2, Ka1<->ka8, ikisinin de gate'i açık) ->
+// katkılar iptal, evaluate() de 0.
+TEST(Eval, RookOnSeventhSymmetry) {
+    Board a;
+    ASSERT_TRUE(a.set_fen("k7/4R3/8/8/8/8/8/4K3 w - - 0 1"));
+    int amg = 0, aeg = 0;
+    rook_on_seventh(a, amg, aeg);
+    ASSERT_NE(amg, 0);  // anti-vacuity: terim gerçekten ateşliyor
+    ASSERT_NE(aeg, 0);
+
+    Board b;
+    ASSERT_TRUE(b.set_fen("k7/4R3/8/8/8/8/4r3/K7 w - - 0 1"));
+    int bmg = 0, beg = 0;
+    rook_on_seventh(b, bmg, beg);
+    EXPECT_EQ(bmg, 0);
+    EXPECT_EQ(beg, 0);
+    EXPECT_EQ(evaluate(b), 0);
+}
+
 // --- King safety testleri (king_safety yardımcısıyla, PST/materyal gürültüsü yok) ---
 
 // Piyon kalkanı: beyaz şah g1, kalkan f2+h2 var ama g-sütunu boş (1 eksik sütun);

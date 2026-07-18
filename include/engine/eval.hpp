@@ -125,6 +125,18 @@ inline constexpr int RookOpenEg = 15;
 inline constexpr int RookSemiMg = 12;
 inline constexpr int RookSemiEg = 8;
 
+// --- Kale 7. sırada (gated) ağırlıkları (MG/EG ayrı; tapered) ---
+// Kale rakip 7. sırasında VE (rakip şah 8. sırada VEYA rakip piyon 7. sırada).
+// Gate zorunlu: kale PST'si zaten 7. sıraya düz +10 verir -> naif form PST'nin
+// yeniden-ifadesi olurdu; gate yalnız "iş yapan" 7.-sıra kalesini fiyatlar.
+// Kale başına eklenir -> 7.'de çift kale ("pigs on 7th") doğal 2× alır. Modest
+// tutulur (eval-ölçek ↔ arama-marjı bağı). Enstrümantasyonla kalibre: midgame
+// ateşleme ~%0.36 (near-no-op -> frozen midgame marjları güvende), endgame ~%53;
+// eg proven-sibling rook_behind_passer_eg=20'ye çıpalandı (per-fire ~20cp, +7.5 geçmişti;
+// ilk 20/25 endgame NET |eg|/call=13.3cp ile bad_bishop pre-trim bandındaydı -> kısıldı).
+inline constexpr int RookOnSeventhMg = 15;
+inline constexpr int RookOnSeventhEg = 20;
+
 // --- Threats / hanging ağırlıkları (santipiyon, MG/EG ayrı; tapered) ---
 // Rakip taşlara yönelen tehditler (piyon/minör/kale saldırısı + savunmasız taş).
 // Bonuslar yalnız tehdit VARKEN uygulanır -> dengeli pozisyonda renkler arası ~iptal.
@@ -551,6 +563,10 @@ struct EvalParams {
     // (bonus = weight × max(0, göreli_sıra − 2)), yalnız ilerlemiş; phalanx VEYA supported.
     int connected_mg, connected_eg;              // ilerlemiş bağlı piyon bonusu
 
+    // Kale 7. sırada (tunable; frozen sınırın önünde; tapered). Gated: kale rakip
+    // 7. sırasında VE (rakip şah 8.'de VEYA rakip piyon 7.'de). Kale başına eklenir.
+    int rook_on_seventh_mg, rook_on_seventh_eg;  // gated 7.-sıra kalesi bonusu
+
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
@@ -631,6 +647,11 @@ void bishop_pair(const Board& b, int& mg, int& eg);
 
 // Kale açık/yarı-açık sütun katkısı, BEYAZ − SİYAH, MG/EG ayrı.
 void rook_on_file(const Board& b, int& mg, int& eg);
+
+// Kale 7. sırada (gated) katkısı, BEYAZ − SİYAH, MG/EG ayrı (tapered). Kale rakip
+// 7. sırasında VE (rakip şah 8.'de VEYA rakip piyon 7.'de) ise kale başına bonus.
+// Gate zorunlu (kale PST'si 7. sıraya zaten +10 verir); izole test edilebilir.
+void rook_on_seventh(const Board& b, int& mg, int& eg);
 
 // Threats / hanging katkısı (rakip taşlara piyon/minör/kale tehditleri + savunmasız
 // taş), BEYAZ − SİYAH, MG/EG ayrı (tapered). evaluate() akümülatörlerine ekler;
