@@ -1179,18 +1179,26 @@ kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı d
       cezaladı (blockade işaret-tutarsızlığının daha sinsi hali: enstrümantasyon "tek predicate,
       daima −" der ama predicate'in ateşlediği pozisyonların DEĞERİ değişken). Kategori kuralı:
       sabit düzeltip retry YOK. `pawn_attack_span` engine ns'te KALDI (connected kullanıyor).
-- [~] **Connected / phalanx pawns — KOD TAMAM, SPRT BEKLENİYOR (commit `7733d03`, 181 test).**
-      SIRA-ÖLÇEKLİ, YALNIZ İLERLEMİŞ varyant (protected-passer tuzağını kesmek için): connected =
-      phalanx (yatay komşu) VEYA supported (piyonca savunulan); bonus = weight × max(0, göreli_sıra−2),
-      2-3. sıra 0. Tapered EG-ağır 2/4. Saf-piyon -> `pawn_structure_full` (cache); `connected_pawns()`
-      izole helper. İki koruma: (1) rr>=3 gate -> izole'nin baskın olduğu düşük sıralarda susar;
-      (2) "phalanx∨supported" = "sadece izole-değil"den DAR. ENSTRÜMANTASYON: **ön-kayıtlı passed-örtüşme
-      RİSKİ REDDEDİLDİ** (passed-share orta oyun %0.1 / oyun sonu %6.2 -> ihmal edilebilir); netnz %33.4,
-      NET |katkı|/çağrı mg 0.73 eg 1.47 (escort/outpost bandı), sum/çağrı ~0 (ölçek kaymıyor), oyun sonu
-      eg 4.48 (ilerlemiş-ağırlıklı) -> 2/4 iyi kalibre. Kapılar: perft birebir, ağırlık=0 düğüm-eşitliği
-      (3 terim 0 -> d13 1121128/cp27 = `167ade2`), 5 test (IgnoresUnsupportedAdvanced = ortogonallik
-      kanıtı). PawnPassedBonus FEN d5+e5->d3+e3 (gate altı) taşındı. **SPRT: base `167ade2` vs `7733d03`;
-      sub-5 beklenir -> KOŞULLU + bundle.** NNUE cherry-pick ADAYI.
+- [x] **Connected / phalanx pawns — KABUL (kullanıcı kararı, erken durdurma). YENİ BASELINE
+      `2122456`, 177 test.** SPRT base `75a5f17` (bad_bishop) vs new `2122456` (bad_bishop + connected,
+      connected'ı İZOLE eder): **4519 oyun, W-D-L 1287-2063-1169, Elo +9.1 ± 7.5, LOS %99.1, LLR 2.26
+      (2.94'e YÜKSELİYORDU, kullanıcı erken durdurdu).** Sub-5 koşullulardan (bad-bishop/outpost, LLR
+      ~1.2-1.7'de takılan) NİTELİKSEL FARKLI: +9.1 > elo1(5) -> LLR istikrarlı tırmanıyordu, tek başına
+      certify eden gerçek pozitif. Erken-kabul king-safety `7eea85f` (LLR 1.46) emsalinden GÜÇLÜ; "H1
+      TAM KABUL" DEĞİL (LLR 2.94'e ulaşmadı) ama sub-5 koşullulardan bir sınıf yukarı.
+      - **Mekanik:** SIRA-ÖLÇEKLİ YALNIZ İLERLEMİŞ (protected-passer trap-2'sini keser): connected =
+        phalanx (yatay komşu) VEYA supported (piyonca savunulan); bonus = weight × max(0, göreli_sıra−2),
+        2-3. sıra 0. Tapered EG-ağır 2/4. Saf-piyon -> `pawn_structure_full` (cache); `connected_pawns()`
+        izole helper. İki koruma: (1) rr>=3 gate -> izole'nin baskın olduğu düşük sıralarda susar;
+        (2) "phalanx∨supported" = "sadece izole-değil"den DAR.
+      - **ENSTRÜMANTASYON ön-kayıtlı passed-örtüşme RİSKİ REDDEDİLDİ** (passed-share %0.1/%6.2); netnz
+        %33.4, NET |katkı|/çağrı mg 0.73 eg 1.47 (escort/outpost bandı), sum/çağrı ~0, oyun sonu eg 4.48
+        -> 2/4 iyi kalibre. Kapılar: perft birebir, ağırlık=0 düğüm-eşitliği (bad_bishop+connected 0 ->
+        d13 1121128/cp27 = `167ade2`), 5 test (IgnoresUnsupportedAdvanced = ortogonallik kanıtı).
+      - **NOT (baseline zinciri):** connected, base `75a5f17` (bad_bishop içeren) üzerine certify etti
+        -> "bad_bishop + connected" birlikte doğrulandı; bad_bishop koşullu ama connected'ın altında
+        GRANDFATHERED (outpost'un escort/rook-behind altında grandfathered olması gibi). bad_bishop'un
+        `167ade2`'ye karşı bağımsız certify borcu opsiyonel 9c4f6d1-bundle'da kalır. NNUE cherry-pick ADAYI.
 
 *Blok E4 — Taş-yerleşim terimleri:*
 - [~] **Knight/bishop outpost — KOŞULLU KABUL (SPRT KARARSIZ, pozitif eğilim), commit
@@ -1361,13 +1369,25 @@ HEAD koşullu (baseline yine `167ade2`).** SPRT base `167ade2` vs new `75a5f17`:
 Elo +4 ± 4.9, LOS %94.7, LLR 1.22 (kullanıcı durdurdu) — OUTPOST DESENİ (sub-5, 0/5'te tek
 certify olmaz). Öncesi BLOK E4 outpost KOŞULLU KABUL -> `47fada6`, 157 test (10k tavan:
 +4.7 ± 5.0, LOS %96.8, LLR 1.72 — H1 DEĞİL). **BLOK E3 backward pawns DENENDİ/RAFA (SPRT H0 −8.1,
-kod `2122456`'da söküldü) — bireysel SPRT'nin negatif terimi bundle'dan ÖNCE yakalaması (strateji
-tam da bunun için).** **BLOK E3 connected/phalanx pawns KOD TAMAM, SPRT BEKLENİYOR (HEAD `2122456`
-= bad_bishop + connected, 177 test).** **SIRADAKİ İŞ: connected'ı BİREYSEL SPRT'le — base `75a5f17`
-(bad_bishop) vs new `2122456` (bad_bishop + connected) = connected'ı İZOLE eder (backward dersi:
-gate'ler yetmez, bireysel SPRT negatifi yakalar). H1/pozitif -> koşullu tut + bad-bishop ile bundle;
-H0 -> geri al. Kalan: outpost hâlâ 9c4f6d1-bundle borcu (grandfathered).** NNUE bu repoda YOK, ayrı
-repoda (`../ChessEngineNNUE`).**
+kod `2122456`'da söküldü). BLOK E3 connected/phalanx pawns KABUL (kullanıcı kararı, erken durdurma;
++9.1 ± 7.5, LOS %99.1, LLR 2.26 yükseliyordu) -> YENİ BASELINE `2122456`, 177 test.** **SIRADAKİ İŞ:
+BLOK E3 esasen bitti (escort + rook-behind + connected KABUL; protected/blockade/backward RAFA).
+Seçenekler: (a) E4 rook-on-7th gate'li VEYA bishop-pair zıt-kare rafinesi; (b) E5 endgame scaling
+(ortogonal + güvenli, untapped); (c) 9c4f6d1-bundle ile outpost + bad_bishop bağımsız certify
+(grandfathered borcu kapatmak). Kullanıcı kararı.** NNUE bu repoda YOK, ayrı repoda
+(`../ChessEngineNNUE`).**
+**SON (2026-07-18): Blok E3 connected/phalanx pawns (bağlı piyon) KABUL (kullanıcı kararı, erken
+durdurma) -> YENİ BASELINE `2122456`, 177 test. SPRT base `75a5f17` (bad_bishop) vs new `2122456`
+(bad_bishop + connected, connected'ı İZOLE eder): 4519 oyun, W-D-L 1287-2063-1169, Elo +9.1 ± 7.5,
+LOS %99.1, LLR 2.26 (2.94'e YÜKSELİYORDU, kullanıcı erken durdurdu). Sub-5 koşullulardan (bad-bishop
++4/outpost +4.7, LLR ~1.2-1.7'de takılan) NİTELİKSEL FARKLI: +9.1 > elo1(5) -> LLR istikrarlı
+tırmanıyordu, tek başına certify eden gerçek pozitif; erken-kabul king-safety `7eea85f` (LLR 1.46)
+emsalinden güçlü, "H1 TAM KABUL" (2.94) DEĞİL ama sub-5 koşullulardan bir sınıf yukarı. Mekanik:
+sıra-ölçekli yalnız-ilerlemiş (phalanx∨supported, bonus weight×max(0,göreli_sıra−2), 2/4 EG-ağır,
+pawn cache). Enstrümantasyon ön-kayıtlı passed-örtüşme reddedildi (%0.1/%6.2). NOT: connected base
+`75a5f17` üzerine certify etti -> bad_bishop connected'ın altında grandfathered (bağımsız certify
+borcu 9c4f6d1-bundle'da). SIRADAKİ: E3 bitti; E4 rook-on-7th/bishop-pair rafinesi VEYA E5 endgame
+scaling VEYA 9c4f6d1-bundle (kullanıcı kararı). NNUE cherry-pick ADAYI.**
 **SON (2026-07-18): Blok E3 backward pawns DENENDİ, RAFA KALDIRILDI (SPRT H0 TAM RED). SPRT base
 `167ade2` vs new `93321c9` (bad_bishop + backward BİRLİKTE): 3760 oyun, W-D-L 1011-1650-1099, Elo
 −8.1 ± 8.3, LOS %2.8, LLR −2.95 TAM RED. bad_bishop tek başına +4 -> backward marjinali ≈ −12. Kod
