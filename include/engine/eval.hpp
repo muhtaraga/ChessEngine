@@ -88,6 +88,28 @@ inline constexpr int PassedBonusEg[8] = {0, 10, 20, 35, 60, 90, 120, 0};
 inline constexpr int BackwardPenaltyMg = -8;
 inline constexpr int BackwardPenaltyEg = -12;
 
+// Bağlı / falanks piyon (connected) — SIRA-ÖLÇEKLİ, YALNIZ İLERLEMİŞ (tapered, EG ağır).
+// Bir piyon "connected"tir: (a) FALANKS — komşu sütunda aynı sıradaki dost piyon, VEYA
+// (b) SUPPORTED — dost piyonca diagonal savunuluyor. Bonus = weight × factor, burada
+// factor = max(0, göreli_sıra − 2): 2-3. sıra 0, 4→1, 5→2, 6→3, 7→4. Saf-piyon ->
+// pawn_structure cache'ine girer.
+//
+// KRİTİK TASARIM — ORTOGONAL KALINTIYI hedefler (izole terimiyle örtüşmeyi keser):
+// "connected" sinyalinin BÜYÜK kısmı izole terimiyle örtüşür (bağlı piyon inşa gereği
+// izole DEĞİL -> izole cezası zaten uygulanmıyor; protected passer −22.1 emsali). İki
+// koruma: (1) SIRA GATE rr>=3 -> düşük sıralarda (izole'nin baskın olduğu yerde) terim
+// SUSAR; (2) "phalanx VEYA supported" = "sadece izole-değil"den DAR (uzak komşulu ama
+// desteklenmeyen piyon connected DEĞİL). Kalıntı: izole'nin DÜZ cezasının hafife aldığı
+// İLERLEMİŞ bağlı ikili/zincir (elle-hesap: d5+e5 phalanx vs d5+e7 loose, ikisi de izole
+// değil -> mevcut eval ayırmıyor, connected ayırır).
+//
+// ÜÇ SORU: (1) adıyla sayılmıyor; (2) düşük-sıra örtüşmesi gate ile kesildi, kalıntı
+// ortogonal — ANCAK ilerlemiş connected çoğu zaman PASSED de olur -> passed'in kısmi
+// yeniden-ifadesi RİSKİ (enstrümantasyonda izlenir, ÖN-KAYITLI); (3) işaret + (ilerlemiş
+// bağlı piyon iyi), tek predicate. Modest ilk elle-seçim, E7 tuning adayı.
+inline constexpr int ConnectedBonusMg = 2;
+inline constexpr int ConnectedBonusEg = 4;
+
 // --- Mobility ağırlıkları (santipiyon, MG/EG ayrı; taş türü başına) ---
 // Taşın ulaşabildiği (dost taşla dolu OLMAYAN) kare sayısına doğrusal bonus.
 // Piyon ve şah hariç: piyon yapısı ayrı ele alınır, şah "mobilitesi" güvenlikle
@@ -535,6 +557,10 @@ struct EvalParams {
     // girer (izole/çift/geçer gibi).
     int backward_mg, backward_eg;                // ilerleyemeyen + desteksiz piyon cezası
 
+    // Bağlı/falanks piyon (tunable; frozen sınırın önünde). SAF-PIYON -> cache. Sıra-ölçekli
+    // (bonus = weight × max(0, göreli_sıra − 2)), yalnız ilerlemiş; phalanx VEYA supported.
+    int connected_mg, connected_eg;              // ilerlemiş bağlı piyon bonusu
+
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
@@ -586,6 +612,11 @@ void pawn_structure_full(const Board& b, int& mg, int& eg,
 // MG/EG ayrı (tapered). Negatif = o taraf için zayıflık. Saf-piyon -> pawn_structure_full
 // içinden çağrılır (cache'e girer); izole test için doğrudan da çağrılabilir.
 void backward_pawns(const Board& b, int& mg, int& eg);
+
+// Bağlı/falanks piyon katkısı (ilerlemiş phalanx VEYA desteklenen piyon, sıra-ölçekli),
+// BEYAZ − SİYAH, MG/EG ayrı (tapered). Pozitif = o taraf için avantaj. Saf-piyon ->
+// pawn_structure_full içinden çağrılır (cache'e girer); izole test için doğrudan da çağrılabilir.
+void connected_pawns(const Board& b, int& mg, int& eg);
 
 // Geçer piyon şah eskortu katkısı, BEYAZ − SİYAH. mg HER ZAMAN 0 (yalnız oyun sonu
 // terimi; taper ile orta oyunda solar — king_safety'nin aynası). PIYON-SAF DEĞİL ->

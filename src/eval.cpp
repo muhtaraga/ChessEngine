@@ -47,6 +47,7 @@ EvalParams make_default_eval_params() {
     p.bad_bishop_mg         = BadBishopMg;         p.bad_bishop_eg         = BadBishopEg;
     p.bad_bishop_blocked_mg = BadBishopBlockedMg;  p.bad_bishop_blocked_eg = BadBishopBlockedEg;
     p.backward_mg           = BackwardPenaltyMg;   p.backward_eg           = BackwardPenaltyEg;
+    p.connected_mg          = ConnectedBonusMg;    p.connected_eg          = ConnectedBonusEg;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
@@ -122,6 +123,42 @@ void backward_pawns(const Board& b, int& mg, int& eg) {
     }
 }
 
+void connected_pawns(const Board& b, int& mg, int& eg) {
+    mg = 0;
+    eg = 0;
+    const Bitboard wp   = b.pieces[PAWN] & b.colors[WHITE];
+    const Bitboard bp   = b.pieces[PAWN] & b.colors[BLACK];
+    const Bitboard watt = pawn_attack_span(wp, WHITE);  // beyaz piyonların SAVUNDUĞU kareler
+    const Bitboard batt = pawn_attack_span(bp, BLACK);
+    // Falanks (yatay komşu): bir piyonun batı/doğu komşusu var mı. Renk bağımsız (yatay
+    // bitişiklik); kenar taşmasını FileMask ile eler.
+    const Bitboard wphal = ((wp << 1) & ~FileMask[0]) | ((wp >> 1) & ~FileMask[7]);
+    const Bitboard bphal = ((bp << 1) & ~FileMask[0]) | ((bp >> 1) & ~FileMask[7]);
+
+    Bitboard w = wp;
+    while (w) {
+        Square sq = pop_lsb(w);
+        int    rr = rank_of(sq);               // beyaz göreli sıra = mutlak sıra
+        if (rr < 3) continue;                  // yalnız ilerlemiş (rank 4+); düşük sıra izole'ye bırakılır
+        // connected = falanks (yatay komşu) VEYA supported (dost piyonca savunuluyor)
+        if (!test_bit(wphal, sq) && !test_bit(watt, sq)) continue;
+        int factor = rr - 2;                   // rank4->1 .. rank7->4
+        mg += g_eval.connected_mg * factor;
+        eg += g_eval.connected_eg * factor;
+    }
+
+    Bitboard bb2 = bp;
+    while (bb2) {
+        Square sq = pop_lsb(bb2);
+        int    rr = 7 - rank_of(sq);           // siyah göreli sıra (aynalı)
+        if (rr < 3) continue;
+        if (!test_bit(bphal, sq) && !test_bit(batt, sq)) continue;
+        int factor = rr - 2;
+        mg -= g_eval.connected_mg * factor;
+        eg -= g_eval.connected_eg * factor;
+    }
+}
+
 void pawn_structure_full(const Board& b, int& mg, int& eg,
                          Bitboard& passed_w, Bitboard& passed_b) {
     mg = 0;
@@ -183,6 +220,12 @@ void pawn_structure_full(const Board& b, int& mg, int& eg,
     backward_pawns(b, bwd_mg, bwd_eg);
     mg += bwd_mg;
     eg += bwd_eg;
+
+    // Bağlı/falanks piyon (saf-piyon -> cache'e dahil).
+    int con_mg = 0, con_eg = 0;
+    connected_pawns(b, con_mg, con_eg);
+    mg += con_mg;
+    eg += con_eg;
 }
 
 namespace {

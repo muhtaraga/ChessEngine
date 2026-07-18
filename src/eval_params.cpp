@@ -53,6 +53,8 @@ std::vector<int*> flat_param_pointers(EvalParams& p) {
     v.push_back(&p.bad_bishop_blocked_mg); v.push_back(&p.bad_bishop_blocked_eg);
     // 6g) geri piyon (tune edilir; tapered: mg+eg)
     v.push_back(&p.backward_mg);           v.push_back(&p.backward_eg);
+    // 6h) bağlı/falanks piyon (tune edilir; tapered: mg+eg)
+    v.push_back(&p.connected_mg);          v.push_back(&p.connected_eg);
     // --- eval_frozen_start() buraya denk gelir ---
     // 7) king safety (DONDURULMUŞ): shield + attack_weight + safety_table
     v.push_back(&p.shield_missing);
@@ -96,6 +98,7 @@ const std::vector<std::string>& flat_param_names() {
         n.push_back("bad_bishop_mg");         n.push_back("bad_bishop_eg");
         n.push_back("bad_bishop_blocked_mg"); n.push_back("bad_bishop_blocked_eg");
         n.push_back("backward_mg");           n.push_back("backward_eg");
+        n.push_back("connected_mg");          n.push_back("connected_eg");
         n.push_back("shield_missing");
         for (int i = 0; i < PIECE_TYPE_NB; ++i) n.push_back(idx("king_attack_weight", i));
         for (int i = 0; i < 100; ++i) n.push_back(idx("safety_table", i));
@@ -107,7 +110,8 @@ const std::vector<std::string>& flat_param_names() {
 int eval_frozen_start() {
     // material(6) + pst_mg(384) + pst_eg(384) + pawn(20) + mobility(12) +
     // bishop_pair(2) + rook_file(4) + threats(8) + outpost(4) + passer_king_escort(1) +
-    // rook_behind_passer(1) + bad_bishop(4) + backward(2) = 832. King safety bundan sonra.
+    // rook_behind_passer(1) + bad_bishop(4) + backward(2) + connected(2) = 834. King
+    // safety bundan sonra.
     return PIECE_TYPE_NB                       // material
          + 2 * PIECE_TYPE_NB * SQUARE_NB       // pst_mg + pst_eg
          + 2 + 2 + 8 + 8                        // pawn
@@ -118,7 +122,8 @@ int eval_frozen_start() {
          + 1                                    // geçer piyon şah eskortu (EG)
          + 1                                    // kale kendi geçer piyonunun arkasında (EG)
          + 4                                    // kötü fil (taban mg/eg + blokeli mg/eg)
-         + 2;                                   // geri piyon (mg/eg)
+         + 2                                    // geri piyon (mg/eg)
+         + 2;                                   // bağlı/falanks piyon (mg/eg)
 }
 
 bool save_eval_params(const EvalParams& p, const std::string& path) {

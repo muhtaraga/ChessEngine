@@ -101,17 +101,18 @@ TEST(Eval, PawnDoubledPenalty) {
     EXPECT_EQ(eg, DoubledPenaltyEg);
 }
 
-// Geçer piyon: beyazın d5+e5 piyonları (birbirinin komşusu -> izole değil),
-// siyahta hiç piyon yok -> ikisi de geçer. Bonus pozitif ve oyun sonunda (EG)
-// orta oyundan (MG) belirgin büyük olmalı (tapered).
+// Geçer piyon: beyazın d3+e3 piyonları (birbirinin komşusu -> izole değil),
+// siyahta hiç piyon yok -> ikisi de geçer. 3. sıra: connected gate'in (göreli sıra>=3,
+// yani rank 4+) ALTINDA -> connected terimi ateşlemez, test SALT passed'i ölçer.
+// Bonus pozitif ve oyun sonunda (EG) orta oyundan (MG) belirgin büyük olmalı (tapered).
 TEST(Eval, PawnPassedBonus) {
     Board b;
-    ASSERT_TRUE(b.set_fen("4k3/8/8/3PP3/8/8/8/4K3 w - - 0 1"));
+    ASSERT_TRUE(b.set_fen("4k3/8/8/8/8/3PP3/8/4K3 w - - 0 1"));
     int mg = 0, eg = 0;
     pawn_structure(b, mg, eg);
-    // d5 ve e5 -> rank index 4 (5. sıra).
-    EXPECT_EQ(mg, 2 * PassedBonusMg[4]);
-    EXPECT_EQ(eg, 2 * PassedBonusEg[4]);
+    // d3 ve e3 -> rank index 2 (3. sıra).
+    EXPECT_EQ(mg, 2 * PassedBonusMg[2]);
+    EXPECT_EQ(eg, 2 * PassedBonusEg[2]);
     EXPECT_GT(eg, mg);  // geçer piyon oyun sonunda daha değerli
 }
 
@@ -179,6 +180,72 @@ TEST(Eval, BackwardSymmetry) {
     ASSERT_TRUE(black_side.set_fen("4k3/8/2p5/3p4/3P4/8/8/4K3 b - - 0 1"));
     int mg2 = 0, eg2 = 0;
     backward_pawns(black_side, mg2, eg2);
+    EXPECT_EQ(mg2, -mg1);
+    EXPECT_EQ(eg2, -eg1);
+}
+
+// --- Bağlı/falanks piyon (connected) testleri (izole) ---
+
+// Falanks: d5+e5 yan yana (aynı sıra), ikisi de göreli sıra 4 -> factor 2. Her ikisi
+// de connected -> toplam 2 piyon × weight × 2.
+TEST(Eval, ConnectedPhalanxBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/3PP3/8/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    connected_pawns(b, mg, eg);
+    EXPECT_EQ(mg, 4 * ConnectedBonusMg);  // 2 piyon × factor 2
+    EXPECT_EQ(eg, 4 * ConnectedBonusEg);
+    EXPECT_GT(eg, 0);
+}
+
+// Supported (falanks değil): d5, c4 tarafından savunuluyor (c4 -> b5,d5). d5 rr4 factor2
+// -> connected. c4 rr3 ama ne falanks ne supported -> connected değil. Yalnız d5 -> tek.
+TEST(Eval, ConnectedSupportedBonus) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/3P4/2P5/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    connected_pawns(b, mg, eg);
+    EXPECT_EQ(mg, 2 * ConnectedBonusMg);  // d5: factor 2
+    EXPECT_EQ(eg, 2 * ConnectedBonusEg);
+}
+
+// Sıra gate: aynı supported yapı düşük sırada (d3, c2) -> göreli sıra < 3 -> 0
+// (izole'nin baskın olduğu düşük sıralarda terim susar).
+TEST(Eval, ConnectedIgnoresLowRank) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/8/8/8/8/3P4/2P5/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    connected_pawns(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+}
+
+// ORTOGONALLİK testi (kalıntı): d5+e7 ikisi de izole DEĞİL (komşu sütunda dost piyon)
+// ama ne falanks ne supported -> connected DEĞİL -> 0. "sadece izole-değil" yetmez;
+// gerçekten bağlı olmak gerekir (izole terimiyle örtüşme kesildi).
+TEST(Eval, ConnectedIgnoresUnsupportedAdvanced) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("4k3/4P3/8/3P4/8/8/8/4K3 w - - 0 1"));
+    int mg = 0, eg = 0;
+    connected_pawns(b, mg, eg);
+    EXPECT_EQ(mg, 0);
+    EXPECT_EQ(eg, 0);
+}
+
+// Renk simetrisi (iki tahta, anti-vacuity): beyaz d5 (c4 destekli) -> +; ^56 aynası
+// siyah d4 (c5 destekli) -> −. Siyah tahta beyazın tam negatifi.
+TEST(Eval, ConnectedSymmetry) {
+    Board white_side;
+    ASSERT_TRUE(white_side.set_fen("4k3/8/8/3P4/2P5/8/8/4K3 w - - 0 1"));
+    int mg1 = 0, eg1 = 0;
+    connected_pawns(white_side, mg1, eg1);
+    EXPECT_EQ(mg1, 2 * ConnectedBonusMg);
+    EXPECT_GT(eg1, 0);
+
+    Board black_side;
+    ASSERT_TRUE(black_side.set_fen("4k3/8/8/2p5/3p4/8/8/4K3 b - - 0 1"));
+    int mg2 = 0, eg2 = 0;
+    connected_pawns(black_side, mg2, eg2);
     EXPECT_EQ(mg2, -mg1);
     EXPECT_EQ(eg2, -eg1);
 }
