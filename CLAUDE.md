@@ -1166,7 +1166,21 @@ kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı d
       dizilimiyle bayat değer döner; g_pawn_cache_enabled aynı emsal). Bu terimler cache
       DIŞINDA (geçer-piyon kare seti pawn_structure'dan/cache'ten alınıp) hesaplanmalı;
       yalnız saf-piyon terimleri (connected/protected/phalanx/backward) cache'e girebilir.
-- [ ] **Backward pawns**. **Connected / phalanx pawns**. Her biri +5-15.
+- [~] **Backward pawns — KOD TAMAM, SPRT BEKLENİYOR (commit `93321c9`, 176 test; HEAD).**
+      Bir piyon geri: komşu sütunda dost piyon VAR (izole değil) ama hepsi İLERİDE (geriden
+      destek yok) + durak karesi rakip piyonca kontrol (güvenle ilerleyemez). Tapered −8/−12,
+      saf-piyon -> `pawn_structure_full` içinden çağrılır (cache'e girer). `backward_pawns()`
+      izole helper; `pawn_attack_span` engine ns'ine taşındı. ÜÇ SORU DA GEÇTİ (ortogonal:
+      izole/çift/geçer farklı, mobility piyonu saymaz, PST tıkanmışlığı görmez). ENSTRÜMANTASYON
+      (cache kapalı, her eval): orta oyun netnz %14.6 / piyonların %1.19'u geri / NET |katkı|/
+      çağrı mg 1.18 eg 1.77 (escort/outpost bandı) / sum/çağrı ~0 (ölçek kaymıyor) -> −8/−12
+      kutu-dışı iyi kalibre, kısmaya gerek yok. Kapılar: perft birebir, ağırlık=0 düğüm-eşitliği
+      (bad_bishop+backward 0 -> startpos d13 1121128/cp27 = `167ade2`), 4 test. **SPRT: base
+      `167ade2` vs new `93321c9` (1-thread, 5+0.05, elo0=0/elo1=5). Sub-5 beklenir (magnitude
+      escort/outpost bandında) -> muhtemelen KOŞULLU + blok sonu BUNDLE SPRT (base `9c4f6d1`).**
+      Connected / phalanx pawns: DİKKAT protected-passer (soru-2) tuzağına düşer — bağlı
+      piyonlar da inşa gereği izole değil, izole terimi onları zaten fiyatlıyor; ÖNCE elle-hesap.
+- [ ] **Connected / phalanx pawns** (yukarıdaki tuzak kontrol edilerek). Her biri +5-15.
 
 *Blok E4 — Taş-yerleşim terimleri:*
 - [~] **Knight/bishop outpost — KOŞULLU KABUL (SPRT KARARSIZ, pozitif eğilim), commit
@@ -1336,11 +1350,24 @@ bad bishop KOŞULLU KABUL (sub-5 pozitif, certify EDİLMEDİ) -> commit `75a5f17
 HEAD koşullu (baseline yine `167ade2`).** SPRT base `167ade2` vs new `75a5f17`: 10779 oyun,
 Elo +4 ± 4.9, LOS %94.7, LLR 1.22 (kullanıcı durdurdu) — OUTPOST DESENİ (sub-5, 0/5'te tek
 certify olmaz). Öncesi BLOK E4 outpost KOŞULLU KABUL -> `47fada6`, 157 test (10k tavan:
-+4.7 ± 5.0, LOS %96.8, LLR 1.72 — H1 DEĞİL). **SIRADAKİ İŞ: E4 connected-rooks (son ORTOGONAL
-E4 terimi), sonra koşullu outpost+bad-bishop için BUNDLE SPRT `9c4f6d1` vs blok-sonu HEAD —
-bkz. "SUB-5 TERİM STRATEJİSİ" (escort + rook-behind sınırın üstünde çıkıp tek başına certify
-etti, bundle'a girmez; outpost + bad-bishop koşullu -> bundle'da certify).** NNUE bu repoda
-YOK, ayrı repoda (`../ChessEngineNNUE`).**
++4.7 ± 5.0, LOS %96.8, LLR 1.72 — H1 DEĞİL). **BLOK E3 backward pawns (geri piyon) KOD TAMAM,
+SPRT BEKLENİYOR -> commit `93321c9`, 176 test, HEAD.** (connected-rooks ORTOGONAL DEĞİL bulundu
+[rook_on_file 2× örtüşme + geri-sıra işaret-şüpheli], backward-pawns onun yerine seçildi —
+kullanıcı kararı 2026-07-18.) **SIRADAKİ İŞ: backward SPRT (base `167ade2` vs `93321c9`); sonra
+koşullu outpost+bad-bishop+backward için BUNDLE SPRT `9c4f6d1` vs blok-sonu HEAD — bkz. "SUB-5
+TERİM STRATEJİSİ" (escort + rook-behind tek başına certify etti, bundle'a girmez; outpost +
+bad-bishop + backward koşullu -> bundle'da certify).** NNUE bu repoda YOK, ayrı repoda
+(`../ChessEngineNNUE`).**
+**SON (2026-07-18): Blok E3 backward pawns (geri piyon) KOD TAMAM, SPRT BEKLENİYOR -> commit
+`93321c9`, 176 test. Tapered −8/−12: komşu VAR ama hepsi ileride (geriden destek yok) + durak
+karesi rakip piyonca kontrol. Saf-piyon -> `pawn_structure_full` içinden çağrılır (cache'e girer);
+`backward_pawns()` izole helper; `pawn_attack_span` engine ns'ine taşındı. ÜÇ SORU DA GEÇTİ
+(ortogonal: izole/çift/geçer farklı, mobility piyonu saymaz). ENSTRÜMANTASYON (cache kapalı, her
+eval): orta oyun netnz %14.6 / %1.19 piyon geri / NET |katkı|/çağrı mg 1.18 eg 1.77 (escort/outpost
+bandı) / sum/çağrı ~0 -> −8/−12 kutu-dışı iyi kalibre (bad_bishop gibi kısmaya gerek YOK). Kapılar:
+perft birebir, ağırlık=0 düğüm-eşitliği (bad_bishop+backward 0 -> d13 1121128/cp27 = `167ade2`),
+4 test. SPRT base `167ade2` vs `93321c9`; sub-5 beklenir -> KOŞULLU + bundle. NNUE cherry-pick
+ADAYI. Ayrıntı: Blok E3 backward pawns girişi.**
 **SON (2026-07-18): Blok E4 bad bishop (kötü fil) KOŞULLU KABUL. SPRT base `167ade2` vs new
 `75a5f17`: 10779 oyun, W-D-L 3022-4863-2894, Elo +4 ± 4.9, LOS %94.7, LLR 1.22 (2.94'e
 sürünüyordu, kullanıcı durdurdu). OUTPOST DESENİNİN BİREBİR AYNISI (+4.7/LOS %96.8/LLR 1.72
