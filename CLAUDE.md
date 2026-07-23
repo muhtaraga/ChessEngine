@@ -64,6 +64,12 @@ düğüm sayısıyla değil, ancak eski versiyona karşı maç sonucuyla (Elo) d
 - [x] Quiescence search (horizon effect'i azaltmak için)
 - [x] Iterative deepening + aspiration windows + time management
 - [x] Asenkron stop / go infinite + UCI seçenekleri (Hash, Clear Hash)
+- [x] `go nodes N` (düğüm bütçesi). Zamandan bağımsız kesme; eşit-düğümlü maç için.
+      NNUE tabanının (`../ChessEngineNNUE`, N3) kapısı bunu iki motorda da gerektirdiği
+      için burada yazıldı ve oraya cherry-pick edildi. Davranış-koruyan: `max_nodes=0`
+      varsayılanında `go depth 13` düğüm sayısı birebir aynı (876.564) ve nps farkı
+      ölçüm gürültüsü içinde (1.845.436 -> 1.846.783). Limit THREAD BAŞINADIR;
+      anlamlı eşit-düğüm ölçümü `Threads=1` ile yapılmalı.
 
 **Faz 2B — Değerlendirme + test altyapısı (TAMAM)**
 

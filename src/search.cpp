@@ -155,6 +155,8 @@ struct Searcher {
     // Asenkron durdurma bayrağı (UCI "stop"). Deadline'dan bağımsız yoklanır ki
     // "go infinite" (zaman sınırsız) aramaları da durdurulabilsin.
     const std::atomic<bool>* stop = nullptr;
+    // Düğüm limiti (0 = sınırsız). Bkz. SearchLimits::max_nodes.
+    std::uint64_t max_nodes = 0;
 
     Move pv_table[MAX_PLY][MAX_PLY];
     int  pv_len[MAX_PLY] = {};
@@ -447,6 +449,12 @@ int Searcher::negamax(const Board& b, int depth, int alpha, int beta, int ply,
         else if (use_deadline && Clock::now() >= deadline)
             aborted = true;
     }
+    // Düğüm limiti: saat/atomik okumadan farklı olarak HER düğümde bakılır. 4096'lık
+    // örnekleme penceresine sığdırmak ucuz olurdu ama "go nodes N" sözleşmesini
+    // bozardı (N=10.000 istenirken 12.288'de durmak eşit-düğüm testini anlamsız
+    // kılar). Maliyeti tek bir dal; max_nodes==0 iken daima aynı yönde tahmin edilir.
+    if (max_nodes && nodes >= max_nodes)
+        aborted = true;
     if (aborted)
         return 0;
 
@@ -911,6 +919,8 @@ int Searcher::quiescence(const Board& b, int alpha, int beta, int ply) {
         else if (use_deadline && Clock::now() >= deadline)
             aborted = true;
     }
+    if (max_nodes && nodes >= max_nodes)  // bkz. negamax'taki aynı kontrol
+        aborted = true;
     if (aborted)
         return 0;
 
@@ -1170,15 +1180,18 @@ SearchResult run_id_loop(Searcher& s, const Board& b, const SearchLimits& lim,
         // 0000 dönebilirdik). Hem deadline hem stop bu derinlikte devre dışı.
         const bool               saved_deadline = s.use_deadline;
         const std::atomic<bool>* saved_stop     = s.stop;
+        const std::uint64_t      saved_max_nodes = s.max_nodes;
         if (depth == 1) {
             s.use_deadline = false;
             s.stop         = nullptr;
+            s.max_nodes    = 0;  // düğüm limiti de muaf ("go nodes 1" bile hamle vermeli)
         }
 
         int score = s.search_root(b, depth, prev_score);
 
         s.use_deadline = saved_deadline;
         s.stop         = saved_stop;
+        s.max_nodes    = saved_max_nodes;
 
         if (s.aborted) {
             // Süre doldu: bu yarım derinliği normalde atarız (önceki 'best'
@@ -1214,6 +1227,12 @@ SearchResult run_id_loop(Searcher& s, const Board& b, const SearchLimits& lim,
         if (is_mate_score(score))
             break;  // mat bulundu: daha derine gitmenin anlamı yok
 
+        // Düğüm bütçesi doldu: yeni derinliğe başlama. Sert kesme zaten negamax'ta
+        // ama buradan çıkmak yarım bir derinlik aramaktan kurtarır ve sonucu
+        // "aborted" işaretlemeden bırakır (tamamlanmış son derinlik geçerlidir).
+        if (lim.max_nodes && s.nodes >= lim.max_nodes)
+            break;
+
         // Kök best-move kararlılığını güncelle (derinlik 1 daima ilk hamle -> sayaç
         // depth 2'den itibaren birikir).
         if (depth > 1 && best.best == prev_best) ++stability;
@@ -1245,6 +1264,7 @@ void setup_searcher(Searcher& s, const SearchLimits& lim,
                     const std::atomic<bool>* stop) {
     s.keys = history;  // tekrar tespiti için oyun geçmişiyle tohumla
     s.stop = stop;
+    s.max_nodes = lim.max_nodes;
     if (lim.hard_ms >= 0) {
         s.use_deadline = true;
         s.deadline = Clock::now() + std::chrono::milliseconds(lim.hard_ms);

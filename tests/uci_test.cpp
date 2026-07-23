@@ -176,3 +176,31 @@ TEST(Uci, PromotionMoveParsed) {
     // Promosyondan sonra hata olmadan bir bestmove üretilmeli.
     EXPECT_NE(out.find("bestmove "), std::string::npos);
 }
+
+// "go nodes N": düğüm bütçesiyle arama. Eşit-düğümlü maçın (NNUE tabanı N3) UCI
+// tarafındaki kapısı — cutechess bunu motora bu komutla söyler.
+TEST(Uci, GoNodesProducesBestmoveAndRespectsBudget) {
+    std::string out = run_uci(
+        "position startpos\n"
+        "go nodes 30000\n"
+        "quit\n");
+
+    EXPECT_NE(out.find("bestmove "), std::string::npos);
+    EXPECT_EQ(out.find("bestmove 0000"), std::string::npos);
+
+    // Son info satırındaki düğüm sayısı bütçeye yakın olmalı (kat kat üstü değil).
+    std::size_t pos = out.rfind(" nodes ");
+    ASSERT_NE(pos, std::string::npos);
+    unsigned long long n = std::stoull(out.substr(pos + 7));
+    EXPECT_LT(n, 90000ull);
+}
+
+// "go nodes" verilmeyince hiçbir şey değişmemeli (davranış-koruyan).
+TEST(Uci, GoDepthUnaffectedByNodeLimitSupport) {
+    std::string out = run_uci(
+        "position startpos\n"
+        "go depth 8\n"
+        "quit\n");
+    EXPECT_NE(out.find("info depth 8"), std::string::npos);
+    EXPECT_NE(out.find("bestmove "), std::string::npos);
+}

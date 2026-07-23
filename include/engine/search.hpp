@@ -80,6 +80,21 @@ struct SearchLimits {
     int          max_depth = 64;
     std::int64_t soft_ms   = -1;
     std::int64_t hard_ms   = -1;
+    // Düğüm limiti (UCI "go nodes N"). 0 = sınırsız (varsayılan; mevcut davranış).
+    // Arama bu kadar düğüme ulaşınca, zamandan tamamen bağımsız olarak kesilir.
+    //
+    // Ne işe yarar: EŞİT DÜĞÜMLÜ maç. İki motoru aynı düğüm bütçesiyle oynatmak
+    // donanım hızını ve eval'in maliyetini nötrler; geriye düğüm başına arama/eval
+    // KALİTESİ kalır. NNUE tabanının kapısı bu (bkz. ../ChessEngineNNUE N3): yavaş
+    // ama akıllı bir eval, zamana dayalı maçta hızına yenilir, düğüme dayalı maçta
+    // gerçek katkısı görülür.
+    //
+    // ÇOK-THREAD UYARISI: limit THREAD BAŞINADIR (her Searcher kendi düğümünü
+    // sayar), toplam değil. Anlamlı eşit-düğüm ölçümü Threads=1 ile yapılmalıdır.
+    //
+    // Derinlik 1 bu limitten muaftır — deadline/stop'ta olduğu gibi — ki en az bir
+    // legal hamle garanti olsun ("go nodes 1" bile bestmove 0000 dönmemeli).
+    std::uint64_t max_nodes = 0;
     // Dışarıdan asenkron durdurma bayrağı (UCI "stop"). nullptr değilse arama
     // bu bayrağı düzenli yoklar; true olunca düğüm ortasında kesilir. "go infinite"
     // için zaman sınırı olmadan yalnızca bu bayrakla durmayı sağlar.

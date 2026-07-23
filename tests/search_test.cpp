@@ -5,6 +5,7 @@
 #include "engine/attacks.hpp"
 #include "engine/board.hpp"
 #include "engine/move.hpp"
+#include "engine/movegen.hpp"
 #include "engine/search.hpp"
 #include "engine/see.hpp"
 #include "engine/tt.hpp"
@@ -565,4 +566,83 @@ TEST(Search, WinningSideAvoidsRepetition) {
     SearchResult r = search(b, 1, -1, hist);
     EXPECT_NE(r.best, Move::make(A4, A5));  // tekrarı (Qa4a5) seçme
     EXPECT_GT(r.score, 800);                // kazanç korunuyor (0'a düşmedi)
+}
+
+// --- Düğüm limiti (go nodes N) ---
+
+// Limit uygulanmalı: aramanın harcadığı düğüm bütçeyi anlamlı ölçüde aşmamalı.
+// Tolerans neden var: kesme düğüm SAYACINA bakar ama derinlik 1 muaftır (en az bir
+// legal hamle garantisi), yani gerçek toplam = derinlik-1 düğümleri + bütçe.
+TEST(Search, NodeLimitIsEnforced) {
+    Board b;
+    ASSERT_TRUE(b.set_fen(
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"));  // Kiwipete
+
+    SearchLimits lim;
+    lim.max_nodes = 20000;
+    SearchResult r = search_iterative(b, lim);
+
+    EXPECT_NE(r.best, Move());              // her zaman bir hamle dönmeli
+    EXPECT_GT(r.nodes, 0u);
+    EXPECT_LT(r.nodes, 60000u);             // bütçenin katbekat üstüne çıkmamalı
+}
+
+// Daha büyük bütçe daha çok düğüm (ve en az o kadar derinlik) harcamalı.
+TEST(Search, NodeLimitScalesWithBudget) {
+    Board b;
+    b.set_startpos();
+
+    SearchLimits small;
+    small.max_nodes = 5000;
+    SearchLimits big;
+    big.max_nodes = 200000;
+
+    SearchResult rs = search_iterative(b, small);
+    SearchResult rb = search_iterative(b, big);
+
+    EXPECT_LT(rs.nodes, rb.nodes);
+}
+
+// Aşırı küçük bütçe bile legal bir hamle vermeli: derinlik 1 limitten muaftır.
+// Aksi halde "go nodes 1" -> "bestmove 0000" olurdu (GUI'de kayıp).
+TEST(Search, NodeLimitStillReturnsLegalMove) {
+    Board b;
+    b.set_startpos();
+
+    SearchLimits lim;
+    lim.max_nodes = 1;
+    SearchResult r = search_iterative(b, lim);
+
+    ASSERT_NE(r.best, Move());
+    MoveList ml;
+    generate_legal(b, ml);
+    bool legal = false;
+    for (Move m : ml)
+        if (m == r.best) { legal = true; break; }
+    EXPECT_TRUE(legal);
+}
+
+// max_nodes = 0 (varsayılan) hiçbir şeyi değiştirmemeli: sabit derinlikte arama
+// düğüm sayısı birebir aynı kalmalı (davranış-koruyan olduğunun kanıtı).
+TEST(Search, NodeLimitZeroIsBehaviorPreserving) {
+    Board b;
+    ASSERT_TRUE(b.set_fen(
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"));
+
+    SearchLimits lim;
+    lim.max_depth = 8;
+
+    // TT global ve aramalar arası yaşıyor: temizlenmezse ikinci arama birincinin
+    // doldurduğu tabloyu bulur ve çok daha az düğümde biter (ölçüldü: 58.261 -> 1.627).
+    // Karşılaştırmanın anlamlı olması için ikisi de soğuk tablodan başlamalı.
+    TT.clear();
+    SearchResult a = search_iterative(b, lim);
+
+    lim.max_nodes = 0;  // açıkça sıfır
+    TT.clear();
+    SearchResult c = search_iterative(b, lim);
+
+    EXPECT_EQ(a.nodes, c.nodes);
+    EXPECT_EQ(a.best, c.best);
+    EXPECT_EQ(a.score, c.score);
 }

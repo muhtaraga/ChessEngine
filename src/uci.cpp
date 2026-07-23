@@ -209,6 +209,7 @@ std::string score_string(int score) {
 void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
                std::istringstream& ss, std::ostream& out) {
     int          depth     = -1;
+    std::uint64_t nodes    = 0;   // "go nodes N": 0 = verilmedi
     std::int64_t movetime  = -1;
     std::int64_t wtime = -1, btime = -1, winc = 0, binc = 0;
     std::int64_t movestogo = 0;   // 0 -> bilinmiyor (sudden death / artışlı)
@@ -221,6 +222,7 @@ void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
     std::string token;
     while (ss >> token) {
         if      (token == "depth")     ss >> depth;
+        else if (token == "nodes")     ss >> nodes;
         else if (token == "movetime")  ss >> movetime;
         else if (token == "wtime")     ss >> wtime;
         else if (token == "btime")     ss >> btime;
@@ -235,9 +237,20 @@ void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
     lim.max_depth = kMaxDepth;
     lim.stop      = &g_stop;  // "stop"/"quit" ile asenkron kesme
 
+    // "go nodes N": düğüm bütçesi. Zaman sınırı KOYULMAZ (derinlik modu gibi) — aksi
+    // halde yavaş bir makinede bütçe dolmadan saat keser ve eşit-düğümlü maçın tüm
+    // amacı (donanım hızını nötrlemek) çöker. depth ile birlikte verilebilir: hangisi
+    // önce dolarsa arama orada biter.
+    if (nodes > 0)
+        lim.max_nodes = nodes;
+
     if (depth > 0) {
         // Sabit derinlik: zaman sınırı yok.
         lim.max_depth = (depth < kMaxDepth) ? depth : kMaxDepth;
+    } else if (nodes > 0) {
+        // Yalnız düğüm limiti: zaman sınırı yok.
+        lim.soft_ms = -1;
+        lim.hard_ms = -1;
     } else if (infinite) {
         // "go infinite": zaman sınırı yok; yalnızca "stop" (veya derinlik tavanı)
         // durdurur. Analiz için: sen durdurana kadar düşünmeye devam eder.
@@ -292,9 +305,13 @@ void handle_go(const Board& b, const std::vector<std::uint64_t>& history,
     // Önceki arama hâlâ koşuyorsa (GUI normalde önce "stop" gönderir) durdur.
     stop_search();
     g_stop.store(false, std::memory_order_relaxed);
-    // Sınırlı mı? (zaman sınırı var veya derinlik tavanın altında). "quit"in
-    // davranışını belirler.
-    g_search_bounded.store(lim.hard_ms >= 0 || lim.max_depth < kMaxDepth,
+    // Sınırlı mı? (zaman sınırı var, derinlik tavanın altında VEYA düğüm bütçesi
+    // var). "quit"in davranışını belirler: sınırlı arama kendiliğinden biter,
+    // sınırsız olan ("go infinite") yalnız stop ile. Düğüm limiti de kendiliğinden
+    // bitiren bir sınırdır — burada sayılmazsa "go nodes N" sonrası "quit" aramanın
+    // doğal bitişini beklemez ve GUI'ye bestmove ulaşmadan kapanabilir.
+    g_search_bounded.store(lim.hard_ms >= 0 || lim.max_depth < kMaxDepth ||
+                               lim.max_nodes > 0,
                            std::memory_order_relaxed);
 
     // Aramayı ayrı thread'de başlat: ana döngü stdin okumaya devam etsin ki
