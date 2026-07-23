@@ -19,6 +19,12 @@
 #   powershell -File tools\sprt\sprt.ps1 -New new -Base base
 #   powershell -File tools\sprt\sprt.ps1 -New new -Base base -Tc "5+0.05" -Elo0 0 -Elo1 5
 #
+# Esit-dugumlu mac (hamle basina sabit dugum; tc yerine). Donanim hizini ve eval
+# maliyetini notrler -> NNUE tabaninin N3 kapisi:
+#   powershell -File tools\sprt\sprt.ps1 -New nnue -Base classical -Nodes 100000 `
+#              -NewEvalFile C:\ChessData\nets\ag.nnue
+#   (Iki binary AYNI koddur; fark yalniz EvalFile. Motor "go nodes N" destekler.)
+#
 # Lazy SMP olcekleme testi (ayni kod, farkli thread; new 2 thread vs base 1 thread):
 #   # ayni commit'i iki etiketle derle (motor isimleri farkli olmali):
 #   powershell -File tools\sprt\build-version.ps1 -Ref HEAD -Label smp1
@@ -31,6 +37,7 @@ param(
     [Parameter(Mandatory=$true)][string]$New,      # yeni surum etiketi
     [Parameter(Mandatory=$true)][string]$Base,     # baz surum etiketi
     [string]$Tc          = "10+0.1",               # zaman kontrolu (sn+increment)
+    [int]   $Nodes       = 0,                       # >0 -> ESIT-DUGUMLU mac (tc yerine)
     [int]   $Rounds      = 5000,                    # ust sinir; SPRT genelde once biter
     [int]   $Concurrency = 4,                       # paralel oyun (CPU cekirdegine gore)
     [double]$Elo0        = 0,                        # H0: yeni surum <= baz + Elo0
@@ -78,14 +85,31 @@ foreach ($p in @($newExe, $baseExe, $Book)) {
 $pgnOut = Join-Path $repo "build-release\sprt-$New-vs-$Base.pgn"
 
 $hashInfo = if ($Hash -gt 0) { " hash=${Hash}MB" } else { "" }
-Write-Output "SPRT: '$New' vs '$Base'  tc=$Tc$hashInfo  H0(<=+$Elo0) H1(>=+$Elo1) alpha=$Alpha beta=$Beta"
+$limitInfo = if ($Nodes -gt 0) { "nodes=$Nodes (esit-dugumlu)" } else { "tc=$Tc" }
+Write-Output "SPRT: '$New' vs '$Base'  $limitInfo$hashInfo  H0(<=+$Elo0) H1(>=+$Elo1) alpha=$Alpha beta=$Beta"
 Write-Output "cutechess: $Cutechess"
 Write-Output ""
 
 # cutechess-cli argumanlari. -repeat + -games 2: her acilis iki tarafca oynanir
 # (renk yanliligi elenir). -sprt: karara varinca otomatik durur.
 # -each altina konan ayarlar iki motora da esit uygulanir; Hash>0 ise ayni TT boyutu.
-$eachArgs = @("tc=$Tc", "timemargin=200")
+#
+# ESIT-DUGUMLU MAC (-Nodes N): zaman kontrolu yerine hamle basina sabit dugum
+# butcesi. Donanim hizini ve eval'in MALIYETINI notrler; geriye dugum basina
+# arama/eval KALITESI kalir. NNUE tabaninin (../ChessEngineNNUE) N3 kapisi budur:
+# yavas ama akilli bir eval zamana dayali macta hizina yenilir, dugume dayali
+# macta gercek katkisi gorulur.
+#
+# Iki yan fayda:
+#   - tc=inf oldugu icin saat asimi (time forfeit) diye bir sey yok.
+#   - Sonuc CPU rekabetinden ETKILENMEZ. Zaman kontrollu SPRT makineyi bos
+#     ister; esit-dugumlu mac koserken makineyi kullanmak yalnizca duvar
+#     saatini uzatir, oynanan oyunlari degistirmez.
+if ($Nodes -gt 0) {
+    $eachArgs = @("tc=inf", "nodes=$Nodes")
+} else {
+    $eachArgs = @("tc=$Tc", "timemargin=200")
+}
 if ($Hash -gt 0) { $eachArgs += "option.Hash=$Hash" }
 
 # Motor basina EvalFile (Texel tuning): yalniz ilgili motora option.EvalFile eklenir.
