@@ -12,7 +12,8 @@
 #   2) Iki etiketli binary uretilmis:
 #        powershell -File tools\sprt\build-version.ps1 -Ref HEAD~1 -Label base
 #        powershell -File tools\sprt\build-version.ps1 -Ref HEAD   -Label new
-#   3) Acilis kitabi: tools\sprt\book.epd (gen-book.ps1 uretir).
+#   3) Acilis kitabi: tools\sprt\noob_2moves.epd (VARSAYILAN, 7314 pozisyon).
+#      Eski 22-pozisyonluk tools\sprt\book.epd hala -Book ile secilebilir.
 #
 # Kullanim (proje kokunden):
 #   powershell -File tools\sprt\sprt.ps1 -New new -Base base
@@ -38,7 +39,7 @@ param(
     [double]$Beta        = 0.05,                     # tip-II hata
     [int]   $Hash        = 0,                         # motor basina TT (MB); 0 = ayarlama
     [string]$Cutechess   = "",                       # cutechess-cli yolu (bos = ara)
-    [string]$Book        = "",                        # acilis kitabi (bos = varsayilan)
+    [string]$Book        = "",                        # acilis kitabi (bos = noob_2moves.epd)
     [string]$NewEvalFile = "",                        # yeni motora option.EvalFile (Texel tuning)
     [string]$BaseEvalFile = "",                       # baz motora option.EvalFile (genelde bos)
     [int]   $NewThreads  = 0,                          # yeni motora option.Threads (Lazy SMP); 0 = ayarlama (=1)
@@ -69,7 +70,7 @@ if ([string]::IsNullOrWhiteSpace($Cutechess) -or -not (Test-Path $Cutechess)) {
 # --- Binary'ler ve kitap ---
 $newExe  = Join-Path $repo "build-release\chess-$New.exe"
 $baseExe = Join-Path $repo "build-release\chess-$Base.exe"
-if ([string]::IsNullOrWhiteSpace($Book)) { $Book = Join-Path $repo "tools\sprt\book.epd" }
+if ([string]::IsNullOrWhiteSpace($Book)) { $Book = Join-Path $repo "tools\sprt\noob_2moves.epd" }
 foreach ($p in @($newExe, $baseExe, $Book)) {
     if (-not (Test-Path $p)) { throw "Bulunamadi: $p" }
 }

@@ -11,8 +11,9 @@ etmesi) iyileşme sayılır.
 | Dosya | Görev |
 |-------|-------|
 | `build-version.ps1` | Bir git ref'ini (ya da çalışma ağacını) `/O2` Release derleyip `build-release\chess-<label>.exe` üretir. |
-| `gen-book.ps1` | Açılış kitabını (`book.epd`) motorun `chess fen` moduyla **doğru** üretir (elle FEN yazma hatası yok). |
-| `book.epd` | 22 dengeli açılış pozisyonu (üretilmiş; commit'li). |
+| `noob_2moves.epd` | **VARSAYILAN açılış kitabı** — 7314 pozisyon (2 hamlelik açılışlar, kullanıcı sağladı 2026-07-23). Doğrulandı: 7314/7314 FEN motorca parse edildi, hepsi legal hamle verdi, tekrar yok. |
+| `gen-book.ps1` | Küçük yedek kitabı (`book.epd`) motorun `chess fen` moduyla **doğru** üretir (elle FEN yazma hatası yok). |
+| `book.epd` | 22 dengeli açılış pozisyonu (üretilmiş; commit'li). Artık varsayılan DEĞİL — `-Book tools\sprt\book.epd` ile seçilebilir. |
 | `sprt.ps1` | İki etiketli binary'yi cutechess-cli ile oynatıp SPRT kararı raporlar. |
 | `gui/` | **Komutsuz web arayüzü** — tarayıcıdan sürüm seç, izlek/zaman ayarla, başlat/durdur, canlı izle. |
 
@@ -58,8 +59,9 @@ Proje kökünden (PowerShell):
 powershell -File tools\sprt\build-version.ps1 -Ref d7e6754 -Label base   # tapered'dan önce
 powershell -File tools\sprt\build-version.ps1 -Ref HEAD    -Label new    # güncel
 
-# 2) Açılış kitabını üret (bir kez; book.epd zaten commit'li, gerekmiyorsa atla).
-powershell -File tools\sprt\gen-book.ps1
+# 2) Açılış kitabı: varsayılan noob_2moves.epd (7314 pozisyon) commit'li -> bir şey
+#    yapmana gerek yok. Küçük yedek kitabı yeniden üretmek istersen (nadiren gerekir):
+#    powershell -File tools\sprt\gen-book.ps1   # -> book.epd (22 pozisyon)
 
 # 3) SPRT maçını başlat. Karara varınca (H0 ya da H1) otomatik durur.
 powershell -File tools\sprt\sprt.ps1 -New new -Base base

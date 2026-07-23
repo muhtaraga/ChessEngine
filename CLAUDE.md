@@ -867,6 +867,19 @@ deseni). **Mütevazı etkide erken kareye göre karar VERME** (LMP dersi): 135 o
 **kapatmadan** final satırıyla kaydet (threats istatistiği test kapanınca kayboldu).
 Beklentiler mertebe tahmini, söz değil ("+15-40" gibi lore beklentileri ÖLÇÜM değil).
 
+**AÇILIŞ KİTABI DEĞİŞTİ (2026-07-23, kullanıcı kararı): 22 pozisyon -> 7314 pozisyon
+(`tools/sprt/noob_2moves.epd`, 2-hamlelik açılışlar).** Varsayılan artık bu; eski
+`book.epd` yalnız `-Book` ile seçilebilir. **KARŞILAŞTIRMA UYARISI: `8ada3d8` ve
+öncesindeki TÜM kayıtlı Elo sayıları 22-pozisyonluk kitapla ölçüldü.** Kitap
+genişleyince oyunlar arası korelasyon düşer, açılış çeşitliliği ve beraberlik oranı
+değişir -> yeni koşuların mutlak Elo'ları eskilerle BİREBİR kıyaslanamaz (aynı terim
+iki kitapta farklı sayı verebilir). Bir terimi eski bir sonuçla kıyaslarken bunu
+belirt; SPRT kararının kendisi (H0/H1) etkilenmez, yalnız ölçek/varyans kayar.
+Doğrulama (kitap değişiminde yapıldı): 7314/7314 FEN motorca parse edildi + hepsi
+legal hamle verdi + tekrar yok; cutechess duman testinde oyunlar gerçekten yeni
+kitaptan başladı (PGN'deki FEN etiketleri yeni kitapta VAR, eskisinde YOK — cutechess
+sayaç alanlarını `0 1`'e normalize ettiğinden karşılaştırma ilk 4 FEN alanı üzerinden).
+
 **Yeni terim eklemenin standart iş akışı** (E2-E6 her maddesi): (1) `EvalParams`
 struct'a alan (`eval.hpp`) + `make_default_eval_params` varsayılanı (`eval.cpp`) +
 `flat_param_pointers`/`flat_param_names` sırası (`eval_params.cpp`, frozen sınırının

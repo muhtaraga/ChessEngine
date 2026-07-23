@@ -225,7 +225,7 @@ function Handle-Status {
         physicalCores = Get-PhysicalCores
         logicalCores  = [int]$env:NUMBER_OF_PROCESSORS
         cutechess     = @{ found = [bool]$ccPath; path = $ccPath }
-        bookExists    = (Test-Path (Join-Path $repo "tools\sprt\book.epd"))
+        bookExists    = (Test-Path (Join-Path $repo "tools\sprt\noob_2moves.epd"))
         builtLabels   = @(Get-BuiltLabels)
         running       = (Test-RunAlive $state)
         lastConfig    = $cfg

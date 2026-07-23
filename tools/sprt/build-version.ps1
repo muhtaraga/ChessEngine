@@ -50,6 +50,23 @@ try {
     # Build dizini daima gitignore'lu build-release altinda -> izlenmeyen dosya
     # kirlenmesi yok. -S $srcDir kaynagi (worktree ya da calisma agaci) gosterir.
     $buildDir = Join-Path $repo "build-release\_build-$Label"
+
+    # Ayni etiket daha once BASKA bir kaynak dizininden uretildiyse (calisma agaci
+    # <-> worktree gecisi) CMake "source does not match ... used to generate cache"
+    # ile patlar. Cache'in kaynagini kontrol et, uyusmuyorsa build dizinini sil.
+    $cacheFile = Join-Path $buildDir "CMakeCache.txt"
+    if (Test-Path $cacheFile) {
+        $hit = Select-String -Path $cacheFile -Pattern '^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$' | Select-Object -First 1
+        if ($hit) {
+            $cachedSrc = $hit.Matches[0].Groups[1].Value.Replace('/', '\').TrimEnd('\')
+            $wantSrc   = (Resolve-Path $srcDir).Path.Replace('/', '\').TrimEnd('\')
+            if ($cachedSrc -ne $wantSrc) {
+                Write-Output "Kaynak degismis ($cachedSrc -> $wantSrc); build dizini sifirlaniyor."
+                Remove-Item -Recurse -Force $buildDir
+            }
+        }
+    }
+
     cmake -S $srcDir -B $buildDir -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "cmake configure basarisiz" }
     cmake --build $buildDir --target chess | Out-Null
