@@ -137,6 +137,38 @@ inline constexpr int RookSemiEg = 8;
 inline constexpr int RookOnSeventhMg = 15;
 inline constexpr int RookOnSeventhEg = 20;
 
+// --- ENDGAME SCALING (Blok E5): oyun sonu skorunun ÇARPANI (bonus değil) ---
+// Eval bugüne dek "kim ne kadar önde" sorusunu cevaplıyordu; "bu avantaj KAZANCA
+// ÇEVRİLEBİLİR Mİ" sorusu hiç sorulmuyordu. Ölçek `eg` tarafına uygulanır
+// (`eg * scale / ScaleNormal`) -> orta oyun skoru yapısal olarak DOKUNULMAZ,
+// dolayısıyla cp-kalibre DONDURULMUŞ arama marjları (RFP/futility/razor/LMP/null/
+// delta/aspiration) kaymaz. Ölçek yalnız |eg|'i KÜÇÜLTÜR (<= ScaleNormal), yani
+// eval-ölçek↔arama-marjı bağı yönünde de güvenli (tempo/tune-all şişirme yönü DEĞİL).
+inline constexpr int ScaleNormal = 64;  // ölçek birimi: scale/64 (64 = değişiklik yok)
+
+// Saf zıt-renk fil (opposite-colored bishops) oyun sonu: piyon dışı materyal her iki
+// tarafta TAM BİR fil ve filler zıt renk karelerde. Bu sınıf ünlü biçimde beraberliğe
+// yatkındır — savunan taraf piyonları filinin renginde tutarak sonsuza dek bloke eder;
+// bir (çoğu zaman iki) piyon fazlalık kazanca çevrilemez.
+//
+// ÜÇ SORU: (1) ADIYLA sayılmıyor — bishop_pair >=2 fil ister (burada her tarafta 1),
+// bad_bishop filin KENDİ piyon renklerini cezalandırır (zıt-renk ilişkisini bilmez),
+// materyal fillere eşit değer verir. (2) SONUCUYLA sayılmıyor — mevcut eval bir piyon
+// fazlayı OCB'de de ~+100 okur; hiçbir terim "çevrilemezlik" boyutunu taşımaz.
+// (3) İŞARET — tek predicate, daima |eg|'i küçültür; ölçek güçlü tarafın avantajını
+// azaltır, hangi taraf güçlü olursa olsun aynı yönde (renk-simetrik).
+//
+// ÖN-TARAMA (2026-07-23, atılabilir enstrümantasyon + 150 oyunluk self-play):
+// gerçek oyun pozisyonlarının **%5.23'ü** bu sınıfta (hepsi piyon farkı <= 2, yani
+// asıl drawish alt-küme); sınıfa girildiğinde ağaç düğümlerinin ~tamamında ateşler
+// (ort |eg| ~152 cp). Kardeş adaylar aynı ölçümde: piyonsuz-küçük-fark %1.48 (ayrı
+// commit adayı), yanlış kale-piyonu %0.000 (ÖLÜ).
+//
+// 32/64 = eg YARIYA. İlk elle-seçim, E7 tuning adayı: Stockfish saf OCB'de daha
+// agresiftir (~22/64), ama ilk geçişte "kazanılabilir OCB'yi berabere sanma" riskine
+// karşı ortada durulur (2+ piyon fazla OCB kazanılabilir).
+inline constexpr int OcbScale = 32;
+
 // --- Threats / hanging ağırlıkları (santipiyon, MG/EG ayrı; tapered) ---
 // Rakip taşlara yönelen tehditler (piyon/minör/kale saldırısı + savunmasız taş).
 // Bonuslar yalnız tehdit VARKEN uygulanır -> dengeli pozisyonda renkler arası ~iptal.
@@ -567,6 +599,10 @@ struct EvalParams {
     // 7. sırasında VE (rakip şah 8.'de VEYA rakip piyon 7.'de). Kale başına eklenir.
     int rook_on_seventh_mg, rook_on_seventh_eg;  // gated 7.-sıra kalesi bonusu
 
+    // Endgame scaling (tunable; frozen sınırın önünde). ÇARPAN (cp DEĞİL): eg skoru
+    // `eg * scale / ScaleNormal` ile ölçeklenir. Bkz. endgame_scale().
+    int ocb_scale;                               // saf zıt-renk fil oyun sonu ölçeği
+
     // King safety (yalnız MG; ilk geçişte dondurulur).
     int shield_missing;                          // eksik kalkan sütunu başına ceza
     int king_attack_weight[PIECE_TYPE_NB];       // şah bölgesi saldırı ağırlığı
@@ -673,6 +709,12 @@ void bad_bishop(const Board& b, int& mg, int& eg);
 // King safety katkısı (piyon kalkanı + şah bölgesi saldırıları), BEYAZ − SİYAH.
 // eg her zaman 0 (yalnız orta oyun terimi); mg negatif = beyaz şahı daha güvensiz.
 void king_safety(const Board& b, int& mg, int& eg);
+
+// Oyun sonu ölçek çarpanı: `eg` skoru `eg * endgame_scale(b) / ScaleNormal` ile
+// ölçeklenir (bkz. eval_accumulate sonu). ScaleNormal (64) döndüğünde etkisizdir.
+// Renk-simetriktir (hangi tarafın önde olduğuna BAKMAZ; yalnız materyal desenine).
+// İzole test edilebilir. Şu an tek kural: saf zıt-renk fil -> OcbScale.
+int endgame_scale(const Board& b);
 
 // evaluate()'in ara toplamları: BEYAZ bakışıyla orta oyun (mg) ve oyun sonu (eg)
 // akümülatörleri, taper ve side-to-move flip'inden ÖNCE. Tuner bunu kullanır

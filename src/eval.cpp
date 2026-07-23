@@ -48,6 +48,7 @@ EvalParams make_default_eval_params() {
     p.bad_bishop_blocked_mg = BadBishopBlockedMg;  p.bad_bishop_blocked_eg = BadBishopBlockedEg;
     p.connected_mg          = ConnectedBonusMg;    p.connected_eg          = ConnectedBonusEg;
     p.rook_on_seventh_mg    = RookOnSeventhMg;     p.rook_on_seventh_eg    = RookOnSeventhEg;
+    p.ocb_scale             = OcbScale;
     p.shield_missing = ShieldMissingPenalty;
     for (int i = 0; i < 100; ++i)
         p.safety_table[i] = SafetyTable[i];
@@ -566,6 +567,26 @@ void rook_on_seventh(const Board& b, int& mg, int& eg) {
     }
 }
 
+int endgame_scale(const Board& b) {
+    // Saf zıt-renk fil oyun sonu: piyon dışı materyal HER İKİ tarafta tam bir fil
+    // (tahtada hiç at/kale/vezir yok) ve iki fil ZIT renk karelerde.
+    // Sorgu sırası ucuzdan pahalıya: önce "başka taş var mı" (tek maske testi).
+    if (b.pieces[KNIGHT] | b.pieces[ROOK] | b.pieces[QUEEN]) return ScaleNormal;
+
+    const Bitboard wb = b.pieces[BISHOP] & b.colors[WHITE];
+    const Bitboard bb = b.pieces[BISHOP] & b.colors[BLACK];
+    if (popcount(wb) != 1 || popcount(bb) != 1) return ScaleNormal;
+
+    const Square ws = static_cast<Square>(lsb(wb));
+    const Square bs = static_cast<Square>(lsb(bb));
+    // Kare rengi = (sütun + sıra) pariteti (bad_bishop'taki SquareColorMask ile aynı
+    // tanım). Aynı parite -> aynı renk fil -> ölçekleme YOK.
+    if (((file_of(ws) + rank_of(ws)) & 1) == ((file_of(bs) + rank_of(bs)) & 1))
+        return ScaleNormal;
+
+    return g_eval.ocb_scale;
+}
+
 void king_safety(const Board& b, int& mg, int& eg) {
     // İzole test için ince sarmalayıcı; gerçek hesap tek geçişli impl'de
     // (mobility ile paylaşılan taş-atak setleri). eg her zaman 0.
@@ -676,6 +697,14 @@ void eval_accumulate(const Board& b, int& mg_white, int& eg_white) {
     int rbmg = 0, rbeg = 0;
     rook_behind_passer_with(b, passed_w, passed_b, rbmg, rbeg);
     eg += rbeg;
+
+    // Oyun sonu ölçekleme (Blok E5): "bu avantaj kazanca çevrilebilir mi?" — YALNIZ eg
+    // tarafına uygulanır, mg dokunulmaz (cp-kalibre dondurulmuş arama marjları güvende).
+    // BURADA (evaluate() içinde değil): tuner özellikleri de eval_accumulate'ten türetir
+    // -> ölçek tek yerde kalır, model ile motor ıraksamaz. Tam sayı bölmesi sıfıra doğru
+    // kırpar -> ±eg simetrisi BİREBİR korunur (-x*s/n == -(x*s/n)).
+    const int scale = endgame_scale(b);
+    if (scale != ScaleNormal) eg = eg * scale / ScaleNormal;
 
     mg_white = mg;
     eg_white = eg;

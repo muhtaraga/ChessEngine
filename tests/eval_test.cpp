@@ -704,3 +704,64 @@ TEST(Eval, OutpostSymmetry) {
     EXPECT_EQ(eg, 0);
     EXPECT_EQ(evaluate(b), 0);
 }
+
+// --- Endgame scaling (Blok E5): saf zıt-renk fil ---
+
+// Beyaz Bc1 (koyu: (2+0)&1 = 0) + siyah Bf8 (açık: (5+7)&1 = 0)... parite eşit olurdu;
+// bu yüzden zıt PARİTE seçilir: Bc1 (0) ve Bc8 ((2+7)&1 = 1). Piyon dışı materyal her
+// iki tarafta tam bir fil -> saf OCB -> ölçek OcbScale.
+TEST(Eval, EndgameScaleOppositeBishops) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("2b1k3/8/8/3P4/8/8/8/2B1K3 w - - 0 1"));
+    EXPECT_EQ(endgame_scale(b), OcbScale);
+    EXPECT_LT(OcbScale, ScaleNormal);  // ölçek KÜÇÜLTMELİ (yön kapısı)
+}
+
+// İki eleme, her biri diğer koşullar sağlanırken: (a) filler AYNI renk karede
+// (c1 ve f8: (2+0)&1 = 0, (5+7)&1 = 0) -> OCB değil; (b) tahtada başka taş var
+// (siyah at) -> "piyon dışı materyal = tam bir fil" bozulur. Naif "her tarafta bir
+// fil var" implementasyonu ikisinde de yanlışlıkla ölçeklerdi.
+TEST(Eval, EndgameScaleRejectsSameColorAndExtraMaterial) {
+    Board same_color;
+    ASSERT_TRUE(same_color.set_fen("5bk1/8/8/3P4/8/8/8/2B1K3 w - - 0 1"));
+    EXPECT_EQ(endgame_scale(same_color), ScaleNormal);
+
+    Board extra_piece;
+    ASSERT_TRUE(extra_piece.set_fen("2b1k1n1/8/8/3P4/8/8/8/2B1K3 w - - 0 1"));
+    EXPECT_EQ(endgame_scale(extra_piece), ScaleNormal);
+}
+
+// Ölçek gerçekten eval'e uygulanıyor mu? AYNI tahtada yalnız ocb_scale değiştirilir
+// (ScaleNormal = etkisiz vs OcbScale) -> tüm diğer terimler sabit, fark yalnız ölçek.
+// Beyaz bir piyon fazla: ölçekli skor ölçeksizin YARISI mertebesinde olmalı ve
+// İŞARET korunmalı (avantaj yok olmaz, küçülür).
+TEST(Eval, EndgameScaleShrinksAdvantage) {
+    Board b;
+    ASSERT_TRUE(b.set_fen("2b1k3/8/8/3P4/8/8/8/2B1K3 w - - 0 1"));
+
+    const int saved = g_eval.ocb_scale;
+    g_eval.ocb_scale = ScaleNormal;  // ölçekleme kapalı
+    const int unscaled = evaluate(b);
+    g_eval.ocb_scale = OcbScale;     // ölçekleme açık
+    const int scaled = evaluate(b);
+    g_eval.ocb_scale = saved;
+
+    ASSERT_GT(unscaled, 0);              // anti-vacuity: beyaz gerçekten önde
+    EXPECT_GT(scaled, 0);                // avantaj yok olmadı
+    EXPECT_LT(scaled, unscaled);         // ama küçüldü
+}
+
+// Renk simetrisi: dikey ayna + renk takası tam negatif vermeli (tam sayı bölmesi
+// sıfıra doğru kırptığı için ±eg simetrisi birebir korunur). Anti-vacuity: skor != 0.
+TEST(Eval, EndgameScaleSymmetry) {
+    Board white_up;
+    ASSERT_TRUE(white_up.set_fen("2b1k3/8/8/3P4/8/8/8/2B1K3 w - - 0 1"));
+    Board black_up;
+    ASSERT_TRUE(black_up.set_fen("2b1k3/8/8/8/3p4/8/8/2B1K3 b - - 0 1"));
+
+    const int ws = evaluate(white_up);   // beyaz bakışı (sıra beyazda)
+    const int bs = evaluate(black_up);   // siyah bakışı (sıra siyahta)
+    EXPECT_NE(ws, 0);
+    EXPECT_EQ(ws, bs);                   // ayna: her iki tarafta da "sıradaki taraf önde"
+    EXPECT_EQ(endgame_scale(black_up), OcbScale);
+}

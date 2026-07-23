@@ -55,6 +55,8 @@ std::vector<int*> flat_param_pointers(EvalParams& p) {
     v.push_back(&p.connected_mg);          v.push_back(&p.connected_eg);
     // 6h) kale 7. sırada (gated) (tune edilir; tapered: mg+eg)
     v.push_back(&p.rook_on_seventh_mg);    v.push_back(&p.rook_on_seventh_eg);
+    // 6i) endgame scaling (tune edilir; ÇARPAN, cp DEĞİL: eg * scale / ScaleNormal)
+    v.push_back(&p.ocb_scale);
     // --- eval_frozen_start() buraya denk gelir ---
     // 7) king safety (DONDURULMUŞ): shield + attack_weight + safety_table
     v.push_back(&p.shield_missing);
@@ -99,6 +101,7 @@ const std::vector<std::string>& flat_param_names() {
         n.push_back("bad_bishop_blocked_mg"); n.push_back("bad_bishop_blocked_eg");
         n.push_back("connected_mg");          n.push_back("connected_eg");
         n.push_back("rook_on_seventh_mg");    n.push_back("rook_on_seventh_eg");
+        n.push_back("ocb_scale");
         n.push_back("shield_missing");
         for (int i = 0; i < PIECE_TYPE_NB; ++i) n.push_back(idx("king_attack_weight", i));
         for (int i = 0; i < 100; ++i) n.push_back(idx("safety_table", i));
@@ -110,8 +113,8 @@ const std::vector<std::string>& flat_param_names() {
 int eval_frozen_start() {
     // material(6) + pst_mg(384) + pst_eg(384) + pawn(20) + mobility(12) +
     // bishop_pair(2) + rook_file(4) + threats(8) + outpost(4) + passer_king_escort(1) +
-    // rook_behind_passer(1) + bad_bishop(4) + connected(2) + rook_on_seventh(2) = 834.
-    // King safety bundan sonra.
+    // rook_behind_passer(1) + bad_bishop(4) + connected(2) + rook_on_seventh(2) +
+    // endgame_scale(1) = 835. King safety bundan sonra.
     return PIECE_TYPE_NB                       // material
          + 2 * PIECE_TYPE_NB * SQUARE_NB       // pst_mg + pst_eg
          + 2 + 2 + 8 + 8                        // pawn
@@ -123,7 +126,8 @@ int eval_frozen_start() {
          + 1                                    // kale kendi geçer piyonunun arkasında (EG)
          + 4                                    // kötü fil (taban mg/eg + blokeli mg/eg)
          + 2                                    // bağlı/falanks piyon (mg/eg)
-         + 2;                                   // kale 7. sırada gated (mg/eg)
+         + 2                                    // kale 7. sırada gated (mg/eg)
+         + 1;                                   // endgame scaling: ocb_scale (ÇARPAN)
 }
 
 bool save_eval_params(const EvalParams& p, const std::string& path) {
