@@ -990,9 +990,11 @@ HARCANMADAN):** pigs-on-7th ~918K eval'de SIFIR ateşleme -> ölü; "rakip-kale-
 rook-behind-passer'ın rakip yarısıydı (rook_on_seventh zaten simetrik) ve ön-taramada elendi
 (%100 rook_semi örtüşmesi + kardeş terimin 1/10'u büyüklük); rank-ölçekli -> E7; bishop-pair
 zıt-kare + trapped-rook -> atlandı. Ayrıntı + yeni "KIYAS ÖLÇÜMÜ" metodolojisi: Blok E4
-"E4-KALANI KAPANDI" girişi. **SIRADAKİ: BLOK E5 — endgame scaling** (ortogonal, untapped,
-yalnız eg tarafını ölçekler -> frozen midgame marjları yapısal olarak güvende).
-NNUE cherry-pick ADAYI.
+"E4-KALANI KAPANDI" girişi. **AKTİF: BLOK E5 — endgame scaling.** Commit 1 (scaling
+altyapısı + zıt-renk fil/OCB) KOD TAMAM -> `c40dfb9`, 185 test, **SPRT BEKLİYOR**
+(base `8ada3d8`, 1-thread, 5+0.05, elo0=0/elo1=5). Ön-tarama sıralamayı belirledi:
+OCB %5.23 (yapıldı) > piyonsuz-küçük-fark %1.48 (sıradaki ayrı commit) > yanlış
+kale-piyonu %0.000 (ÖLÜ). NNUE cherry-pick ADAYI.
 **YENİ TERİMDE ÜÇ SORUYU DA SOR (bu blokta üçü de ayrı ayrı ısırdı):** (1) sinyal ADIYLA
 sayılıyor mu? (2) SONUCU zaten fiyatlanmış mı — korelasyonlu vekil var mı (protected
 passer: izole terimi)? (3) predicate'in ateşlediği TÜM durumlarda etkinin İŞARETİ aynı mı
@@ -1398,13 +1400,57 @@ ZATEN tek tek ölçülüyor, bundle yalnız TOPLAMI doğruluyor. **Risk (dürüs
 çıkarsa hangi terimin battığı ayrışmaz -> tek tek geri çıkmak gerekir; bu yüzden bundle'a
 yalnız pozitif eğilimli terimler girer.
 
-*Blok E5 — Endgame ölçekleme (HAFİF; kullanıcı kararı — tam KPK/KBNK bilgisi HARİÇ):*
-- [ ] **Scaling factor altyapısı**: `evaluate()` sonunda eg skoruna `[0, SCALE_NORMAL]`
-      çarpanı (Stockfish `ScaleFactor` deseni); orta oyunu bozmaz (yalnız eg tarafı).
-- [ ] **Zıt-renk fil beraberlik eğilimi** (materyal-eşit/az-farklı OCB -> skoru sıfıra).
-- [ ] **Yanlış kale-piyonu** (a/h piyonu + yanlış köşe fili -> beraberlik).
-- [ ] **Genel drawish scaling** (materyal-fazla-ama-kazanamıyor: tek minör, KRKB vb.)
-      + **insufficient/low-material scaling**. Beklenti +5-20, güvenli (ölçek kaydırmaz).
+*Blok E5 — Endgame ölçekleme (HAFİF; kullanıcı kararı — tam KPK/KBNK bilgisi HARİÇ).
+AKTİF BLOK (2026-07-23).*
+
+**ÖN-TARAMA ÖNCE (E4 dersinin uygulaması): üç kural ölçüldü, sıralamayı ÖLÇÜM belirledi.**
+Yöntem: atılabilir enstrümantasyon (commit edilmedi) + **150 oyunluk self-play datagen**.
+YAPISAL BULGU: bu kurallar normal ağaçta ~%0 ateşler (ağaç kök materyal sınıfından
+çıkmaz) ama KENDİ sınıfında %34-42 -> Elo "ağaçta ne sıklıkta" ile değil "gerçek oyunlar
+bu sınıfa ne sıklıkta ulaşıyor" ile belirlenir; **tree-instrumentation YETMEZ, self-play
+pozisyon dağılımı gerekir** (E4'te kullanılan ölçüm burada yanıltıcı olurdu).
+| kural | gerçek oyun pozisyonları |
+|---|---|
+| zıt-renk fil (OCB) | **%5.23** (hepsi piyon farkı ≤2 = asıl drawish alt-küme) |
+| piyonsuz + küçük materyal farkı | %1.48 |
+| yanlış kale-piyonu | **%0.000 -> ÖLÜ** |
+
+- [x] **Scaling factor altyapısı + zıt-renk fil (OCB) kuralı — KOD TAMAM, SPRT BEKLİYOR
+      (commit `c40dfb9`, 185 test).** Altyapı tek başına no-op -> ayrı SPRT'si anlamsız;
+      önkoşul zinciri olarak TEK COMMIT (cont-hist / null-gate emsali).
+      - **Mekanik:** `endgame_scale(b)` çarpanı `eval_accumulate` SONUNDA yalnız `eg`'e
+        uygulanır (`eg * scale / ScaleNormal(64)`); `mg` DOKUNULMAZ -> cp-kalibre
+        DONDURULMUŞ arama marjları yapısal olarak güvende, üstelik ölçek yalnızca |eg|'i
+        KÜÇÜLTÜR (tempo/tune-all şişirme yönünün TERSİ). Kural: piyon dışı materyal her
+        iki tarafta tam bir fil (tahtada hiç at/kale/vezir yok) + filler zıt renk ->
+        `OcbScale = 32/64`. Tam sayı bölmesi sıfıra doğru kırpar -> ±eg simetrisi birebir.
+      - **Neden `evaluate()` değil `eval_accumulate` sonu:** tuner özelliklerini de
+        oradan türetir -> model ile motor ıraksamaz. NOT: ölçek ÇARPANDIR, tuner'ın
+        doğrusal modeli onu özel ele almalı (E7 borcu).
+      - **ÜÇ SORU DA GEÇTİ:** (1) bishop_pair ≥2 fil ister (burada 1+1), bad_bishop filin
+        KENDİ piyon renklerini cezalandırır (zıt-renk ilişkisini bilmez), materyal fillere
+        eşit değer verir; (2) ölçüldü — baseline OCB'de +1 piyonu **+287 cp** okuyor,
+        hiçbir terim "çevrilemezlik" boyutunu taşımıyor; (3) tek predicate, daima |eg|
+        küçültür, renk-simetrik.
+      - **ÖN-KAYITLI RİSK:** (a) 2+ piyon fazla OCB kazanılabilir; tek sabit 32/64 o
+        alt-kümede kazancı hafife alabilir (SF ~22/64 ama piyon sayısı/passer'a göre
+        DEĞİŞKEN ölçek kullanır); (b) 5+0.05 hızlı TC'de oyunların ne kadarı OCB oyun
+        sonuna ULAŞIYOR belirsiz -> ulaşmıyorsa etki çözülemez bant (outpost deseni).
+      - **Kapılar:** perft birebir; **ağırlık=0 düğüm-eşitliği** (EvalFile ile
+        `ocb_scale=64` -> `8ada3d8` ile BİREBİR: startpos d13 876564/cp31, d16 5547746,
+        Kiwipete d12 531476/cp−44, PV dahil); nps −%0.5 (uzun koşu, 5.55M düğüm ×3, taban
+        yayılma %1.5 -> ihmal); 185/185 test Debug+Release (+4). Sağlama (kapı değil):
+        OCB +1 piyon base +287 -> yeni +153 cp, bestmove aynı.
+      - `ocb_scale` frozen sınır ÖNÜNE (`eval_frozen_start` 834->835, FrozenBoundary
+        son-tunable "ocb_scale"). 32/64 ilk elle-seçim, E7 tuning adayı.
+- [ ] **Piyonsuz + küçük materyal farkı** (güçlü tarafın piyonu yok + piyon-dışı fark
+      ≤ fil -> KRvKB/KBvKN vb. çevrilemez): ön-taramada **%1.48**, ateşlediğinde baseline
+      ort **|eg| 376 cp** okuyor (KRvKB'yi +3.7 piyon sanıyor). OCB'den sonra AYRI commit
+      + AYRI SPRT (paketleme yasağı).
+- [~] **Yanlış kale-piyonu** (a/h piyonu + yanlış köşe fili) — **ÖLÇÜMLE ELENDİ
+      (%0.000, SPRT yok).** Kanonik pozisyonunda doğru ateşliyor (baseline orada +575 cp
+      okuyor) ama gerçek oyunlar bu sınıfa hiç ulaşmıyor -> pigs-on-7th ile aynı kader.
+- [ ] **Genel drawish scaling** (tek minör, düşük materyal). Beklenti +5-20, güvenli.
 
 *Blok E6 — Küçükler:*
 - [ ] **Tempo (cerrahi varyant)**: Blok 3/12 dersi — tempo yalnız yaprak/qsearch
