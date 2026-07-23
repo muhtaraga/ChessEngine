@@ -983,14 +983,16 @@ da vardı -> Debug'da `king_square()` array OOB (Release sessiz); şah eklenerek
 (ayrı commit `19b728c`, test-only). Öncesi: şah eskortu KABUL (`8b60653`, +6.3 ± 5.0). Şimdi
 5 E3/E4 denemesinden 3 pozitif (escort + rook-behind tam-kabul, outpost koşullu), 2 red
 (protected passer −22.1, blockade −12.4).
-DURUM (2026-07-18, GÜNCEL): E3 + E4-rook-on-7th BİTTİ. E3/E4 bundle certified (`2122456`),
-sonra E4 kale-7.-sıra (gated) KABUL -> **YENİ BASELINE `8ada3d8`** (+7 ± 6.6, LOS %98.2,
-LLR 2.0, kullanıcı erken durdurdu; +7 > elo1 -> tek başına certify). **SIRADAKİ (KULLANICI
-KARARI, yeni oturum): E4-KALANI** — rook-on-7th EK'leri: rank-ölçekli bonus / connected-rooks
-(7.'de çift kale ek bonus) / rakip-kale-7. Bunlar rook-on-7th'in (`8ada3d8`) ORTOGONAL değil
-EK'i olduğundan tek tek ayrı commit + ayrı SPRT; DİKKAT (soru-2): rakip-kale-7. `rook_on_file`
-yarı-açık ile örtüşebilir (rook-behind'da bu yüzden yalnız-kendi-kale seçilmişti). bishop-pair
-zıt-kare ATLANIR (near-no-op). E5 endgame scaling sonraya. NNUE cherry-pick ADAYI.
+DURUM (2026-07-23, GÜNCEL): **E3 + E4 BİTTİ.** E3/E4 bundle certified (`2122456`), sonra E4
+kale-7.-sıra (gated) KABUL -> **BASELINE `8ada3d8`** (+7 ± 6.6, LOS %98.2, LLR 2.0, kullanıcı
+erken durdurdu; +7 > elo1 -> tek başına certify). **E4-KALANI ÖLÇÜMLE KAPANDI (SPRT
+HARCANMADAN):** pigs-on-7th ~918K eval'de SIFIR ateşleme -> ölü; "rakip-kale-7." aslında
+rook-behind-passer'ın rakip yarısıydı (rook_on_seventh zaten simetrik) ve ön-taramada elendi
+(%100 rook_semi örtüşmesi + kardeş terimin 1/10'u büyüklük); rank-ölçekli -> E7; bishop-pair
+zıt-kare + trapped-rook -> atlandı. Ayrıntı + yeni "KIYAS ÖLÇÜMÜ" metodolojisi: Blok E4
+"E4-KALANI KAPANDI" girişi. **SIRADAKİ: BLOK E5 — endgame scaling** (ortogonal, untapped,
+yalnız eg tarafını ölçekler -> frozen midgame marjları yapısal olarak güvende).
+NNUE cherry-pick ADAYI.
 **YENİ TERİMDE ÜÇ SORUYU DA SOR (bu blokta üçü de ayrı ayrı ısırdı):** (1) sinyal ADIYLA
 sayılıyor mu? (2) SONUCU zaten fiyatlanmış mı — korelasyonlu vekil var mı (protected
 passer: izole terimi)? (3) predicate'in ateşlediği TÜM durumlarda etkinin İŞARETİ aynı mı
@@ -1333,8 +1335,48 @@ kale ile rakip passer'ının arkasındaki kale aynı işarette mi, ayrı ayrı d
       - Ağırlık 15/20 enstrümantasyonla gerekçeli, E7 tuning adayı. NNUE cherry-pick ADAYI.
       Ertelenen (ayrı commit adayı): connected-rooks (7.'de çift kale zaten 2× alıyor,
       EK bonus ayrı terim), rook-trapped-by-king, rank-ölçekli bonus, RAKİP-kale 7.-sıra.
+- [~] **E4-KALANI KAPANDI (2026-07-23, ÖLÇÜMLE — SPRT HARCANMADAN; kullanıcı kararı).**
+      Roadmap'in bıraktığı üç aday ÖN-TARAMA ile elendi: tek atılabilir enstrümantasyon
+      build'i (commit edilmedi), ~918K eval (5 orta oyun d12 + iki ayrı 6-pozisyonluk
+      oyun sonu seti d14). Hiçbiri SPRT'ye girmedi -> blockade "minör-only" emsalinin
+      (ölçüm varyantı ek SPRT'siz eledi) ikinci uygulaması.
+      - **ROADMAP BELİRSİZLİĞİ ÇÖZÜLDÜ: "RAKİP-kale 7.-sıra" SAF NO-OP olurdu** —
+        `rook_on_seventh` zaten `for (Color c : {WHITE, BLACK})` + sign ile TAM SİMETRİK,
+        rakip kalenin kendi 7.'sinde olması hâlihazırda cezalanıyor. Kastedilen (parantez:
+        "rook_on_file yarı-açık ile örtüşebilir") **rook-behind-passer'ın RAKİP yarısı**:
+        rakip kale BİZİM passer'ımızın arkasında (Tarrasch'ın `167ade2`'de dışarıda
+        bırakılan yarısı). Ölçülen aday buydu.
+      - **Aday: pigs on 7th (7.'de çift kale EK bonusu) — ÖLÜ.** ~918K eval'de **0 (SIFIR)
+        ateşleme**; aynı koşularda tek-kale gate'i %2.43 (orta oyun) / %15.6 / %6.2
+        (oyun sonu) ateşliyor. No-op eşiğinin (~%1-2) çok altında -> terim ölü, SPRT yok.
+      - **Aday: rakip kale bizim passer'ımızın arkasında — ÖLÇÜM ELEDİ (H0 DEĞİL, hiç
+        denenmedi).** Orta oyun %0.003 (no-op), oyun sonu %3.24 / %6.26. Üç bulgu:
+        (a) **ÖN-KAYITLI soru-2 riski MAKSİMUMDA geldi: ateşlemelerin %100'ünde** o sütun
+        rakip için yarı-açık -> `rook_semi` (12/8) zaten ödüyor (yapısal: passer'ın
+        sütununda rakip piyon bulunması nadir); (b) terimin tek yeni bilgisi "arkada mı
+        önde mi" AYRIMI, ama dağılım KÖK YERLEŞİMİYLE belirleniyor (set-1 %84.7 önde,
+        set-2 %95.4 arkada) -> pozisyon İÇİNDE aramanın çözdüğü bir ayrım değil, ~sabit
+        kaydırma; (c) **büyüklük 10× küçük**: kendi lehine kurulmuş sette NET |katkı|/çağrı
+        0.75 cp (w=12), kardeşi (KABUL EDİLMİŞ own-rook-behind, +7.5 Elo) kendi lehine
+        sette %38.8 ateşleme / **7.77 cp/çağrı**. Kabul edilen terim bandına (escort 1.48,
+        outpost 2.02) çıkmak ağırlık ~25-40 ister -> kısmen çift-sayılan sinyalde
+        kardeşinin 20'sinin üstü, savunulamaz. Beklenti +1..+3 -> `elo0=0/elo1=5`'in
+        çözemediği bant (Blok 1/3 Ders 3; outpost/bad-bishop deseni) + E4'te bundle
+        ortağı kalmadı.
+      - **YENİ METODOLOJİ KAZANIMI — KIYAS ÖLÇÜMÜ:** aday terimin ateşleme/büyüklüğünü
+        AYNI POZİSYONLARDA kabul edilmiş bir kardeş terimle yan yana ölç. Mutlak sayılar
+        (%3-6 ateşleme, 0.4-0.8 cp) tek başına "sağlıklı" görünüyordu — backward dersi
+        (tüm kapıları geçip −12) bu okumanın yetmediğini zaten göstermişti. Kardeş oranı
+        (10×) ise beklenen etkiyi SPRT'den önce bantladı. Ayrıca: **ateşleme dağılımı
+        kök yerleşimine duyarlıysa (iki zıt sette %85 vs %95), terim aramanın çözdüğü
+        bir ayrım değil ~sabit bir kaydırmadır** — tek bir FEN setiyle ölçmek yanıltır.
+      - **Kalanlar:** rank-ölçekli rook_behind_passer -> **E7** (kabul edilmiş terimin
+        yeniden kalibrasyonu + passed[r] ile aynı eksene ikinci gradyan = protected-passer
+        tuzağının şekli); rook-trapped-by-king -> ATLANDI (mobility zaten düşük kare
+        sayısını cezalandırıyor, soru-2 riski); bishop-pair zıt-kare -> ATLANDI (aşağı bak).
 - [ ] **Bishop pair zıt-kare rafinesi** (mevcut basit ≥2 sayımı). Her biri +3-12.
       NOT: near-no-op adayı (2 fil ~%99.9 zıt-renk; yalnız nadir çift-promosyon farkı).
+      KARAR (2026-07-23): ATLANIYOR — E4 kapandı, sıra E5'te.
 
 **SUB-5 TERİM STRATEJİSİ — BUNDLE SPRT (kullanıcı kararı, 2026-07-16).** Faz 3'ün kalan
 eval terimlerinin ÇOĞU +3-15 bandında bekleniyor; outpost (+4.7 ± 5.0, LOS %96.8, LLR 1.72
@@ -1394,7 +1436,7 @@ Her oturum başında bana hangi fazda, hangi adımda olduğumuzu hatırlat. Eğe
 önceki oturumdan kalan yarım iş varsa (örneğin test yazılmamış bir fonksiyon,
 geçmeyen bir perft testi) önce onu bitirmeden yeni özelliğe geçme.
 
-**Güncel durum (2026-07-17): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
+**Güncel durum (2026-07-23): FAZ 1 + FAZ 2A + FAZ 2B + FAZ 2C(-devam) + FAZ 2D TAMAM.
 Klasik motorun arama/movegen/SMP tarafı bitti. FAZ 3 (klasik) — Eval Güçlendirme
 DEVAM: BLOK E1 (altyapı+hız) TAM TAMAM, BLOK E2 Commit 1 (threats/hanging) KABUL
 (H1, baseline `9c4f6d1`), BLOK E2 king-safety rafineleri E7 JOINT TUNING'e ERTELENDİ
@@ -1413,11 +1455,28 @@ BUNDLE SPRT TAM KABUL: base `9c4f6d1` (threats) vs `2122456` (HEAD): 2428 oyun, 
 Elo +18.8 ± 10.3, LOS %100, LLR 2.94 TAM H1 -> threats sonrası hayatta kalan 5 terimin (outpost +
 escort + rook-behind + bad-bishop + connected) KÜMÜLATİF etkisi certify; GRANDFATHERED BORÇ KAPANDI
 (outpost + bad-bishop artık bundle-certified), `2122456` TAM-CERTIFIED BASELINE.** **SIRADAKİ İŞ:
-BLOK E3 BİTTİ + eval bundle certified, sonra BLOK E4 rook-on-7th (gated) KABUL -> **YENİ
-BASELINE `8ada3d8`, 181 test**. SIRADAKİ (kullanıcı kararı): E4-kalanı (rook-on-7th rank-ölçekli
-/ connected-rooks / rakip-kale-7. — hepsi rook-on-7th'in EK'i; VEYA bishop-pair zıt-kare
-[near-no-op riski]) VEYA **E5 endgame scaling** (ortogonal+güvenli, untapped).** NNUE bu repoda
+BLOK E3 BİTTİ + eval bundle certified, sonra BLOK E4 rook-on-7th (gated) KABUL -> **BASELINE
+`8ada3d8`, 181 test**. **E4-KALANI (2026-07-23) ÖLÇÜMLE KAPANDI, SPRT HARCANMADAN: E4 BİTTİ.**
+SIRADAKİ: **BLOK E5 — endgame scaling** (ortogonal+güvenli, untapped).** NNUE bu repoda
 YOK, ayrı repoda (`../ChessEngineNNUE`).**
+**SON (2026-07-23): BLOK E4 KAPANDI — E4-kalanı üç adayı da ÖN-TARAMA ile elendi, HİÇBİRİ
+SPRT'ye girmedi (kullanıcı kararı). Tek atılabilir enstrümantasyon build'i (commit edilmedi),
+~918K eval (5 orta oyun d12 + iki zıt kurgulu 6-pozisyonluk oyun sonu seti d14); kod `8ada3d8`'e
+birebir geri alındı (`git status` temiz), baseline DEĞİŞMEDİ, 181 test. (1) **Roadmap belirsizliği
+çözüldü:** "RAKİP-kale 7.-sıra" saf no-op olurdu — `rook_on_seventh` zaten iki renk üzerinde
+simetrik; kastedilen rook-behind-passer'ın RAKİP yarısıydı. (2) **pigs-on-7th ÖLÜ:** ~918K eval'de
+SIFIR ateşleme (tek-kale gate'i aynı koşuda %2.43/%15.6/%6.2) -> no-op eşiğinin çok altı. (3)
+**rakip-kale-passer-arkasında ÖLÇÜM ELEDİ:** orta oyun %0.003, oyun sonu %3.24/%6.26; ateşlemelerin
+**%100'ü rook_semi ile örtüşüyor** (ön-kayıtlı soru-2 riski maksimumda); "arkada vs önde" ayrımı
+KÖK YERLEŞİMİYLE belirleniyor (%84.7 önde vs %95.4 arkada, iki zıt sette) -> aramanın çözdüğü
+ayrım değil ~sabit kaydırma; büyüklük kardeşinin 1/10'u (0.75 vs 7.77 cp/çağrı, her biri kendi
+lehine sette) -> beklenti +1..+3, 0/5 SPRT'nin çözemediği bant + E4'te bundle ortağı yok.
+**YENİ METODOLOJİ — KIYAS ÖLÇÜMÜ: adayı AYNI pozisyonlarda kabul edilmiş bir kardeş terimle yan
+yana ölç** (mutlak %3-6 / 0.4-0.8 cp "sağlıklı" görünüyordu; 10× oranı beklentiyi SPRT'den önce
+bantladı — backward dersinin, "kapılar işaretin yardımcı olduğunu kanıtlamaz"ın niceliksel
+tamamlayıcısı). **İKİNCİ ÖLÇÜM DERSİ: ateşleme dağılımı kök yerleşimine duyarlıysa tek FEN
+setiyle ölçmek yanıltır** — zıt kurgulu İKİ set kullan. Kalanlar: rank-ölçekli -> E7,
+trapped-rook + bishop-pair zıt-kare -> atlandı. SIRADAKİ: **BLOK E5 endgame scaling**.**
 **SON (2026-07-18): Blok E4 kale 7. sırada (gated) KABUL (kullanıcı kararı, erken durdurma) ->
 YENİ BASELINE `8ada3d8`, 181 test. SPRT base `2122456` vs new `8ada3d8`: 5988 oyun, W-D-L
 1739-2635-1614, Elo +7 ± 6.6, LOS %98.2, LLR 2.0 (2.94'e yükseliyordu, kullanıcı erken durdurdu).
